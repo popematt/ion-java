@@ -678,95 +678,97 @@ import java.util.NoSuchElementException;
 <span class="fc bfc" id="L678" title="All 2 branches covered.">            if (ionRep.isNullValue()) continue;</span>
 
 <span class="fc" id="L680">            SymbolToken symTok = ionRep.getFieldNameSymbol();</span>
-<span class="fc" id="L681">            int field_id = symTok.getSid();</span>
-<span class="pc bpc" id="L682" title="1 of 2 branches missed.">            if (field_id == UNKNOWN_SYMBOL_ID)</span>
+<span class="fc bfc" id="L681" title="All 2 branches covered.">            if (symTok == null) continue;</span>
+
+<span class="fc" id="L683">            int field_id = symTok.getSid();</span>
+<span class="pc bpc" id="L684" title="1 of 2 branches missed.">            if (field_id == UNKNOWN_SYMBOL_ID)</span>
             {
                 // this is a user defined reader or a pure DOM
                 // we fall back to text here
-<span class="nc" id="L686">                final String fieldName = ionRep.getFieldName();</span>
-<span class="nc" id="L687">                field_id = getSidForSymbolTableField(fieldName);</span>
+<span class="nc" id="L688">                final String fieldName = ionRep.getFieldName();</span>
+<span class="nc" id="L689">                field_id = getSidForSymbolTableField(fieldName);</span>
             }
-<span class="pc bpc" id="L689" title="1 of 4 branches missed.">            switch(field_id)</span>
+<span class="fc bfc" id="L691" title="All 4 branches covered.">            switch(field_id)</span>
             {
                 case NAME_SID:
-<span class="fc bfc" id="L692" title="All 2 branches covered.">                    if (t == IonType.STRING)</span>
+<span class="fc bfc" id="L694" title="All 2 branches covered.">                    if (t == IonType.STRING)</span>
                     {
-<span class="fc" id="L694">                        name = ionRep.stringValue();</span>
+<span class="fc" id="L696">                        name = ionRep.stringValue();</span>
                     }
                     break;
                 case VERSION_SID:
-<span class="pc bpc" id="L698" title="1 of 2 branches missed.">                    if (t == IonType.INT)</span>
+<span class="pc bpc" id="L700" title="1 of 2 branches missed.">                    if (t == IonType.INT)</span>
                     {
-<span class="fc" id="L700">                        version = ionRep.intValue();</span>
+<span class="fc" id="L702">                        version = ionRep.intValue();</span>
                     }
                     break;
                 case MAX_ID_SID:
-<span class="fc bfc" id="L704" title="All 2 branches covered.">                    if (t == IonType.INT)</span>
+<span class="fc bfc" id="L706" title="All 2 branches covered.">                    if (t == IonType.INT)</span>
                     {
-<span class="fc" id="L706">                        maxid = ionRep.intValue();</span>
+<span class="fc" id="L708">                        maxid = ionRep.intValue();</span>
                     }
                     break;
                 default:
                     // we just ignore anything else as &quot;open content&quot;
                     break;
             }
-<span class="fc" id="L713">        }</span>
-<span class="fc" id="L714">        ionRep.stepOut();</span>
+<span class="fc" id="L715">        }</span>
+<span class="fc" id="L716">        ionRep.stepOut();</span>
 
         // Ignore import clauses with malformed name field.
-<span class="fc bfc" id="L717" title="All 6 branches covered.">        if (name == null || name.length() == 0 || name.equals(ION))</span>
+<span class="fc bfc" id="L719" title="All 6 branches covered.">        if (name == null || name.length() == 0 || name.equals(ION))</span>
         {
-<span class="fc" id="L719">            return null;</span>
+<span class="fc" id="L721">            return null;</span>
         }
 
-<span class="pc bpc" id="L722" title="1 of 2 branches missed.">        if (version &lt; 1)</span>
+<span class="pc bpc" id="L724" title="1 of 2 branches missed.">        if (version &lt; 1)</span>
         {
-<span class="nc" id="L724">            version = 1;</span>
+<span class="nc" id="L726">            version = 1;</span>
         }
 
-<span class="fc" id="L727">        SymbolTable itab = null;</span>
-<span class="pc bpc" id="L728" title="1 of 2 branches missed.">        if (catalog != null)</span>
+<span class="fc" id="L729">        SymbolTable itab = null;</span>
+<span class="pc bpc" id="L730" title="1 of 2 branches missed.">        if (catalog != null)</span>
         {
-<span class="fc" id="L730">            itab = catalog.getTable(name, version);</span>
+<span class="fc" id="L732">            itab = catalog.getTable(name, version);</span>
         }
-<span class="fc bfc" id="L732" title="All 2 branches covered.">        if (maxid &lt; 0)</span>
+<span class="fc bfc" id="L734" title="All 2 branches covered.">        if (maxid &lt; 0)</span>
         {
-<span class="pc bpc" id="L734" title="1 of 4 branches missed.">            if (itab == null || version != itab.getVersion())</span>
+<span class="pc bpc" id="L736" title="1 of 4 branches missed.">            if (itab == null || version != itab.getVersion())</span>
             {
-<span class="fc" id="L736">                String message =</span>
+<span class="fc" id="L738">                String message =</span>
                     &quot;Import of shared table &quot;
-<span class="fc" id="L738">                        + IonTextUtils.printString(name)</span>
+<span class="fc" id="L740">                        + IonTextUtils.printString(name)</span>
                         + &quot; lacks a valid max_id field, but an exact match was not&quot;
                         + &quot; found in the catalog&quot;;
-<span class="pc bpc" id="L741" title="1 of 2 branches missed.">                if (itab != null)</span>
+<span class="pc bpc" id="L743" title="1 of 2 branches missed.">                if (itab != null)</span>
                 {
-<span class="nc" id="L743">                    message += &quot; (found version &quot; + itab.getVersion() + &quot;)&quot;;</span>
+<span class="nc" id="L745">                    message += &quot; (found version &quot; + itab.getVersion() + &quot;)&quot;;</span>
                 }
                 // TODO custom exception
-<span class="fc" id="L746">                throw new IonException(message);</span>
+<span class="fc" id="L748">                throw new IonException(message);</span>
             }
 
             // Exact match is found, but max_id is undefined in import
             // declaration, set max_id to largest sid of shared symtab
-<span class="fc" id="L751">            maxid = itab.getMaxId();</span>
+<span class="fc" id="L753">            maxid = itab.getMaxId();</span>
         }
 
-<span class="fc bfc" id="L754" title="All 2 branches covered.">        if (itab == null)</span>
+<span class="fc bfc" id="L756" title="All 2 branches covered.">        if (itab == null)</span>
         {
-<span class="pc bpc" id="L756" title="2 of 4 branches missed.">            assert maxid &gt;= 0;</span>
+<span class="pc bpc" id="L758" title="2 of 4 branches missed.">            assert maxid &gt;= 0;</span>
 
             // Construct substitute table with max_id undefined symbols
-<span class="fc" id="L759">            itab = new SubstituteSymbolTable(name, version, maxid);</span>
+<span class="fc" id="L761">            itab = new SubstituteSymbolTable(name, version, maxid);</span>
         }
-<span class="fc bfc" id="L761" title="All 4 branches covered.">        else if (itab.getVersion() != version || itab.getMaxId() != maxid)</span>
+<span class="fc bfc" id="L763" title="All 4 branches covered.">        else if (itab.getVersion() != version || itab.getMaxId() != maxid)</span>
         {
             // A match was found BUT specs are not an exact match
             // Construct a substitute with correct specs, containing the
             // original import table that was found
-<span class="fc" id="L766">            itab = new SubstituteSymbolTable(itab, version, maxid);</span>
+<span class="fc" id="L768">            itab = new SubstituteSymbolTable(itab, version, maxid);</span>
         }
 
-<span class="fc" id="L769">        return itab;</span>
+<span class="fc" id="L771">        return itab;</span>
     }
 
     /**
@@ -777,14 +779,14 @@ import java.util.NoSuchElementException;
      */
     public static String unknownSymbolName(int id)
     {
-<span class="nc bnc" id="L780" title="All 4 branches missed.">        assert id &gt; 0;</span>
-<span class="nc" id="L781">        return &quot;$&quot; + id;</span>
+<span class="nc bnc" id="L782" title="All 4 branches missed.">        assert id &gt; 0;</span>
+<span class="nc" id="L783">        return &quot;$&quot; + id;</span>
     }
 
     @Override
     public String toString()
     {
-<span class="nc" id="L787">        return &quot;(LocalSymbolTable max_id:&quot; + getMaxId() + ')';</span>
+<span class="nc" id="L789">        return &quot;(LocalSymbolTable max_id:&quot; + getMaxId() + ')';</span>
     }
 
     private static final class SymbolIterator
@@ -792,35 +794,35 @@ import java.util.NoSuchElementException;
     {
         private final String[] mySymbolNames;
         private final int      mySymbolsCount;
-<span class="fc" id="L795">        private int            _idx = 0;</span>
+<span class="fc" id="L797">        private int            _idx = 0;</span>
 
         SymbolIterator(String[] symbolNames, int count)
-<span class="fc" id="L798">        {</span>
-<span class="fc" id="L799">            mySymbolNames = symbolNames;</span>
-<span class="fc" id="L800">            mySymbolsCount = count;</span>
-<span class="fc" id="L801">        }</span>
+<span class="fc" id="L800">        {</span>
+<span class="fc" id="L801">            mySymbolNames = symbolNames;</span>
+<span class="fc" id="L802">            mySymbolsCount = count;</span>
+<span class="fc" id="L803">        }</span>
 
         public boolean hasNext()
         {
-<span class="fc bfc" id="L805" title="All 2 branches covered.">            if (_idx &lt; mySymbolsCount)</span>
+<span class="fc bfc" id="L807" title="All 2 branches covered.">            if (_idx &lt; mySymbolsCount)</span>
             {
-<span class="fc" id="L807">                return true;</span>
+<span class="fc" id="L809">                return true;</span>
             }
-<span class="fc" id="L809">            return false;</span>
+<span class="fc" id="L811">            return false;</span>
         }
 
         public String next()
         {
-<span class="pc bpc" id="L814" title="1 of 2 branches missed.">            if (_idx &lt; mySymbolsCount)</span>
+<span class="pc bpc" id="L816" title="1 of 2 branches missed.">            if (_idx &lt; mySymbolsCount)</span>
             {
-<span class="fc" id="L816">                return mySymbolNames[_idx++];</span>
+<span class="fc" id="L818">                return mySymbolNames[_idx++];</span>
             }
-<span class="nc" id="L818">            throw new NoSuchElementException();</span>
+<span class="nc" id="L820">            throw new NoSuchElementException();</span>
         }
 
         public void remove()
         {
-<span class="nc" id="L823">            throw new UnsupportedOperationException();</span>
+<span class="nc" id="L825">            throw new UnsupportedOperationException();</span>
         }
     }
 
@@ -832,46 +834,46 @@ import java.util.NoSuchElementException;
     boolean symtabExtends(SymbolTable other)
     {
         // Throws ClassCastException if other isn't a local symtab
-<span class="fc" id="L835">        LocalSymbolTable subset = (LocalSymbolTable) other;</span>
+<span class="fc" id="L837">        LocalSymbolTable subset = (LocalSymbolTable) other;</span>
 
         // Gather snapshots of each LST's data, so we don't
 
         // Superset must have same/more known symbols than subset.
-<span class="pc bpc" id="L840" title="1 of 2 branches missed.">        if (getMaxId() &lt; subset.getMaxId()) return false;</span>
+<span class="pc bpc" id="L842" title="1 of 2 branches missed.">        if (getMaxId() &lt; subset.getMaxId()) return false;</span>
 
         // TODO amzn/ion-java/issues/18 Currently, we check imports by their refs. which
         //      might be overly strict; imports which are not the same ref.
         //      but have the same semantic states fails the extension check.
-<span class="pc bpc" id="L845" title="1 of 2 branches missed.">        if (! myImportsList.equalImports(subset.myImportsList))</span>
-<span class="nc" id="L846">            return false;</span>
+<span class="pc bpc" id="L847" title="1 of 2 branches missed.">        if (! myImportsList.equalImports(subset.myImportsList))</span>
+<span class="nc" id="L848">            return false;</span>
 
-<span class="fc" id="L848">        int subLocalSymbolCount = subset.mySymbolsCount;</span>
+<span class="fc" id="L850">        int subLocalSymbolCount = subset.mySymbolsCount;</span>
 
         // Superset extends subset if subset doesn't have any declared symbols.
-<span class="pc bpc" id="L851" title="1 of 2 branches missed.">        if (subLocalSymbolCount == 0) return true;</span>
+<span class="pc bpc" id="L853" title="1 of 2 branches missed.">        if (subLocalSymbolCount == 0) return true;</span>
 
         // Superset must have same/more declared (local) symbols than subset.
-<span class="pc bpc" id="L854" title="1 of 2 branches missed.">        if (mySymbolsCount &lt; subLocalSymbolCount) return false;</span>
+<span class="pc bpc" id="L856" title="1 of 2 branches missed.">        if (mySymbolsCount &lt; subLocalSymbolCount) return false;</span>
 
-<span class="fc" id="L856">        String[] subsetSymbols = subset.mySymbolNames;</span>
+<span class="fc" id="L858">        String[] subsetSymbols = subset.mySymbolNames;</span>
 
         // Before we go through the expensive iteration from the front,
         // check the last (largest) declared symbol in subset beforehand
-<span class="pc bpc" id="L860" title="1 of 2 branches missed.">        if (! safeEquals(mySymbolNames[subLocalSymbolCount- 1],</span>
+<span class="pc bpc" id="L862" title="1 of 2 branches missed.">        if (! safeEquals(mySymbolNames[subLocalSymbolCount- 1],</span>
                                   subsetSymbols[subLocalSymbolCount- 1]))
         {
-<span class="nc" id="L863">            return false;</span>
+<span class="nc" id="L865">            return false;</span>
         }
 
         // Now, we iterate from the first declared symbol, note that the
         // iteration below is O(n)!
-<span class="fc bfc" id="L868" title="All 2 branches covered.">        for (int i = 0; i &lt; subLocalSymbolCount - 1; i++)</span>
+<span class="fc bfc" id="L870" title="All 2 branches covered.">        for (int i = 0; i &lt; subLocalSymbolCount - 1; i++)</span>
         {
-<span class="pc bpc" id="L870" title="1 of 2 branches missed.">            if (! safeEquals(mySymbolNames[i], subsetSymbols[i]))</span>
-<span class="nc" id="L871">                return false;</span>
+<span class="pc bpc" id="L872" title="1 of 2 branches missed.">            if (! safeEquals(mySymbolNames[i], subsetSymbols[i]))</span>
+<span class="nc" id="L873">                return false;</span>
         }
 
-<span class="fc" id="L874">        return true;</span>
+<span class="fc" id="L876">        return true;</span>
     }
 
 }
