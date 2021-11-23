@@ -686,205 +686,203 @@
 <a class="jxr_linenumber" name="L678" href="#L678">678</a>             <strong class="jxr_keyword">if</strong> (ionRep.isNullValue()) <strong class="jxr_keyword">continue</strong>;
 <a class="jxr_linenumber" name="L679" href="#L679">679</a> 
 <a class="jxr_linenumber" name="L680" href="#L680">680</a>             <a name="SymbolToken" href="../../../../com/amazon/ion/SymbolToken.html#SymbolToken">SymbolToken</a> symTok = ionRep.getFieldNameSymbol();
-<a class="jxr_linenumber" name="L681" href="#L681">681</a>             <strong class="jxr_keyword">if</strong> (symTok == <strong class="jxr_keyword">null</strong>) <strong class="jxr_keyword">continue</strong>;
-<a class="jxr_linenumber" name="L682" href="#L682">682</a> 
-<a class="jxr_linenumber" name="L683" href="#L683">683</a>             <strong class="jxr_keyword">int</strong> field_id = symTok.getSid();
-<a class="jxr_linenumber" name="L684" href="#L684">684</a>             <strong class="jxr_keyword">if</strong> (field_id == UNKNOWN_SYMBOL_ID)
-<a class="jxr_linenumber" name="L685" href="#L685">685</a>             {
-<a class="jxr_linenumber" name="L686" href="#L686">686</a>                 <em class="jxr_comment">// this is a user defined reader or a pure DOM</em>
-<a class="jxr_linenumber" name="L687" href="#L687">687</a>                 <em class="jxr_comment">// we fall back to text here</em>
-<a class="jxr_linenumber" name="L688" href="#L688">688</a>                 <strong class="jxr_keyword">final</strong> String fieldName = ionRep.getFieldName();
-<a class="jxr_linenumber" name="L689" href="#L689">689</a>                 field_id = getSidForSymbolTableField(fieldName);
-<a class="jxr_linenumber" name="L690" href="#L690">690</a>             }
-<a class="jxr_linenumber" name="L691" href="#L691">691</a>             <strong class="jxr_keyword">switch</strong>(field_id)
-<a class="jxr_linenumber" name="L692" href="#L692">692</a>             {
-<a class="jxr_linenumber" name="L693" href="#L693">693</a>                 <strong class="jxr_keyword">case</strong> NAME_SID:
-<a class="jxr_linenumber" name="L694" href="#L694">694</a>                     <strong class="jxr_keyword">if</strong> (t == IonType.STRING)
-<a class="jxr_linenumber" name="L695" href="#L695">695</a>                     {
-<a class="jxr_linenumber" name="L696" href="#L696">696</a>                         name = ionRep.stringValue();
-<a class="jxr_linenumber" name="L697" href="#L697">697</a>                     }
-<a class="jxr_linenumber" name="L698" href="#L698">698</a>                     <strong class="jxr_keyword">break</strong>;
-<a class="jxr_linenumber" name="L699" href="#L699">699</a>                 <strong class="jxr_keyword">case</strong> VERSION_SID:
-<a class="jxr_linenumber" name="L700" href="#L700">700</a>                     <strong class="jxr_keyword">if</strong> (t == IonType.INT)
-<a class="jxr_linenumber" name="L701" href="#L701">701</a>                     {
-<a class="jxr_linenumber" name="L702" href="#L702">702</a>                         version = ionRep.intValue();
-<a class="jxr_linenumber" name="L703" href="#L703">703</a>                     }
-<a class="jxr_linenumber" name="L704" href="#L704">704</a>                     <strong class="jxr_keyword">break</strong>;
-<a class="jxr_linenumber" name="L705" href="#L705">705</a>                 <strong class="jxr_keyword">case</strong> MAX_ID_SID:
-<a class="jxr_linenumber" name="L706" href="#L706">706</a>                     <strong class="jxr_keyword">if</strong> (t == IonType.INT)
-<a class="jxr_linenumber" name="L707" href="#L707">707</a>                     {
-<a class="jxr_linenumber" name="L708" href="#L708">708</a>                         maxid = ionRep.intValue();
-<a class="jxr_linenumber" name="L709" href="#L709">709</a>                     }
-<a class="jxr_linenumber" name="L710" href="#L710">710</a>                     <strong class="jxr_keyword">break</strong>;
-<a class="jxr_linenumber" name="L711" href="#L711">711</a>                 <strong class="jxr_keyword">default</strong>:
-<a class="jxr_linenumber" name="L712" href="#L712">712</a>                     <em class="jxr_comment">// we just ignore anything else as "open content"</em>
-<a class="jxr_linenumber" name="L713" href="#L713">713</a>                     <strong class="jxr_keyword">break</strong>;
-<a class="jxr_linenumber" name="L714" href="#L714">714</a>             }
-<a class="jxr_linenumber" name="L715" href="#L715">715</a>         }
-<a class="jxr_linenumber" name="L716" href="#L716">716</a>         ionRep.stepOut();
-<a class="jxr_linenumber" name="L717" href="#L717">717</a> 
-<a class="jxr_linenumber" name="L718" href="#L718">718</a>         <em class="jxr_comment">// Ignore import clauses with malformed name field.</em>
-<a class="jxr_linenumber" name="L719" href="#L719">719</a>         <strong class="jxr_keyword">if</strong> (name == <strong class="jxr_keyword">null</strong> || name.length() == 0 || name.equals(ION))
-<a class="jxr_linenumber" name="L720" href="#L720">720</a>         {
-<a class="jxr_linenumber" name="L721" href="#L721">721</a>             <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">null</strong>;
-<a class="jxr_linenumber" name="L722" href="#L722">722</a>         }
-<a class="jxr_linenumber" name="L723" href="#L723">723</a> 
-<a class="jxr_linenumber" name="L724" href="#L724">724</a>         <strong class="jxr_keyword">if</strong> (version &lt; 1)
-<a class="jxr_linenumber" name="L725" href="#L725">725</a>         {
-<a class="jxr_linenumber" name="L726" href="#L726">726</a>             version = 1;
-<a class="jxr_linenumber" name="L727" href="#L727">727</a>         }
-<a class="jxr_linenumber" name="L728" href="#L728">728</a> 
-<a class="jxr_linenumber" name="L729" href="#L729">729</a>         <a name="SymbolTable" href="../../../../com/amazon/ion/SymbolTable.html#SymbolTable">SymbolTable</a> itab = <strong class="jxr_keyword">null</strong>;
-<a class="jxr_linenumber" name="L730" href="#L730">730</a>         <strong class="jxr_keyword">if</strong> (catalog != <strong class="jxr_keyword">null</strong>)
-<a class="jxr_linenumber" name="L731" href="#L731">731</a>         {
-<a class="jxr_linenumber" name="L732" href="#L732">732</a>             itab = catalog.getTable(name, version);
-<a class="jxr_linenumber" name="L733" href="#L733">733</a>         }
-<a class="jxr_linenumber" name="L734" href="#L734">734</a>         <strong class="jxr_keyword">if</strong> (maxid &lt; 0)
-<a class="jxr_linenumber" name="L735" href="#L735">735</a>         {
-<a class="jxr_linenumber" name="L736" href="#L736">736</a>             <strong class="jxr_keyword">if</strong> (itab == <strong class="jxr_keyword">null</strong> || version != itab.getVersion())
-<a class="jxr_linenumber" name="L737" href="#L737">737</a>             {
-<a class="jxr_linenumber" name="L738" href="#L738">738</a>                 String message =
-<a class="jxr_linenumber" name="L739" href="#L739">739</a>                     <span class="jxr_string">"Import of shared table "</span>
-<a class="jxr_linenumber" name="L740" href="#L740">740</a>                         + IonTextUtils.printString(name)
-<a class="jxr_linenumber" name="L741" href="#L741">741</a>                         + <span class="jxr_string">" lacks a valid max_id field, but an exact match was not"</span>
-<a class="jxr_linenumber" name="L742" href="#L742">742</a>                         + <span class="jxr_string">" found in the catalog"</span>;
-<a class="jxr_linenumber" name="L743" href="#L743">743</a>                 <strong class="jxr_keyword">if</strong> (itab != <strong class="jxr_keyword">null</strong>)
-<a class="jxr_linenumber" name="L744" href="#L744">744</a>                 {
-<a class="jxr_linenumber" name="L745" href="#L745">745</a>                     message += <span class="jxr_string">" (found version "</span> + itab.getVersion() + <span class="jxr_string">")"</span>;
-<a class="jxr_linenumber" name="L746" href="#L746">746</a>                 }
-<a class="jxr_linenumber" name="L747" href="#L747">747</a>                 <em class="jxr_comment">// TODO custom exception</em>
-<a class="jxr_linenumber" name="L748" href="#L748">748</a>                 <strong class="jxr_keyword">throw</strong> <strong class="jxr_keyword">new</strong> <a name="IonException" href="../../../../com/amazon/ion/IonException.html#IonException">IonException</a>(message);
-<a class="jxr_linenumber" name="L749" href="#L749">749</a>             }
-<a class="jxr_linenumber" name="L750" href="#L750">750</a> 
-<a class="jxr_linenumber" name="L751" href="#L751">751</a>             <em class="jxr_comment">// Exact match is found, but max_id is undefined in import</em>
-<a class="jxr_linenumber" name="L752" href="#L752">752</a>             <em class="jxr_comment">// declaration, set max_id to largest sid of shared symtab</em>
-<a class="jxr_linenumber" name="L753" href="#L753">753</a>             maxid = itab.getMaxId();
-<a class="jxr_linenumber" name="L754" href="#L754">754</a>         }
-<a class="jxr_linenumber" name="L755" href="#L755">755</a> 
-<a class="jxr_linenumber" name="L756" href="#L756">756</a>         <strong class="jxr_keyword">if</strong> (itab == <strong class="jxr_keyword">null</strong>)
-<a class="jxr_linenumber" name="L757" href="#L757">757</a>         {
-<a class="jxr_linenumber" name="L758" href="#L758">758</a>             assert maxid &gt;= 0;
-<a class="jxr_linenumber" name="L759" href="#L759">759</a> 
-<a class="jxr_linenumber" name="L760" href="#L760">760</a>             <em class="jxr_comment">// Construct substitute table with max_id undefined symbols</em>
-<a class="jxr_linenumber" name="L761" href="#L761">761</a>             itab = <strong class="jxr_keyword">new</strong> <a name="SubstituteSymbolTable" href="../../../../com/amazon/ion/impl/SubstituteSymbolTable.html#SubstituteSymbolTable">SubstituteSymbolTable</a>(name, version, maxid);
-<a class="jxr_linenumber" name="L762" href="#L762">762</a>         }
-<a class="jxr_linenumber" name="L763" href="#L763">763</a>         <strong class="jxr_keyword">else</strong> <strong class="jxr_keyword">if</strong> (itab.getVersion() != version || itab.getMaxId() != maxid)
-<a class="jxr_linenumber" name="L764" href="#L764">764</a>         {
-<a class="jxr_linenumber" name="L765" href="#L765">765</a>             <em class="jxr_comment">// A match was found BUT specs are not an exact match</em>
-<a class="jxr_linenumber" name="L766" href="#L766">766</a>             <em class="jxr_comment">// Construct a substitute with correct specs, containing the</em>
-<a class="jxr_linenumber" name="L767" href="#L767">767</a>             <em class="jxr_comment">// original import table that was found</em>
-<a class="jxr_linenumber" name="L768" href="#L768">768</a>             itab = <strong class="jxr_keyword">new</strong> <a name="SubstituteSymbolTable" href="../../../../com/amazon/ion/impl/SubstituteSymbolTable.html#SubstituteSymbolTable">SubstituteSymbolTable</a>(itab, version, maxid);
-<a class="jxr_linenumber" name="L769" href="#L769">769</a>         }
-<a class="jxr_linenumber" name="L770" href="#L770">770</a> 
-<a class="jxr_linenumber" name="L771" href="#L771">771</a>         <strong class="jxr_keyword">return</strong> itab;
-<a class="jxr_linenumber" name="L772" href="#L772">772</a>     }
-<a class="jxr_linenumber" name="L773" href="#L773">773</a> 
-<a class="jxr_linenumber" name="L774" href="#L774">774</a>     <em class="jxr_javadoccomment">/**</em>
-<a class="jxr_linenumber" name="L775" href="#L775">775</a> <em class="jxr_javadoccomment">     * Generate the string representation of a symbol with an unknown id.</em>
-<a class="jxr_linenumber" name="L776" href="#L776">776</a> <em class="jxr_javadoccomment">     * @param id must be a value greater than zero.</em>
-<a class="jxr_linenumber" name="L777" href="#L777">777</a> <em class="jxr_javadoccomment">     * @return the symbol name, of the form &lt;code&gt;$NNN&lt;/code&gt; where NNN is the</em>
-<a class="jxr_linenumber" name="L778" href="#L778">778</a> <em class="jxr_javadoccomment">     * integer rendering of &lt;code&gt;id&lt;/code&gt;</em>
-<a class="jxr_linenumber" name="L779" href="#L779">779</a> <em class="jxr_javadoccomment">     */</em>
-<a class="jxr_linenumber" name="L780" href="#L780">780</a>     <strong class="jxr_keyword">public</strong> <strong class="jxr_keyword">static</strong> String unknownSymbolName(<strong class="jxr_keyword">int</strong> id)
-<a class="jxr_linenumber" name="L781" href="#L781">781</a>     {
-<a class="jxr_linenumber" name="L782" href="#L782">782</a>         assert id &gt; 0;
-<a class="jxr_linenumber" name="L783" href="#L783">783</a>         <strong class="jxr_keyword">return</strong> <span class="jxr_string">"$"</span> + id;
-<a class="jxr_linenumber" name="L784" href="#L784">784</a>     }
-<a class="jxr_linenumber" name="L785" href="#L785">785</a> 
-<a class="jxr_linenumber" name="L786" href="#L786">786</a>     @Override
-<a class="jxr_linenumber" name="L787" href="#L787">787</a>     <strong class="jxr_keyword">public</strong> String toString()
-<a class="jxr_linenumber" name="L788" href="#L788">788</a>     {
-<a class="jxr_linenumber" name="L789" href="#L789">789</a>         <strong class="jxr_keyword">return</strong> <span class="jxr_string">"(LocalSymbolTable max_id:"</span> + getMaxId() + ')';
-<a class="jxr_linenumber" name="L790" href="#L790">790</a>     }
-<a class="jxr_linenumber" name="L791" href="#L791">791</a> 
-<a class="jxr_linenumber" name="L792" href="#L792">792</a>     <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">static</strong> <strong class="jxr_keyword">final</strong> <strong class="jxr_keyword">class</strong> SymbolIterator
-<a class="jxr_linenumber" name="L793" href="#L793">793</a>         <strong class="jxr_keyword">implements</strong> Iterator&lt;String&gt;
-<a class="jxr_linenumber" name="L794" href="#L794">794</a>     {
-<a class="jxr_linenumber" name="L795" href="#L795">795</a>         <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">final</strong> String[] mySymbolNames;
-<a class="jxr_linenumber" name="L796" href="#L796">796</a>         <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">final</strong> <strong class="jxr_keyword">int</strong>      mySymbolsCount;
-<a class="jxr_linenumber" name="L797" href="#L797">797</a>         <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">int</strong>            _idx = 0;
-<a class="jxr_linenumber" name="L798" href="#L798">798</a> 
-<a class="jxr_linenumber" name="L799" href="#L799">799</a>         SymbolIterator(String[] symbolNames, <strong class="jxr_keyword">int</strong> count)
-<a class="jxr_linenumber" name="L800" href="#L800">800</a>         {
-<a class="jxr_linenumber" name="L801" href="#L801">801</a>             mySymbolNames = symbolNames;
-<a class="jxr_linenumber" name="L802" href="#L802">802</a>             mySymbolsCount = count;
-<a class="jxr_linenumber" name="L803" href="#L803">803</a>         }
-<a class="jxr_linenumber" name="L804" href="#L804">804</a> 
-<a class="jxr_linenumber" name="L805" href="#L805">805</a>         <strong class="jxr_keyword">public</strong> <strong class="jxr_keyword">boolean</strong> hasNext()
-<a class="jxr_linenumber" name="L806" href="#L806">806</a>         {
-<a class="jxr_linenumber" name="L807" href="#L807">807</a>             <strong class="jxr_keyword">if</strong> (_idx &lt; mySymbolsCount)
-<a class="jxr_linenumber" name="L808" href="#L808">808</a>             {
-<a class="jxr_linenumber" name="L809" href="#L809">809</a>                 <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">true</strong>;
-<a class="jxr_linenumber" name="L810" href="#L810">810</a>             }
-<a class="jxr_linenumber" name="L811" href="#L811">811</a>             <strong class="jxr_keyword">return</strong> false;
-<a class="jxr_linenumber" name="L812" href="#L812">812</a>         }
-<a class="jxr_linenumber" name="L813" href="#L813">813</a> 
-<a class="jxr_linenumber" name="L814" href="#L814">814</a>         <strong class="jxr_keyword">public</strong> String next()
-<a class="jxr_linenumber" name="L815" href="#L815">815</a>         {
-<a class="jxr_linenumber" name="L816" href="#L816">816</a>             <strong class="jxr_keyword">if</strong> (_idx &lt; mySymbolsCount)
-<a class="jxr_linenumber" name="L817" href="#L817">817</a>             {
-<a class="jxr_linenumber" name="L818" href="#L818">818</a>                 <strong class="jxr_keyword">return</strong> mySymbolNames[_idx++];
-<a class="jxr_linenumber" name="L819" href="#L819">819</a>             }
-<a class="jxr_linenumber" name="L820" href="#L820">820</a>             <strong class="jxr_keyword">throw</strong> <strong class="jxr_keyword">new</strong> NoSuchElementException();
-<a class="jxr_linenumber" name="L821" href="#L821">821</a>         }
-<a class="jxr_linenumber" name="L822" href="#L822">822</a> 
-<a class="jxr_linenumber" name="L823" href="#L823">823</a>         <strong class="jxr_keyword">public</strong> <strong class="jxr_keyword">void</strong> remove()
-<a class="jxr_linenumber" name="L824" href="#L824">824</a>         {
-<a class="jxr_linenumber" name="L825" href="#L825">825</a>             <strong class="jxr_keyword">throw</strong> <strong class="jxr_keyword">new</strong> UnsupportedOperationException();
-<a class="jxr_linenumber" name="L826" href="#L826">826</a>         }
-<a class="jxr_linenumber" name="L827" href="#L827">827</a>     }
-<a class="jxr_linenumber" name="L828" href="#L828">828</a> 
-<a class="jxr_linenumber" name="L829" href="#L829">829</a>     <em class="jxr_javadoccomment">/**</em>
-<a class="jxr_linenumber" name="L830" href="#L830">830</a> <em class="jxr_javadoccomment">     * This method, and the context from which it is called, assumes that the</em>
-<a class="jxr_linenumber" name="L831" href="#L831">831</a> <em class="jxr_javadoccomment">     * symtabs are not being mutated by another thread.</em>
-<a class="jxr_linenumber" name="L832" href="#L832">832</a> <em class="jxr_javadoccomment">     * Therefore it doesn't use synchronization.</em>
-<a class="jxr_linenumber" name="L833" href="#L833">833</a> <em class="jxr_javadoccomment">     */</em>
-<a class="jxr_linenumber" name="L834" href="#L834">834</a>     <strong class="jxr_keyword">boolean</strong> symtabExtends(<a name="SymbolTable" href="../../../../com/amazon/ion/SymbolTable.html#SymbolTable">SymbolTable</a> other)
-<a class="jxr_linenumber" name="L835" href="#L835">835</a>     {
-<a class="jxr_linenumber" name="L836" href="#L836">836</a>         <em class="jxr_comment">// Throws ClassCastException if other isn't a local symtab</em>
-<a class="jxr_linenumber" name="L837" href="#L837">837</a>         <a name="LocalSymbolTable" <a name="LocalSymbolTable" href="../../../../com/amazon/ion/impl/LocalSymbolTable.html#LocalSymbolTable">LocalSymbolTable</a>./com/amazon/ion/impl/LocalSymbolTable.html#LocalSymbolTable">LocalSymbolTable</a> subset = (<a name="LocalSymbolTable" href="../../../../com/amazon/ion/impl/LocalSymbolTable.html#LocalSymbolTable">LocalSymbolTable</a>) other;
+<a class="jxr_linenumber" name="L681" href="#L681">681</a>             <strong class="jxr_keyword">int</strong> field_id = symTok.getSid();
+<a class="jxr_linenumber" name="L682" href="#L682">682</a>             <strong class="jxr_keyword">if</strong> (field_id == UNKNOWN_SYMBOL_ID)
+<a class="jxr_linenumber" name="L683" href="#L683">683</a>             {
+<a class="jxr_linenumber" name="L684" href="#L684">684</a>                 <em class="jxr_comment">// this is a user defined reader or a pure DOM</em>
+<a class="jxr_linenumber" name="L685" href="#L685">685</a>                 <em class="jxr_comment">// we fall back to text here</em>
+<a class="jxr_linenumber" name="L686" href="#L686">686</a>                 <strong class="jxr_keyword">final</strong> String fieldName = ionRep.getFieldName();
+<a class="jxr_linenumber" name="L687" href="#L687">687</a>                 field_id = getSidForSymbolTableField(fieldName);
+<a class="jxr_linenumber" name="L688" href="#L688">688</a>             }
+<a class="jxr_linenumber" name="L689" href="#L689">689</a>             <strong class="jxr_keyword">switch</strong>(field_id)
+<a class="jxr_linenumber" name="L690" href="#L690">690</a>             {
+<a class="jxr_linenumber" name="L691" href="#L691">691</a>                 <strong class="jxr_keyword">case</strong> NAME_SID:
+<a class="jxr_linenumber" name="L692" href="#L692">692</a>                     <strong class="jxr_keyword">if</strong> (t == IonType.STRING)
+<a class="jxr_linenumber" name="L693" href="#L693">693</a>                     {
+<a class="jxr_linenumber" name="L694" href="#L694">694</a>                         name = ionRep.stringValue();
+<a class="jxr_linenumber" name="L695" href="#L695">695</a>                     }
+<a class="jxr_linenumber" name="L696" href="#L696">696</a>                     <strong class="jxr_keyword">break</strong>;
+<a class="jxr_linenumber" name="L697" href="#L697">697</a>                 <strong class="jxr_keyword">case</strong> VERSION_SID:
+<a class="jxr_linenumber" name="L698" href="#L698">698</a>                     <strong class="jxr_keyword">if</strong> (t == IonType.INT)
+<a class="jxr_linenumber" name="L699" href="#L699">699</a>                     {
+<a class="jxr_linenumber" name="L700" href="#L700">700</a>                         version = ionRep.intValue();
+<a class="jxr_linenumber" name="L701" href="#L701">701</a>                     }
+<a class="jxr_linenumber" name="L702" href="#L702">702</a>                     <strong class="jxr_keyword">break</strong>;
+<a class="jxr_linenumber" name="L703" href="#L703">703</a>                 <strong class="jxr_keyword">case</strong> MAX_ID_SID:
+<a class="jxr_linenumber" name="L704" href="#L704">704</a>                     <strong class="jxr_keyword">if</strong> (t == IonType.INT)
+<a class="jxr_linenumber" name="L705" href="#L705">705</a>                     {
+<a class="jxr_linenumber" name="L706" href="#L706">706</a>                         maxid = ionRep.intValue();
+<a class="jxr_linenumber" name="L707" href="#L707">707</a>                     }
+<a class="jxr_linenumber" name="L708" href="#L708">708</a>                     <strong class="jxr_keyword">break</strong>;
+<a class="jxr_linenumber" name="L709" href="#L709">709</a>                 <strong class="jxr_keyword">default</strong>:
+<a class="jxr_linenumber" name="L710" href="#L710">710</a>                     <em class="jxr_comment">// we just ignore anything else as "open content"</em>
+<a class="jxr_linenumber" name="L711" href="#L711">711</a>                     <strong class="jxr_keyword">break</strong>;
+<a class="jxr_linenumber" name="L712" href="#L712">712</a>             }
+<a class="jxr_linenumber" name="L713" href="#L713">713</a>         }
+<a class="jxr_linenumber" name="L714" href="#L714">714</a>         ionRep.stepOut();
+<a class="jxr_linenumber" name="L715" href="#L715">715</a> 
+<a class="jxr_linenumber" name="L716" href="#L716">716</a>         <em class="jxr_comment">// Ignore import clauses with malformed name field.</em>
+<a class="jxr_linenumber" name="L717" href="#L717">717</a>         <strong class="jxr_keyword">if</strong> (name == <strong class="jxr_keyword">null</strong> || name.length() == 0 || name.equals(ION))
+<a class="jxr_linenumber" name="L718" href="#L718">718</a>         {
+<a class="jxr_linenumber" name="L719" href="#L719">719</a>             <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">null</strong>;
+<a class="jxr_linenumber" name="L720" href="#L720">720</a>         }
+<a class="jxr_linenumber" name="L721" href="#L721">721</a> 
+<a class="jxr_linenumber" name="L722" href="#L722">722</a>         <strong class="jxr_keyword">if</strong> (version &lt; 1)
+<a class="jxr_linenumber" name="L723" href="#L723">723</a>         {
+<a class="jxr_linenumber" name="L724" href="#L724">724</a>             version = 1;
+<a class="jxr_linenumber" name="L725" href="#L725">725</a>         }
+<a class="jxr_linenumber" name="L726" href="#L726">726</a> 
+<a class="jxr_linenumber" name="L727" href="#L727">727</a>         <a name="SymbolTable" href="../../../../com/amazon/ion/SymbolTable.html#SymbolTable">SymbolTable</a> itab = <strong class="jxr_keyword">null</strong>;
+<a class="jxr_linenumber" name="L728" href="#L728">728</a>         <strong class="jxr_keyword">if</strong> (catalog != <strong class="jxr_keyword">null</strong>)
+<a class="jxr_linenumber" name="L729" href="#L729">729</a>         {
+<a class="jxr_linenumber" name="L730" href="#L730">730</a>             itab = catalog.getTable(name, version);
+<a class="jxr_linenumber" name="L731" href="#L731">731</a>         }
+<a class="jxr_linenumber" name="L732" href="#L732">732</a>         <strong class="jxr_keyword">if</strong> (maxid &lt; 0)
+<a class="jxr_linenumber" name="L733" href="#L733">733</a>         {
+<a class="jxr_linenumber" name="L734" href="#L734">734</a>             <strong class="jxr_keyword">if</strong> (itab == <strong class="jxr_keyword">null</strong> || version != itab.getVersion())
+<a class="jxr_linenumber" name="L735" href="#L735">735</a>             {
+<a class="jxr_linenumber" name="L736" href="#L736">736</a>                 String message =
+<a class="jxr_linenumber" name="L737" href="#L737">737</a>                     <span class="jxr_string">"Import of shared table "</span>
+<a class="jxr_linenumber" name="L738" href="#L738">738</a>                         + IonTextUtils.printString(name)
+<a class="jxr_linenumber" name="L739" href="#L739">739</a>                         + <span class="jxr_string">" lacks a valid max_id field, but an exact match was not"</span>
+<a class="jxr_linenumber" name="L740" href="#L740">740</a>                         + <span class="jxr_string">" found in the catalog"</span>;
+<a class="jxr_linenumber" name="L741" href="#L741">741</a>                 <strong class="jxr_keyword">if</strong> (itab != <strong class="jxr_keyword">null</strong>)
+<a class="jxr_linenumber" name="L742" href="#L742">742</a>                 {
+<a class="jxr_linenumber" name="L743" href="#L743">743</a>                     message += <span class="jxr_string">" (found version "</span> + itab.getVersion() + <span class="jxr_string">")"</span>;
+<a class="jxr_linenumber" name="L744" href="#L744">744</a>                 }
+<a class="jxr_linenumber" name="L745" href="#L745">745</a>                 <em class="jxr_comment">// TODO custom exception</em>
+<a class="jxr_linenumber" name="L746" href="#L746">746</a>                 <strong class="jxr_keyword">throw</strong> <strong class="jxr_keyword">new</strong> <a name="IonException" href="../../../../com/amazon/ion/IonException.html#IonException">IonException</a>(message);
+<a class="jxr_linenumber" name="L747" href="#L747">747</a>             }
+<a class="jxr_linenumber" name="L748" href="#L748">748</a> 
+<a class="jxr_linenumber" name="L749" href="#L749">749</a>             <em class="jxr_comment">// Exact match is found, but max_id is undefined in import</em>
+<a class="jxr_linenumber" name="L750" href="#L750">750</a>             <em class="jxr_comment">// declaration, set max_id to largest sid of shared symtab</em>
+<a class="jxr_linenumber" name="L751" href="#L751">751</a>             maxid = itab.getMaxId();
+<a class="jxr_linenumber" name="L752" href="#L752">752</a>         }
+<a class="jxr_linenumber" name="L753" href="#L753">753</a> 
+<a class="jxr_linenumber" name="L754" href="#L754">754</a>         <strong class="jxr_keyword">if</strong> (itab == <strong class="jxr_keyword">null</strong>)
+<a class="jxr_linenumber" name="L755" href="#L755">755</a>         {
+<a class="jxr_linenumber" name="L756" href="#L756">756</a>             assert maxid &gt;= 0;
+<a class="jxr_linenumber" name="L757" href="#L757">757</a> 
+<a class="jxr_linenumber" name="L758" href="#L758">758</a>             <em class="jxr_comment">// Construct substitute table with max_id undefined symbols</em>
+<a class="jxr_linenumber" name="L759" href="#L759">759</a>             itab = <strong class="jxr_keyword">new</strong> <a name="SubstituteSymbolTable" href="../../../../com/amazon/ion/impl/SubstituteSymbolTable.html#SubstituteSymbolTable">SubstituteSymbolTable</a>(name, version, maxid);
+<a class="jxr_linenumber" name="L760" href="#L760">760</a>         }
+<a class="jxr_linenumber" name="L761" href="#L761">761</a>         <strong class="jxr_keyword">else</strong> <strong class="jxr_keyword">if</strong> (itab.getVersion() != version || itab.getMaxId() != maxid)
+<a class="jxr_linenumber" name="L762" href="#L762">762</a>         {
+<a class="jxr_linenumber" name="L763" href="#L763">763</a>             <em class="jxr_comment">// A match was found BUT specs are not an exact match</em>
+<a class="jxr_linenumber" name="L764" href="#L764">764</a>             <em class="jxr_comment">// Construct a substitute with correct specs, containing the</em>
+<a class="jxr_linenumber" name="L765" href="#L765">765</a>             <em class="jxr_comment">// original import table that was found</em>
+<a class="jxr_linenumber" name="L766" href="#L766">766</a>             itab = <strong class="jxr_keyword">new</strong> <a name="SubstituteSymbolTable" href="../../../../com/amazon/ion/impl/SubstituteSymbolTable.html#SubstituteSymbolTable">SubstituteSymbolTable</a>(itab, version, maxid);
+<a class="jxr_linenumber" name="L767" href="#L767">767</a>         }
+<a class="jxr_linenumber" name="L768" href="#L768">768</a> 
+<a class="jxr_linenumber" name="L769" href="#L769">769</a>         <strong class="jxr_keyword">return</strong> itab;
+<a class="jxr_linenumber" name="L770" href="#L770">770</a>     }
+<a class="jxr_linenumber" name="L771" href="#L771">771</a> 
+<a class="jxr_linenumber" name="L772" href="#L772">772</a>     <em class="jxr_javadoccomment">/**</em>
+<a class="jxr_linenumber" name="L773" href="#L773">773</a> <em class="jxr_javadoccomment">     * Generate the string representation of a symbol with an unknown id.</em>
+<a class="jxr_linenumber" name="L774" href="#L774">774</a> <em class="jxr_javadoccomment">     * @param id must be a value greater than zero.</em>
+<a class="jxr_linenumber" name="L775" href="#L775">775</a> <em class="jxr_javadoccomment">     * @return the symbol name, of the form &lt;code&gt;$NNN&lt;/code&gt; where NNN is the</em>
+<a class="jxr_linenumber" name="L776" href="#L776">776</a> <em class="jxr_javadoccomment">     * integer rendering of &lt;code&gt;id&lt;/code&gt;</em>
+<a class="jxr_linenumber" name="L777" href="#L777">777</a> <em class="jxr_javadoccomment">     */</em>
+<a class="jxr_linenumber" name="L778" href="#L778">778</a>     <strong class="jxr_keyword">public</strong> <strong class="jxr_keyword">static</strong> String unknownSymbolName(<strong class="jxr_keyword">int</strong> id)
+<a class="jxr_linenumber" name="L779" href="#L779">779</a>     {
+<a class="jxr_linenumber" name="L780" href="#L780">780</a>         assert id &gt; 0;
+<a class="jxr_linenumber" name="L781" href="#L781">781</a>         <strong class="jxr_keyword">return</strong> <span class="jxr_string">"$"</span> + id;
+<a class="jxr_linenumber" name="L782" href="#L782">782</a>     }
+<a class="jxr_linenumber" name="L783" href="#L783">783</a> 
+<a class="jxr_linenumber" name="L784" href="#L784">784</a>     @Override
+<a class="jxr_linenumber" name="L785" href="#L785">785</a>     <strong class="jxr_keyword">public</strong> String toString()
+<a class="jxr_linenumber" name="L786" href="#L786">786</a>     {
+<a class="jxr_linenumber" name="L787" href="#L787">787</a>         <strong class="jxr_keyword">return</strong> <span class="jxr_string">"(LocalSymbolTable max_id:"</span> + getMaxId() + ')';
+<a class="jxr_linenumber" name="L788" href="#L788">788</a>     }
+<a class="jxr_linenumber" name="L789" href="#L789">789</a> 
+<a class="jxr_linenumber" name="L790" href="#L790">790</a>     <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">static</strong> <strong class="jxr_keyword">final</strong> <strong class="jxr_keyword">class</strong> SymbolIterator
+<a class="jxr_linenumber" name="L791" href="#L791">791</a>         <strong class="jxr_keyword">implements</strong> Iterator&lt;String&gt;
+<a class="jxr_linenumber" name="L792" href="#L792">792</a>     {
+<a class="jxr_linenumber" name="L793" href="#L793">793</a>         <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">final</strong> String[] mySymbolNames;
+<a class="jxr_linenumber" name="L794" href="#L794">794</a>         <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">final</strong> <strong class="jxr_keyword">int</strong>      mySymbolsCount;
+<a class="jxr_linenumber" name="L795" href="#L795">795</a>         <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">int</strong>            _idx = 0;
+<a class="jxr_linenumber" name="L796" href="#L796">796</a> 
+<a class="jxr_linenumber" name="L797" href="#L797">797</a>         SymbolIterator(String[] symbolNames, <strong class="jxr_keyword">int</strong> count)
+<a class="jxr_linenumber" name="L798" href="#L798">798</a>         {
+<a class="jxr_linenumber" name="L799" href="#L799">799</a>             mySymbolNames = symbolNames;
+<a class="jxr_linenumber" name="L800" href="#L800">800</a>             mySymbolsCount = count;
+<a class="jxr_linenumber" name="L801" href="#L801">801</a>         }
+<a class="jxr_linenumber" name="L802" href="#L802">802</a> 
+<a class="jxr_linenumber" name="L803" href="#L803">803</a>         <strong class="jxr_keyword">public</strong> <strong class="jxr_keyword">boolean</strong> hasNext()
+<a class="jxr_linenumber" name="L804" href="#L804">804</a>         {
+<a class="jxr_linenumber" name="L805" href="#L805">805</a>             <strong class="jxr_keyword">if</strong> (_idx &lt; mySymbolsCount)
+<a class="jxr_linenumber" name="L806" href="#L806">806</a>             {
+<a class="jxr_linenumber" name="L807" href="#L807">807</a>                 <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">true</strong>;
+<a class="jxr_linenumber" name="L808" href="#L808">808</a>             }
+<a class="jxr_linenumber" name="L809" href="#L809">809</a>             <strong class="jxr_keyword">return</strong> false;
+<a class="jxr_linenumber" name="L810" href="#L810">810</a>         }
+<a class="jxr_linenumber" name="L811" href="#L811">811</a> 
+<a class="jxr_linenumber" name="L812" href="#L812">812</a>         <strong class="jxr_keyword">public</strong> String next()
+<a class="jxr_linenumber" name="L813" href="#L813">813</a>         {
+<a class="jxr_linenumber" name="L814" href="#L814">814</a>             <strong class="jxr_keyword">if</strong> (_idx &lt; mySymbolsCount)
+<a class="jxr_linenumber" name="L815" href="#L815">815</a>             {
+<a class="jxr_linenumber" name="L816" href="#L816">816</a>                 <strong class="jxr_keyword">return</strong> mySymbolNames[_idx++];
+<a class="jxr_linenumber" name="L817" href="#L817">817</a>             }
+<a class="jxr_linenumber" name="L818" href="#L818">818</a>             <strong class="jxr_keyword">throw</strong> <strong class="jxr_keyword">new</strong> NoSuchElementException();
+<a class="jxr_linenumber" name="L819" href="#L819">819</a>         }
+<a class="jxr_linenumber" name="L820" href="#L820">820</a> 
+<a class="jxr_linenumber" name="L821" href="#L821">821</a>         <strong class="jxr_keyword">public</strong> <strong class="jxr_keyword">void</strong> remove()
+<a class="jxr_linenumber" name="L822" href="#L822">822</a>         {
+<a class="jxr_linenumber" name="L823" href="#L823">823</a>             <strong class="jxr_keyword">throw</strong> <strong class="jxr_keyword">new</strong> UnsupportedOperationException();
+<a class="jxr_linenumber" name="L824" href="#L824">824</a>         }
+<a class="jxr_linenumber" name="L825" href="#L825">825</a>     }
+<a class="jxr_linenumber" name="L826" href="#L826">826</a> 
+<a class="jxr_linenumber" name="L827" href="#L827">827</a>     <em class="jxr_javadoccomment">/**</em>
+<a class="jxr_linenumber" name="L828" href="#L828">828</a> <em class="jxr_javadoccomment">     * This method, and the context from which it is called, assumes that the</em>
+<a class="jxr_linenumber" name="L829" href="#L829">829</a> <em class="jxr_javadoccomment">     * symtabs are not being mutated by another thread.</em>
+<a class="jxr_linenumber" name="L830" href="#L830">830</a> <em class="jxr_javadoccomment">     * Therefore it doesn't use synchronization.</em>
+<a class="jxr_linenumber" name="L831" href="#L831">831</a> <em class="jxr_javadoccomment">     */</em>
+<a class="jxr_linenumber" name="L832" href="#L832">832</a>     <strong class="jxr_keyword">boolean</strong> symtabExtends(<a name="SymbolTable" href="../../../../com/amazon/ion/SymbolTable.html#SymbolTable">SymbolTable</a> other)
+<a class="jxr_linenumber" name="L833" href="#L833">833</a>     {
+<a class="jxr_linenumber" name="L834" href="#L834">834</a>         <em class="jxr_comment">// Throws ClassCastException if other isn't a local symtab</em>
+<a class="jxr_linenumber" name="L835" href="#L835">835</a>         <a name="LocalSymbolTable" <a name="LocalSymbolTable" href="../../../../com/amazon/ion/impl/LocalSymbolTable.html#LocalSymbolTable">LocalSymbolTable</a>./com/amazon/ion/impl/LocalSymbolTable.html#LocalSymbolTable">LocalSymbolTable</a> subset = (<a name="LocalSymbolTable" href="../../../../com/amazon/ion/impl/LocalSymbolTable.html#LocalSymbolTable">LocalSymbolTable</a>) other;
+<a class="jxr_linenumber" name="L836" href="#L836">836</a> 
+<a class="jxr_linenumber" name="L837" href="#L837">837</a>         <em class="jxr_comment">// Gather snapshots of each LST's data, so we don't</em>
 <a class="jxr_linenumber" name="L838" href="#L838">838</a> 
-<a class="jxr_linenumber" name="L839" href="#L839">839</a>         <em class="jxr_comment">// Gather snapshots of each LST's data, so we don't</em>
-<a class="jxr_linenumber" name="L840" href="#L840">840</a> 
-<a class="jxr_linenumber" name="L841" href="#L841">841</a>         <em class="jxr_comment">// Superset must have same/more known symbols than subset.</em>
-<a class="jxr_linenumber" name="L842" href="#L842">842</a>         <strong class="jxr_keyword">if</strong> (getMaxId() &lt; subset.getMaxId()) <strong class="jxr_keyword">return</strong> false;
-<a class="jxr_linenumber" name="L843" href="#L843">843</a> 
-<a class="jxr_linenumber" name="L844" href="#L844">844</a>         <em class="jxr_comment">// TODO amzn/ion-java/issues/18 Currently, we check imports by their refs. which</em>
-<a class="jxr_linenumber" name="L845" href="#L845">845</a>         <em class="jxr_comment">//      might be overly strict; imports which are not the same ref.</em>
-<a class="jxr_linenumber" name="L846" href="#L846">846</a>         <em class="jxr_comment">//      but have the same semantic states fails the extension check.</em>
-<a class="jxr_linenumber" name="L847" href="#L847">847</a>         <strong class="jxr_keyword">if</strong> (! myImportsList.equalImports(subset.myImportsList))
-<a class="jxr_linenumber" name="L848" href="#L848">848</a>             <strong class="jxr_keyword">return</strong> false;
+<a class="jxr_linenumber" name="L839" href="#L839">839</a>         <em class="jxr_comment">// Superset must have same/more known symbols than subset.</em>
+<a class="jxr_linenumber" name="L840" href="#L840">840</a>         <strong class="jxr_keyword">if</strong> (getMaxId() &lt; subset.getMaxId()) <strong class="jxr_keyword">return</strong> false;
+<a class="jxr_linenumber" name="L841" href="#L841">841</a> 
+<a class="jxr_linenumber" name="L842" href="#L842">842</a>         <em class="jxr_comment">// TODO amzn/ion-java/issues/18 Currently, we check imports by their refs. which</em>
+<a class="jxr_linenumber" name="L843" href="#L843">843</a>         <em class="jxr_comment">//      might be overly strict; imports which are not the same ref.</em>
+<a class="jxr_linenumber" name="L844" href="#L844">844</a>         <em class="jxr_comment">//      but have the same semantic states fails the extension check.</em>
+<a class="jxr_linenumber" name="L845" href="#L845">845</a>         <strong class="jxr_keyword">if</strong> (! myImportsList.equalImports(subset.myImportsList))
+<a class="jxr_linenumber" name="L846" href="#L846">846</a>             <strong class="jxr_keyword">return</strong> false;
+<a class="jxr_linenumber" name="L847" href="#L847">847</a> 
+<a class="jxr_linenumber" name="L848" href="#L848">848</a>         <strong class="jxr_keyword">int</strong> subLocalSymbolCount = subset.mySymbolsCount;
 <a class="jxr_linenumber" name="L849" href="#L849">849</a> 
-<a class="jxr_linenumber" name="L850" href="#L850">850</a>         <strong class="jxr_keyword">int</strong> subLocalSymbolCount = subset.mySymbolsCount;
-<a class="jxr_linenumber" name="L851" href="#L851">851</a> 
-<a class="jxr_linenumber" name="L852" href="#L852">852</a>         <em class="jxr_comment">// Superset extends subset if subset doesn't have any declared symbols.</em>
-<a class="jxr_linenumber" name="L853" href="#L853">853</a>         <strong class="jxr_keyword">if</strong> (subLocalSymbolCount == 0) <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">true</strong>;
-<a class="jxr_linenumber" name="L854" href="#L854">854</a> 
-<a class="jxr_linenumber" name="L855" href="#L855">855</a>         <em class="jxr_comment">// Superset must have same/more declared (local) symbols than subset.</em>
-<a class="jxr_linenumber" name="L856" href="#L856">856</a>         <strong class="jxr_keyword">if</strong> (mySymbolsCount &lt; subLocalSymbolCount) <strong class="jxr_keyword">return</strong> false;
+<a class="jxr_linenumber" name="L850" href="#L850">850</a>         <em class="jxr_comment">// Superset extends subset if subset doesn't have any declared symbols.</em>
+<a class="jxr_linenumber" name="L851" href="#L851">851</a>         <strong class="jxr_keyword">if</strong> (subLocalSymbolCount == 0) <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">true</strong>;
+<a class="jxr_linenumber" name="L852" href="#L852">852</a> 
+<a class="jxr_linenumber" name="L853" href="#L853">853</a>         <em class="jxr_comment">// Superset must have same/more declared (local) symbols than subset.</em>
+<a class="jxr_linenumber" name="L854" href="#L854">854</a>         <strong class="jxr_keyword">if</strong> (mySymbolsCount &lt; subLocalSymbolCount) <strong class="jxr_keyword">return</strong> false;
+<a class="jxr_linenumber" name="L855" href="#L855">855</a> 
+<a class="jxr_linenumber" name="L856" href="#L856">856</a>         String[] subsetSymbols = subset.mySymbolNames;
 <a class="jxr_linenumber" name="L857" href="#L857">857</a> 
-<a class="jxr_linenumber" name="L858" href="#L858">858</a>         String[] subsetSymbols = subset.mySymbolNames;
-<a class="jxr_linenumber" name="L859" href="#L859">859</a> 
-<a class="jxr_linenumber" name="L860" href="#L860">860</a>         <em class="jxr_comment">// Before we go through the expensive iteration from the front,</em>
-<a class="jxr_linenumber" name="L861" href="#L861">861</a>         <em class="jxr_comment">// check the last (largest) declared symbol in subset beforehand</em>
-<a class="jxr_linenumber" name="L862" href="#L862">862</a>         <strong class="jxr_keyword">if</strong> (! safeEquals(mySymbolNames[subLocalSymbolCount- 1],
-<a class="jxr_linenumber" name="L863" href="#L863">863</a>                                   subsetSymbols[subLocalSymbolCount- 1]))
-<a class="jxr_linenumber" name="L864" href="#L864">864</a>         {
-<a class="jxr_linenumber" name="L865" href="#L865">865</a>             <strong class="jxr_keyword">return</strong> false;
-<a class="jxr_linenumber" name="L866" href="#L866">866</a>         }
-<a class="jxr_linenumber" name="L867" href="#L867">867</a> 
-<a class="jxr_linenumber" name="L868" href="#L868">868</a>         <em class="jxr_comment">// Now, we iterate from the first declared symbol, note that the</em>
-<a class="jxr_linenumber" name="L869" href="#L869">869</a>         <em class="jxr_comment">// iteration below is O(n)!</em>
-<a class="jxr_linenumber" name="L870" href="#L870">870</a>         <strong class="jxr_keyword">for</strong> (<strong class="jxr_keyword">int</strong> i = 0; i &lt; subLocalSymbolCount - 1; i++)
-<a class="jxr_linenumber" name="L871" href="#L871">871</a>         {
-<a class="jxr_linenumber" name="L872" href="#L872">872</a>             <strong class="jxr_keyword">if</strong> (! safeEquals(mySymbolNames[i], subsetSymbols[i]))
-<a class="jxr_linenumber" name="L873" href="#L873">873</a>                 <strong class="jxr_keyword">return</strong> false;
-<a class="jxr_linenumber" name="L874" href="#L874">874</a>         }
-<a class="jxr_linenumber" name="L875" href="#L875">875</a> 
-<a class="jxr_linenumber" name="L876" href="#L876">876</a>         <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">true</strong>;
-<a class="jxr_linenumber" name="L877" href="#L877">877</a>     }
-<a class="jxr_linenumber" name="L878" href="#L878">878</a> 
-<a class="jxr_linenumber" name="L879" href="#L879">879</a> }
+<a class="jxr_linenumber" name="L858" href="#L858">858</a>         <em class="jxr_comment">// Before we go through the expensive iteration from the front,</em>
+<a class="jxr_linenumber" name="L859" href="#L859">859</a>         <em class="jxr_comment">// check the last (largest) declared symbol in subset beforehand</em>
+<a class="jxr_linenumber" name="L860" href="#L860">860</a>         <strong class="jxr_keyword">if</strong> (! safeEquals(mySymbolNames[subLocalSymbolCount- 1],
+<a class="jxr_linenumber" name="L861" href="#L861">861</a>                                   subsetSymbols[subLocalSymbolCount- 1]))
+<a class="jxr_linenumber" name="L862" href="#L862">862</a>         {
+<a class="jxr_linenumber" name="L863" href="#L863">863</a>             <strong class="jxr_keyword">return</strong> false;
+<a class="jxr_linenumber" name="L864" href="#L864">864</a>         }
+<a class="jxr_linenumber" name="L865" href="#L865">865</a> 
+<a class="jxr_linenumber" name="L866" href="#L866">866</a>         <em class="jxr_comment">// Now, we iterate from the first declared symbol, note that the</em>
+<a class="jxr_linenumber" name="L867" href="#L867">867</a>         <em class="jxr_comment">// iteration below is O(n)!</em>
+<a class="jxr_linenumber" name="L868" href="#L868">868</a>         <strong class="jxr_keyword">for</strong> (<strong class="jxr_keyword">int</strong> i = 0; i &lt; subLocalSymbolCount - 1; i++)
+<a class="jxr_linenumber" name="L869" href="#L869">869</a>         {
+<a class="jxr_linenumber" name="L870" href="#L870">870</a>             <strong class="jxr_keyword">if</strong> (! safeEquals(mySymbolNames[i], subsetSymbols[i]))
+<a class="jxr_linenumber" name="L871" href="#L871">871</a>                 <strong class="jxr_keyword">return</strong> false;
+<a class="jxr_linenumber" name="L872" href="#L872">872</a>         }
+<a class="jxr_linenumber" name="L873" href="#L873">873</a> 
+<a class="jxr_linenumber" name="L874" href="#L874">874</a>         <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">true</strong>;
+<a class="jxr_linenumber" name="L875" href="#L875">875</a>     }
+<a class="jxr_linenumber" name="L876" href="#L876">876</a> 
+<a class="jxr_linenumber" name="L877" href="#L877">877</a> }
 </pre>
 <hr/>
 <div id="footer">Copyright &#169; 2021. All rights reserved.</div>
