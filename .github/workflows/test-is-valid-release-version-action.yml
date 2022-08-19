@@ -1,0 +1,56 @@
+# Test cases for the 'is-valid-release-version' action
+
+name: Test 'is-valid-release-version' Action
+
+on:
+  pull_request:
+    paths:
+      - '.github/*'
+  push:
+    paths:
+      - '.github/*'
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      # Parameterized testing!
+      fail-fast: false
+      matrix:
+        include:
+          - version: 1.0.0
+            expect_valid: false
+          - version: 2.0.0
+            expect_valid: true
+          - version: 1.0.0-SNAPSHOT
+            expect_valid: true
+    steps:
+      - uses: actions/checkout@v3
+      #- uses: ./.github/actions/is-valid-version
+      #  env:
+      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test output
+        id: test_output
+        uses: ./.github/actions/is-valid-version
+        with:
+          project_version: ${{ matrix.version }}
+          repo: amzn/ion-java
+      - name: Assert Expected Result
+        # The comparison looks weird, but it's done this way to force a boolean comparison
+        # rather than the default behavior of converting mismatched types to numbers.
+        # (The action output is a boolean, but
+        if: ${{ steps.test_output.output.is_valid != (matrix.expect_valid == 'true') }}
+        shell: bash
+        run: exit 1
+      - name: Test 'fail_if_invalid' option
+        id: test_fail
+        uses: ./.github/actions/is-valid-version
+        continue_on_error: ${{ matrix.expect_valid == 'false' }}
+        with:
+          project_version: ${{ matrix.version }}
+          repo: amzn/ion-java
+          fail_if_invalid: true
+      - name: Assert Expected Failure
+        if: ${{ matrix.expect_valid == 'false' && steps.test_fail.outcome != 'failure' }}
+        shell: bash
+        run: exit 1

@@ -1,0 +1,98 @@
+# This workflow runs when a commit is pushed to 'master' that has a change to the
+# 'project.version' file. Since we have a branch protection rule for 'master', a push
+# event is functionally the same as a merged PR event.
+#
+# If the project/library version is not a snapshot version, and it is greater than the
+# latest release in GitHub, then it creates a draft PR for the new library version.
+#
+# This workflow always compares against the releases in amzn/ion-java, but will create
+# a draft release in a forked repository if the workflow is triggered in a fork.
+#
+# This workflow is almost a reusable workflow that can be used by any of our repos that
+# use semantic versioned releases. In order to make it reusable, we need to move it to
+# a separate repo, update the workflow trigger ('on') to be 'workflow_call', and define
+# inputs for any context that needs to be passed in. Any repo that uses this must either
+# pass in the library version as a workflow argument, or it will need to have the
+# `project.version` file. Also, there are some references to the 'master' branch that
+# will need to be factored out (since some of our repos use 'main' as the default branch).
+# Finally, there are references to "amzn/ion-java" should come from an input variable
+# or be retrieved from the GitHub Actions context.
+# See https://docs.github.com/en/actions/using-workflows/reusing-workflows
+#
+# This could also be bundled into a composite custom action instead of a workflow.
+# See https://docs.github.com/en/actions/creating-actions/creating-a-composite-action
+
+
+name: Kick off release if the version has been increased
+on:
+  # We have a branch protection rule for master, so all commits to master require
+  # an approved PR. That means this workflow trigger is effectively equivalent to
+  # "on: PR that is merged into master"
+  push:
+    branches:
+      - 'master'
+    paths:
+      - 'project.version'
+  # Allow it to be manually triggered if necessary
+  workflow_dispatch:
+
+jobs:
+  check-version:
+    name: Check the project version
+    runs-on: ubuntu-latest
+    outputs:
+      shouldCreateRelease: ${{ steps.is-release-version.outputs.result && steps.is-greater-version.outputs.result }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get library version
+          run: |
+            echo "LIBRARY_VERSION=$(<project.version)" >> $GITHUB_ENV
+      - name: Check that library version is a release version
+        id: is-release-version
+        env:
+          LIBRARY_VERSION: ${{ env.LIBRARY_VERSION }}
+        run: |
+          if [[ "$LIBRARY_VERSION" =~ ^\d+\.\d+.\d+$ ]]; then
+            echo "result=true" >> $GITHUB_OUTPUT;
+          else
+            echo "result=false" >> $GITHUB_OUTPUT;
+          fi
+      - name: Get latest release version
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "LATEST_RELEASE_VERSION=$(gh release view -R "amzn/ion-java" --json tagName --jq '.tagName')" >> $GITHUB_ENV
+      - name: Compare the library version with the latest release version
+        # TODO: Replace this with a stricter check that the library version is one of the three
+        # possible subsequent versions. E.g. if latest version is 1.2.3, then library version
+        # should be one of 1.2.4, 1.3.0, or 2.0.0
+        id: compare-latest-release
+        uses: popematt/compare-semvers@v1
+        with:
+          first: ${{ env.LIBRARY_VERSION }}
+          second: ${{ env.LATEST_RELEASE_VERSION }}
+      - name: Check whether the library version is strictly greater than the latest release version
+        id: is-greater-version
+        run: |
+          if [[ ${{ steps.compare-latest-release.outputs.result }} == 1 ]]; then
+            echo "result=true" >> $GITHUB_OUTPUT;
+          else
+            echo "result=false" >> $GITHUB_OUTPUT;
+          fi
+  start-release:
+    name: Start a draft release
+    needs: check-version
+    if: ${{ needs.check-version.outputs.shouldCreateRelease }}
+    runs-on: ubuntu-latest
+      steps:
+      - uses: actions/checkout@v3
+      - name: Create a draft release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="v$(<project.version)"
+          # This intentionally creates the draft release in the current repo, which
+          # could be a fork, if this workflow was triggered in a fork.
+          gh release create "$RELEASE_TAG" --draft --generate-notes
