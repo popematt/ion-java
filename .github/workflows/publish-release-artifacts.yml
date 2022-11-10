@@ -39,14 +39,23 @@ jobs:
     needs: check-tag
     runs-on: ubuntu-latest
     steps:
+        # TODO: replace with artifact upload/download
       - uses: actions/checkout@v3
         with:
           submodules: recursive
       - uses: gradle/gradle-build-action@v2
         with:
           arguments: build
-      - name: set env
-        run: echo "RELEASE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+      - name: Upload Jar to GitHub release Take 2
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # TODO - reusability
+        # the location of the library(s) should be configurable as an input
+        # parameter rather than being hard coded as `build/lib/ion-java...`
+        # It should also be able to upload more than one file.
+        run: |
+          gh release upload "v$(<project.version)" "build/libs/*.jar"
       - name: Upload Jar to GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,5 +64,5 @@ jobs:
         # parameter rather than being hard coded as `build/lib/ion-java...`
         # It should also be able to upload more than one file.
         run: |
-          gh release upload "$RELEASE_TAG" "build/lib/ion-java-$(<project.version).jar"
+          gh release upload "v$(<project.version)" "build/libs/ion-java-$(<project.version).jar"
   # TODO: Add `publish-to-maven-central` job
