@@ -26,19 +26,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-      - name: get tag version
-        run: echo "RELEASE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-      - name: Get library version
-        run: |
-          echo "LIBRARY_VERSION=$(./gradlew properties | grep version | sed 's/version: /v/')" >> $GITHUB_ENV
       - name: Validate project version matches tag
         shell: bash
         run: |
+          RELEASE_TAG=${GITHUB_REF#refs/tags/}
+          PROJECT_VERSION=$(<project.version)
           echo "Project Version: $PROJECT_VERSION"
           echo "Release Tag: $RELEASE_TAG"
-          [ "$LIBRARY_VERSION" = "$RELEASE_TAG" ]
+          [ "$PROJECT_VERSION" = "$RELEASE_TAG" ] || exit 1
   publish-to-github-release:
     # only run if `check-tag` completes successfully
     needs: check-tag
@@ -60,6 +55,5 @@ jobs:
         # parameter rather than being hard coded as `build/lib/ion-java...`
         # It should also be able to upload more than one file.
         run: |
-          VERSION=$(./gradlew properties | grep version | sed 's/version: /v/')
-          gh release upload "$RELEASE_TAG" "build/lib/ion-java-$VERSION.jar"
+          gh release upload "$RELEASE_TAG" "build/lib/ion-java-$(<project.version).jar"
   # TODO: Add `publish-to-maven-central` job
