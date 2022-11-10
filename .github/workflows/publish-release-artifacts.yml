@@ -16,7 +16,7 @@ name: Publish Artifacts for Release
 
 on:
   release:
-    types: [publish]
+    type: [published]
 
 
 jobs:
