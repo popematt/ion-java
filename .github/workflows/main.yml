@@ -22,7 +22,9 @@ jobs:
         with:
           distribution: 'corretto'
           java-version: ${{ matrix.java }}
-      - run: ./gradlew build
+      - uses: gradle/gradle-build-action@v2
+        with:
+          arguments: build
       - run: ./ion-test-driver-run version
 
   check-version:
@@ -55,7 +57,9 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 11
-      - run: ./gradlew check
+      - uses: gradle/gradle-build-action@v2
+        with:
+          arguments: check
       - uses: codecov/codecov-action@v1
         with:
           file: build/reports/jacoco/test/jacocoTestReport.xml

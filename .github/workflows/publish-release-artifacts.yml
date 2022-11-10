@@ -30,12 +30,14 @@ jobs:
           submodules: recursive
       - name: get tag version
         run: echo "RELEASE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-      - name: get library version
+      - name: Get library version
         run: |
           echo "LIBRARY_VERSION=$(./gradlew properties | grep version | sed 's/version: /v/')" >> $GITHUB_ENV
-      - name: validate library version matches tag
+      - name: Validate project version matches tag
         shell: bash
         run: |
+          echo "Project Version: $PROJECT_VERSION"
+          echo "Release Tag: $RELEASE_TAG"
           [ "$LIBRARY_VERSION" = "$RELEASE_TAG" ]
   publish-to-github-release:
     # only run if `check-tag` completes successfully
@@ -45,15 +47,19 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
-      - run: ./gradlew build
+      - uses: gradle/gradle-build-action@v2
+        with:
+          arguments: build
       - name: set env
         run: echo "RELEASE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-      - uses: actions/checkout@v3
       - name: Upload Jar to GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # TODO - reusability
         # the location of the library(s) should be configurable as an input
-        # parameter rather than being hard coded as `build/lib/*`
-        run: gh release upload "$RELEASE_TAG" build/lib/*
+        # parameter rather than being hard coded as `build/lib/ion-java...`
+        # It should also be able to upload more than one file.
+        run: |
+          VERSION=$(./gradlew properties | grep version | sed 's/version: /v/')
+          gh release upload "$RELEASE_TAG" "build/lib/ion-java-$VERSION.jar"
   # TODO: Add `publish-to-maven-central` job
