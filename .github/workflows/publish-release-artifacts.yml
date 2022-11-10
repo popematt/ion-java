@@ -33,7 +33,7 @@ jobs:
           PROJECT_VERSION=$(<project.version)
           echo "Project Version: $PROJECT_VERSION"
           echo "Release Tag: $RELEASE_TAG"
-          [ "$PROJECT_VERSION" = "$RELEASE_TAG" ] || exit 1
+          [ "v$PROJECT_VERSION" = "$RELEASE_TAG" ] || exit 1
   publish-to-github-release:
     # only run if `check-tag` completes successfully
     needs: check-tag
