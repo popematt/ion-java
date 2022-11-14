@@ -16,7 +16,7 @@ jobs:
       - name: Checkout ion-test-driver
         uses: actions/checkout@master
         with:
-          repository: amzn/ion-test-driver
+          repository: popematt/ion-test-driver
           ref: master
           path: ion-test-driver
 
