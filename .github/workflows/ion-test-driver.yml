@@ -7,16 +7,17 @@ jobs:
     runs-on: macos-10.15
     steps:
       - name: Checkout ion-java
-        uses: actions/checkout@master
+        uses: actions/checkout@v2
         with:
-          repository: amzn/ion-java
-          ref: master
+          repository: popematt/ion-java
+          ref: master2
           path: ion-java
+          submodules: recursive
 
       - name: Checkout ion-test-driver
-        uses: actions/checkout@master
+        uses: actions/checkout@v2
         with:
-          repository: amzn/ion-test-driver
+          repository: popematt/ion-test-driver
           ref: master
           path: ion-test-driver
 
