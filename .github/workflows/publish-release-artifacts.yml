@@ -40,6 +40,8 @@ jobs:
     # only run if `check-tag` completes successfully
     needs: check-tag
     runs-on: ubuntu-latest
+    permissions:
+      - contents: write
     steps:
         # TODO: replace with artifact upload/download -- make sure there's no race condition with other builds also
         # uploaading an artifact.
