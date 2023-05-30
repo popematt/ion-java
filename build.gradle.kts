@@ -70,6 +70,10 @@ tasks {
         // In Java 9+ we can use `release` but for now we're still building with JDK 8, 11
     }
 
+    jar {
+        archiveClassifier.set("original")
+    }
+
     shadowJar {
         relocate("kotlin", "com.amazon.ion_.shaded.kotlin")
         minimize()
@@ -80,7 +84,7 @@ tasks {
 
         inputs.file("build/libs/ion-java-$version-all.jar")
         inputs.file(rules)
-        outputs.file("build/libs/ion-java-$version-r8.jar")
+        outputs.file("build/libs/ion-java-$version.jar")
 
         dependsOn(shadowJar)
         dependsOn(configurations.runtimeClasspath)
@@ -90,7 +94,7 @@ tasks {
         args = listOf(
             "--release",
             "--classfile",
-            "--output", "build/libs/ion-java-$version-minified.jar",
+            "--output", "build/libs/ion-java-$version.jar",
             "--pg-conf", rules.toString(),
             "--lib", System.getProperty("java.home").toString(),
             "build/libs/ion-java-$version-all.jar",

@@ -91,7 +91,7 @@ fun IonValue.childValuesOrNull(): List<IonValue>? = (this as? IonSequence)?.take
 /**
  * Returns the fields of an [IonStruct] or `null` if this [IonValue] is another type or an Ion null.
  */
-fun IonValue.fieldsOrNull(): List<Pair<String, IonValue>>? = (this as? IonStruct)?.takeIf { !it.isNullValue }?.map { it.fieldName to it }
+fun IonValue.fieldsOrNull(): List<IonValue>? = (this as? IonStruct)?.takeIf { !it.isNullValue }?.toList()
 
 /**
  * If this [IonValue] is a container type, returns an iterator over the contained values. Otherwise returns an iterator
