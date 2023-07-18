@@ -16,6 +16,7 @@ jobs:
           - java: 8
             upload_reports: true
           - java: 11
+      fail-fast: false
     steps:
       - uses: actions/checkout@v2
         with:

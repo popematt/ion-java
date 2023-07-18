@@ -4,14 +4,19 @@ import java.util.Properties
 
 
 plugins {
+    kotlin("jvm") version "1.9.0"
     java
     `maven-publish`
     jacoco
     signing
+    id("com.github.johnrengelman.shadow") version "8.1.1"
+
     id("org.cyclonedx.bom") version "1.7.2"
     id("com.github.spotbugs") version "5.0.13"
     // TODO: more static analysis. E.g.:
     // id("com.diffplug.spotless") version "6.11.0"
+
+    id("com.github.jk1.dependency-license-report") version "2.4"
 }
 
 jacoco {
@@ -20,15 +25,22 @@ jacoco {
 
 repositories {
     mavenCentral()
+    google()
 }
 
+val r8 = configurations.create("r8")
+
 dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.0")
+
     testImplementation("org.junit.jupiter:junit-jupiter:5.7.1")
     testCompileOnly("junit:junit:4.13")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
     testImplementation("org.hamcrest:hamcrest:2.2")
     testImplementation("pl.pragmatists:JUnitParams:1.1.1")
     testImplementation("com.google.code.tempus-fugit:tempus-fugit:1.1")
+
+    r8("com.android.tools:r8:8.0.40")
 }
 
 group = "com.amazon.ion"
@@ -40,24 +52,83 @@ java.sourceCompatibility = JavaVersion.VERSION_1_8
 java.targetCompatibility = JavaVersion.VERSION_1_8
 
 val isReleaseVersion: Boolean = !version.toString().endsWith("SNAPSHOT")
-val generatedJarInfoDir = "${buildDir}/generated/jar-info"
+val generatedResourcesDir = "${buildDir}/generated/main/resources"
 lateinit var sourcesArtifact: PublishArtifact
 lateinit var javadocArtifact: PublishArtifact
 
 sourceSets {
     main {
         java.srcDir("src")
-        resources.srcDir(generatedJarInfoDir)
+        resources.srcDir(generatedResourcesDir)
     }
     test {
         java.srcDir("test")
     }
 }
 
+kotlin {
+    jvmToolchain(8)
+}
+
+licenseReport {
+    outputDir = generatedResourcesDir
+    renderers = arrayOf(
+        com.github.jk1.license.render.InventoryMarkdownReportRenderer("THIRD-PARTY-LICENSES.md"),
+        com.github.jk1.license.render.TextReportRenderer(),
+    )
+
+    filters = arrayOf(com.github.jk1.license.filter.LicenseBundleNormalizer(mapOf(
+        "Apache License, Version 2.0" to "Apache-2.0",
+        "The Apache License, Version 2.0" to "Apache-2.0",
+        "The Apache Software License, Version 2.0" to "Apache-2.0",
+        "BSD Zero Clause License" to "0BSD",
+        "Eclipse Public License 2.0" to "EPL-2.0",
+        "Eclipse Public License v. 2.0" to "EPL-2.0",
+        "GNU General Public License, version 2 with the GNU Classpath Exception" to "GPL-2.0 WITH Classpath-exception-2.0",
+        "COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL) Version 1.0" to "CDDL-1.0"
+    )))
+}
+
 tasks {
     withType<JavaCompile> {
         options.encoding = "UTF-8"
         // In Java 9+ we can use `release` but for now we're still building with JDK 8, 11
+    }
+
+    jar {
+        archiveClassifier.set("original")
+    }
+
+    shadowJar {
+        (sourceSets.main.get().resources)
+        relocate("kotlin", "com.amazon.ion_.shaded.kotlin")
+        minimize()
+    }
+
+    val minifiedJar by register<JavaExec>("r8Jar") {
+        val rules = file("config/r8/rules.txt")
+
+        inputs.file("build/libs/ion-java-$version-all.jar")
+        inputs.file(rules)
+        outputs.file("build/libs/ion-java-$version.jar")
+
+        dependsOn(shadowJar)
+        dependsOn(configurations.runtimeClasspath)
+
+        classpath(r8)
+        mainClass.set("com.android.tools.r8.R8")
+        args = listOf(
+            "--release",
+            "--classfile",
+            "--output", "build/libs/ion-java-$version.jar",
+            "--pg-conf", rules.toString(),
+            "--lib", System.getProperty("java.home").toString(),
+            "build/libs/ion-java-$version-all.jar",
+        )
+    }
+
+    build {
+        dependsOn(minifiedJar)
     }
 
     javadoc {
@@ -137,18 +208,22 @@ tasks {
      * for why this is done with a properties file rather than the Jar manifest.
      */
     val generateJarInfo by creating<Task> {
+        val propertiesFile = File("$generatedResourcesDir/${project.name}.properties")
         doLast {
-            val propertiesFile = File("$generatedJarInfoDir/${project.name}.properties")
             propertiesFile.parentFile.mkdirs()
             val properties = Properties()
             properties.setProperty("build.version", version.toString())
             properties.setProperty("build.time", Instant.now().toString())
             properties.store(propertiesFile.writer(), null)
         }
-        outputs.dir(generatedJarInfoDir)
+        outputs.file(propertiesFile)
     }
 
-    processResources { dependsOn(generateJarInfo) }
+    processResources {
+        // TODO: Figure out how to include the license report without creating a circular dependency
+        // dependsOn(generateLicenseReport)
+        dependsOn(generateJarInfo)
+    }
 
     jacocoTestReport {
         dependsOn(test)
@@ -167,6 +242,16 @@ tasks {
         useJUnitPlatform()
         // report is always generated after tests run
         finalizedBy(jacocoTestReport)
+    }
+
+    val testMinified by register<Test>("testMinified") {
+        maxHeapSize = "1g" // When this line was added Xmx 512m was the default, and we saw OOMs
+        maxParallelForks = Math.max(1, Runtime.getRuntime().availableProcessors() / 2)
+        group = "verification"
+        testClassesDirs = project.sourceSets.test.get().output.classesDirs
+        classpath = project.sourceSets.test.get().runtimeClasspath + minifiedJar.outputs.files
+        dependsOn(minifiedJar)
+        useJUnitPlatform()
     }
 
     withType<Sign> {
