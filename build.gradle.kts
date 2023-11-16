@@ -352,14 +352,6 @@ tasks {
         dependsOn(jar)
         includeConfigs.set(listOf("runtimeClasspath"))
     }
-
-    publish {
-        dependsOn(minifyJar)
-    }
-
-    publishToMavenLocal {
-        dependsOn(minifyJar)
-    }
 }
 
 publishing {
