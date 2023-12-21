@@ -1,6 +1,8 @@
 # See https://www.guardsquare.com/manual/configuration/usage
--keep class !com.amazon.ion.shaded_.** { *; }
--keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keep,includecode class !com.amazon.ion.shaded_.** { *; }
+-keepattributes Signature,Exceptions,*Annotation*,
+                InnerClasses,PermittedSubclasses,EnclosingMethod,
+                Deprecated,SourceFile,LineNumberTable
 -dontoptimize
 -dontobfuscate
 -dontwarn java.sql.Timestamp
