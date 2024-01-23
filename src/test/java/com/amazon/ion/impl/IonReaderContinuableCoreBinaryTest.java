@@ -55,7 +55,7 @@ public class IonReaderContinuableCoreBinaryTest {
      * Provides an Expectation that verifies that the value on which the cursor is currently positioned has the given
      * field name SID.
      */
-    private static Expectation<IonReaderContinuableCoreBinary> fieldSid(int expectedFieldSid) {
+    private static Expectation<IonReaderContinuableCore> fieldSid(int expectedFieldSid) {
         return new Expectation<>(
             String.format("fieldSid(%d)", expectedFieldSid),
             reader -> assertEquals(expectedFieldSid, reader.getFieldId())
@@ -66,7 +66,7 @@ public class IonReaderContinuableCoreBinaryTest {
      * Provides Expectations that verify that advancing the cursor positions it on a scalar value with the given field
      * SID, without filling the scalar.
      */
-    private static ExpectationProvider<IonReaderContinuableCoreBinary> scalarFieldSid(int expectedFieldSid) {
+    private static ExpectationProvider<IonReaderContinuableCore> scalarFieldSid(int expectedFieldSid) {
         return IonCursorTestUtilities.scalar(fieldSid(expectedFieldSid));
     }
 
@@ -77,7 +77,7 @@ public class IonReaderContinuableCoreBinaryTest {
      * up-front.
      */
     @SafeVarargs
-    private static ExpectationProvider<IonReaderContinuableCoreBinary> containerFieldSid(int expectedFieldSid, ExpectationProvider<IonReaderContinuableCoreBinary>... expectations) {
+    private static ExpectationProvider<IonReaderContinuableCore> containerFieldSid(int expectedFieldSid, ExpectationProvider<IonReaderContinuableCore>... expectations) {
         return IonCursorTestUtilities.container(fieldSid(expectedFieldSid), expectations);
     }
 

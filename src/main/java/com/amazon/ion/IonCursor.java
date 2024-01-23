@@ -3,6 +3,8 @@
 
 package com.amazon.ion;
 
+import com.amazon.ion.impl.Marker;
+
 import java.io.Closeable;
 
 /**
@@ -123,4 +125,16 @@ public interface IonCursor extends Closeable {
      * incomplete value.
      */
     Event endStream();
+
+
+    /**
+     * Register an {@link IvmNotificationConsumer} to be notified whenever the reader
+     * encounters an Ion version marker.
+     * @param ivmConsumer the consumer to be notified.
+     */
+    void registerIvmNotificationConsumer(IvmNotificationConsumer ivmConsumer);
+
+    Marker parent();
+
+    Marker getValueMarker();
 }

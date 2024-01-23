@@ -3,33 +3,18 @@
 
 package com.amazon.ion.impl;
 
-import com.amazon.ion.IonBufferConfiguration;
-import com.amazon.ion.IonCatalog;
-import com.amazon.ion.IonException;
-import com.amazon.ion.IonReader;
-import com.amazon.ion.IonStruct;
-import com.amazon.ion.IonType;
-import com.amazon.ion.IonWriter;
-import com.amazon.ion.ReadOnlyValueException;
-import com.amazon.ion.SymbolTable;
-import com.amazon.ion.SymbolToken;
-import com.amazon.ion.SystemSymbols;
-import com.amazon.ion.UnknownSymbolException;
-import com.amazon.ion.ValueFactory;
+import com.amazon.ion.*;
+import com.amazon.ion.IonCursor.Event;
 import com.amazon.ion.impl.bin.IntList;
 import com.amazon.ion.system.IonReaderBuilder;
 import com.amazon.ion.system.SimpleCatalog;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
+import java.util.*;
 
 import static com.amazon.ion.SystemSymbols.IMPORTS_SID;
 import static com.amazon.ion.SystemSymbols.ION;
@@ -42,7 +27,7 @@ import static com.amazon.ion.SystemSymbols.VERSION_SID;
 /**
  * An IonCursor capable of application-level parsing of binary Ion streams.
  */
-class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBinary implements IonReaderContinuableApplication {
+class IonReaderContinuableApplicationBinary implements IonReaderContinuableApplication {
 
     // The UTF-8 encoded bytes representing the text `$ion_symbol_table`.
     private static final byte[] ION_SYMBOL_TABLE_UTF8;
@@ -60,6 +45,9 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
     // The imports for Ion 1.0 data with no shared user imports.
     private static final LocalSymbolTableImports ION_1_0_IMPORTS
         = new LocalSymbolTableImports(SharedSymbolTable.getSystemSymbolTable(1));
+
+    // The core reader, which handles lexing/parsing
+    protected final IonReaderContinuableCore coreReader;
 
     // The text representations of the symbol table that is currently in scope, indexed by symbol ID. If the element at
     // a particular index is null, that symbol has unknown text.
@@ -101,7 +89,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
      * @param length the number of bytes to be read from the byte array.
      */
     IonReaderContinuableApplicationBinary(IonReaderBuilder builder, byte[] bytes, int offset, int length) {
-        super(builder.getBufferConfiguration(), bytes, offset, length);
+        coreReader = new IonReaderContinuableCoreBinary(builder.getBufferConfiguration(), bytes, offset, length);
         this.catalog = builder.getCatalog() == null ? EMPTY_CATALOG : builder.getCatalog();
         symbols = new String[SYMBOLS_LIST_INITIAL_CAPACITY];
         symbolTableReader = new SymbolTableReader();
@@ -122,7 +110,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
      * @param alreadyReadLen the number of bytes already read from `alreadyRead`.
      */
     IonReaderContinuableApplicationBinary(final IonReaderBuilder builder, final InputStream inputStream, byte[] alreadyRead, int alreadyReadOff, int alreadyReadLen) {
-        super(builder.getBufferConfiguration(), inputStream, alreadyRead, alreadyReadOff, alreadyReadLen);
+        coreReader = new IonReaderContinuableCoreBinary(builder.getBufferConfiguration(), inputStream, alreadyRead, alreadyReadOff, alreadyReadLen);
         this.catalog = builder.getCatalog() == null ? EMPTY_CATALOG : builder.getCatalog();
         symbols = new String[SYMBOLS_LIST_INITIAL_CAPACITY];
         symbolTableReader = new SymbolTableReader();
@@ -133,20 +121,22 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             resetSymbolTable();
             resetImports();
         });
-        registerOversizedValueHandler(
+        // TODO: Find a better way to set the oversized value handler.
+        IonReaderContinuableCoreBinary binaryCoreReader = (IonReaderContinuableCoreBinary) coreReader;
+        binaryCoreReader.registerOversizedValueHandler(
             () -> {
                 boolean mightBeSymbolTable = true;
                 if (state == State.READING_VALUE) {
                     // The reader is not currently processing a symbol table.
-                    if (parent != null || !hasAnnotations) {
+                    if (binaryCoreReader.parent != null || !binaryCoreReader.hasAnnotations) {
                         // Only top-level annotated values can be symbol tables.
                         mightBeSymbolTable = false;
-                    } else if (annotationSequenceMarker.startIndex >= 0 && annotationSequenceMarker.endIndex <= limit) {
+                    } else if (binaryCoreReader.annotationSequenceMarker.startIndex >= 0 && binaryCoreReader.annotationSequenceMarker.endIndex <= binaryCoreReader.limit) {
                         // The annotations on the value are available.
-                        if (startsWithIonSymbolTable()) {
+                        if (coreReader.startsWithIonSymbolTable()) {
                             // The first annotation on the value is $ion_symbol_table. It may be a symbol table if
                             // its type is not yet known (null); it is definitely a symbol table if its type is STRUCT.
-                            IonType type = super.getType();
+                            IonType type = coreReader.getType();
                             mightBeSymbolTable = type == null || type == IonType.STRUCT;
                         } else {
                             // The first annotation on the value is not $ion_symbol_table, so it cannot be a symbol table.
@@ -156,7 +146,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                 }
                 if (mightBeSymbolTable) {
                     builder.getBufferConfiguration().getOversizedSymbolTableHandler().onOversizedSymbolTable();
-                    terminate();
+                    binaryCoreReader.terminate();
                 } else {
                     builder.getBufferConfiguration().getOversizedValueHandler().onOversizedValue();
                 }
@@ -170,23 +160,23 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
     private class AnnotationSequenceIterator implements Iterator<String> {
 
         // All of the annotation SIDs on the current value.
-        private IntList annotationSids;
+        private int[] annotationSids;
         // The index into `annotationSids` containing the next annotation to be returned.
         private int index = 0;
 
         void reset() {
             index = 0;
-            annotationSids = getAnnotationSidList();
+            annotationSids = coreReader.getAnnotationIds();
         }
 
         @Override
         public boolean hasNext() {
-            return index < annotationSids.size();
+            return index < annotationSids.length;
         }
 
         @Override
         public String next() {
-            int sid = annotationSids.get(index);
+            int sid = annotationSids[index];
             String annotation = getSymbol(sid);
             if (annotation == null) {
                 throw new UnknownSymbolException(sid);
@@ -617,19 +607,19 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private boolean valueUnavailable() {
-            Event event = fillValue();
+            Event event = coreReader.fillValue();
             return event == Event.NEEDS_DATA || event == Event.NEEDS_INSTRUCTION;
         }
 
         private void growSymbolsArray(int shortfall) {
-            int newSize = nextPowerOfTwo(symbols.length + shortfall);
+            int newSize = IonCursorBinary.nextPowerOfTwo(symbols.length + shortfall);
             String[] resized = new String[newSize];
             System.arraycopy(symbols, 0, resized, 0, localSymbolMaxOffset + 1);
             symbols = resized;
         }
 
         private void finishReadingSymbolTableStruct() {
-            stepOutOfContainer();
+            coreReader.stepOutOfContainer();
             if (!hasSeenImports) {
                 resetSymbolTable();
                 resetImports();
@@ -651,6 +641,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void readSymbolTableStructField() {
+            int fieldSid = coreReader.getFieldId();
             if (fieldSid == SYMBOLS_SID) {
                 state = State.ON_SYMBOL_TABLE_SYMBOLS;
                 if (hasSeenSymbols) {
@@ -675,14 +666,14 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void preparePossibleAppend() {
-            if (symbolValueId() != ION_SYMBOL_TABLE_SID) {
+            if (coreReader.symbolValueId() != ION_SYMBOL_TABLE_SID) {
                 resetSymbolTable();
             }
             state = State.ON_SYMBOL_TABLE_FIELD;
         }
 
         private void finishReadingImportsList() {
-            stepOutOfContainer();
+            coreReader.stepOutOfContainer();
             imports = new LocalSymbolTableImports(newImports);
             firstLocalSymbolId = imports.getMaxId() + 1;
             state = State.ON_SYMBOL_TABLE_FIELD;
@@ -694,7 +685,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void startReadingSymbol() {
-            if (IonReaderContinuableApplicationBinary.super.getType() == IonType.STRING) {
+            if (coreReader.getType() == IonType.STRING) {
                 state = State.READING_SYMBOL_TABLE_SYMBOL;
             } else {
                 newSymbols.add(null);
@@ -707,7 +698,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void finishReadingSymbolsList() {
-            stepOutOfContainer();
+            coreReader.stepOutOfContainer();
             state = State.ON_SYMBOL_TABLE_FIELD;
         }
 
@@ -715,14 +706,14 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             name = null;
             version = 1;
             maxId = -1;
-            if (IonReaderContinuableApplicationBinary.super.getType() == IonType.STRUCT) {
-                stepIntoContainer();
+            if (coreReader.getType() == IonType.STRUCT) {
+                coreReader.stepIntoContainer();
                 state = State.READING_SYMBOL_TABLE_IMPORT_STRUCT;
             }
         }
 
         private void finishReadingImportStruct() {
-            stepOutOfContainer();
+            coreReader.stepOutOfContainer();
             state = State.READING_SYMBOL_TABLE_IMPORTS_LIST;
             // Ignore import clauses with malformed name field.
             if (name == null || name.length() == 0 || name.equals(ION)) {
@@ -732,7 +723,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void startReadingImportStructField() {
-            int fieldId = getFieldId();
+            int fieldId = coreReader.getFieldId();
             if (fieldId == NAME_SID) {
                 state = State.READING_SYMBOL_TABLE_IMPORT_NAME;
             } else if (fieldId == VERSION_SID) {
@@ -743,21 +734,21 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void readImportName() {
-            if (IonReaderContinuableApplicationBinary.super.getType() == IonType.STRING) {
+            if (coreReader.getType() == IonType.STRING) {
                 name = stringValue();
             }
             state = State.READING_SYMBOL_TABLE_IMPORT_STRUCT;
         }
 
         private void readImportVersion() {
-            if (IonReaderContinuableApplicationBinary.super.getType() == IonType.INT && !IonReaderContinuableApplicationBinary.super.isNullValue()) {
+            if (coreReader.getType() == IonType.INT && !coreReader.isNullValue()) {
                 version = Math.max(1, intValue());
             }
             state = State.READING_SYMBOL_TABLE_IMPORT_STRUCT;
         }
 
         private void readImportMaxId() {
-            if (IonReaderContinuableApplicationBinary.super.getType() == IonType.INT && !IonReaderContinuableApplicationBinary.super.isNullValue()) {
+            if (coreReader.getType() == IonType.INT && !coreReader.isNullValue()) {
                 maxId = intValue();
             }
             state = State.READING_SYMBOL_TABLE_IMPORT_STRUCT;
@@ -768,13 +759,13 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             while (true) {
                 switch (state) {
                     case ON_SYMBOL_TABLE_STRUCT:
-                        if (Event.NEEDS_DATA == stepIntoContainer()) {
+                        if (Event.NEEDS_DATA == coreReader.stepIntoContainer()) {
                             return;
                         }
                         state = State.ON_SYMBOL_TABLE_FIELD;
                         break;
                     case ON_SYMBOL_TABLE_FIELD:
-                        event = IonReaderContinuableApplicationBinary.super.nextValue();
+                        event = coreReader.nextValue();
                         if (Event.NEEDS_DATA == event) {
                             return;
                         }
@@ -785,8 +776,8 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         readSymbolTableStructField();
                         break;
                     case ON_SYMBOL_TABLE_SYMBOLS:
-                        if (IonReaderContinuableApplicationBinary.super.getType() == IonType.LIST) {
-                            if (Event.NEEDS_DATA == stepIntoContainer()) {
+                        if (coreReader.getType() == IonType.LIST) {
+                            if (Event.NEEDS_DATA == coreReader.stepIntoContainer()) {
                                 return;
                             }
                             startReadingSymbolsList();
@@ -795,12 +786,12 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         }
                         break;
                     case ON_SYMBOL_TABLE_IMPORTS:
-                        if (IonReaderContinuableApplicationBinary.super.getType() == IonType.LIST) {
-                            if (Event.NEEDS_DATA == stepIntoContainer()) {
+                        if (coreReader.getType() == IonType.LIST) {
+                            if (Event.NEEDS_DATA == coreReader.stepIntoContainer()) {
                                 return;
                             }
                             startReadingImportsList();
-                        } else if (IonReaderContinuableApplicationBinary.super.getType() == IonType.SYMBOL) {
+                        } else if (coreReader.getType() == IonType.SYMBOL) {
                             if (valueUnavailable()) {
                                 return;
                             }
@@ -810,7 +801,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         }
                         break;
                     case READING_SYMBOL_TABLE_SYMBOLS_LIST:
-                        event = IonReaderContinuableApplicationBinary.super.nextValue();
+                        event = coreReader.nextValue();
                         if (event == Event.NEEDS_DATA) {
                             return;
                         }
@@ -827,7 +818,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         finishReadingSymbol();
                         break;
                     case READING_SYMBOL_TABLE_IMPORTS_LIST:
-                        event = IonReaderContinuableApplicationBinary.super.nextValue();
+                        event = coreReader.nextValue();
                         if (event == Event.NEEDS_DATA) {
                             return;
                         }
@@ -838,7 +829,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         startReadingImportStruct();
                         break;
                     case READING_SYMBOL_TABLE_IMPORT_STRUCT:
-                        event = IonReaderContinuableApplicationBinary.super.nextValue();
+                        event = coreReader.nextValue();
                         if (event == Event.NEEDS_DATA) {
                             return;
                         }
@@ -897,30 +888,17 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
     private State state = State.READING_VALUE;
 
     /**
-     * @return true if current value has a sequence of annotations that begins with `$ion_symbol_table`; otherwise,
-     *  false.
-     */
-    boolean startsWithIonSymbolTable() {
-        long savedPeekIndex = peekIndex;
-        peekIndex = annotationSequenceMarker.startIndex;
-        int sid = minorVersion == 0 ? readVarUInt_1_0() : readVarUInt_1_1();
-        peekIndex = savedPeekIndex;
-        return ION_SYMBOL_TABLE_SID == sid;
-    }
-
-    /**
      * @return true if the reader is positioned on a symbol table; otherwise, false.
      */
     private boolean isPositionedOnSymbolTable() {
-        return hasAnnotations &&
-            super.getType() == IonType.STRUCT &&
-            startsWithIonSymbolTable();
+        return coreReader.hasAnnotations() &&
+            coreReader.getType() == IonType.STRUCT &&
+            coreReader.startsWithIonSymbolTable();
     }
 
-    @Override
     public Event nextValue() {
         Event event;
-        if (parent == null || state != State.READING_VALUE) {
+        if (coreReader.parent() == null || state != State.READING_VALUE) {
             while (true) {
                 if (state != State.READING_VALUE) {
                     symbolTableReader.readSymbolTable();
@@ -929,8 +907,8 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         break;
                     }
                 }
-                event = super.nextValue();
-                if (parent == null && isPositionedOnSymbolTable()) {
+                event = coreReader.nextValue();
+                if (coreReader.parent() == null && isPositionedOnSymbolTable()) {
                     cachedReadOnlySymbolTable = null;
                     symbolTableReader.resetState();
                     state = State.ON_SYMBOL_TABLE_STRUCT;
@@ -939,7 +917,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                 break;
             }
         } else {
-            event = super.nextValue();
+            event = coreReader.nextValue();
         }
         return event;
     }
@@ -959,11 +937,11 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
     @Override
     public String stringValue() {
         String value;
-        IonType type = super.getType();
+        IonType type = coreReader.getType();
         if (type == IonType.STRING) {
-            value = super.stringValue();
+            value = coreReader.stringValue();
         } else if (type == IonType.SYMBOL) {
-            int sid = symbolValueId();
+            int sid = coreReader.symbolValueId();
             if (sid < 0) {
                 // The raw reader uses this to denote null.symbol.
                 return null;
@@ -979,8 +957,43 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
     }
 
     @Override
+    public int byteSize() {
+        return coreReader.byteSize();
+    }
+
+    @Override
+    public byte[] newBytes() {
+        return coreReader.newBytes();
+    }
+
+    @Override
+    public int getBytes(byte[] buffer, int offset, int len) {
+        return coreReader.getBytes(buffer, offset, len);
+    }
+
+    @Override
+    public int getIonMajorVersion() {
+        return coreReader.getIonMajorVersion();
+    }
+
+    @Override
+    public int getIonMinorVersion() {
+        return coreReader.getIonMinorVersion();
+    }
+
+    @Override
+    public void registerIvmNotificationConsumer(IvmNotificationConsumer ivmConsumer) {
+        coreReader.registerIvmNotificationConsumer(ivmConsumer);
+    }
+
+    @Override
+    public boolean hasAnnotations() {
+        return coreReader.hasAnnotations();
+    }
+
+    @Override
     public SymbolToken symbolValue() {
-        int sid = symbolValueId();
+        int sid = coreReader.symbolValueId();
         if (sid < 0) {
             // The raw reader uses this to denote null.symbol.
             return null;
@@ -990,15 +1003,15 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
     @Override
     public String[] getTypeAnnotations() {
-        if (!hasAnnotations) {
+        if (!coreReader.hasAnnotations()) {
             return _Private_Utils.EMPTY_STRING_ARRAY;
         }
-        IntList annotationSids = getAnnotationSidList();
-        String[] annotationArray = new String[annotationSids.size()];
+        int[] annotationSids = coreReader.getAnnotationIds();
+        String[] annotationArray = new String[annotationSids.length];
         for (int i = 0; i < annotationArray.length; i++) {
-            String symbol = getSymbol(annotationSids.get(i));
+            String symbol = getSymbol(annotationSids[i]);
             if (symbol == null) {
-                throw new UnknownSymbolException(annotationSids.get(i));
+                throw new UnknownSymbolException(annotationSids[i]);
             }
             annotationArray[i] = symbol;
         }
@@ -1007,13 +1020,13 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
     @Override
     public SymbolToken[] getTypeAnnotationSymbols() {
-        if (!hasAnnotations) {
+        if (!coreReader.hasAnnotations()) {
             return SymbolToken.EMPTY_ARRAY;
         }
-        IntList annotationSids = getAnnotationSidList();
-        SymbolToken[] annotationArray = new SymbolToken[annotationSids.size()];
+        int[] annotationSids = coreReader.getAnnotationIds();
+        SymbolToken[] annotationArray = new SymbolToken[annotationSids.length];
         for (int i = 0; i < annotationArray.length; i++) {
-            annotationArray[i] = getSymbolToken(annotationSids.get(i));
+            annotationArray[i] = getSymbolToken(annotationSids[i]);
         }
         return annotationArray;
     }
@@ -1038,7 +1051,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
     @Override
     public Iterator<String> iterateTypeAnnotations() {
-        if (!hasAnnotations) {
+        if (!coreReader.hasAnnotations()) {
             return EMPTY_ITERATOR;
         }
         annotationIterator.reset();
@@ -1047,6 +1060,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
     @Override
     public String getFieldName() {
+        int fieldSid = coreReader.getFieldId();
         if (fieldSid < 0) {
             return null;
         }
@@ -1059,10 +1073,129 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
     @Override
     public SymbolToken getFieldNameSymbol() {
+        int fieldSid = coreReader.getFieldId();
         if (fieldSid < 0) {
             return null;
         }
         return getSymbolToken(fieldSid);
     }
 
+    @Override
+    public int getDepth() {
+        return coreReader.getDepth();
+    }
+
+    @Override
+    public IonType getType() {
+        return coreReader.getType();
+    }
+
+    @Override
+    public IntegerSize getIntegerSize() {
+        return coreReader.getIntegerSize();
+    }
+
+    @Override
+    public boolean isNullValue() {
+        return coreReader.isNullValue();
+    }
+
+    @Override
+    public boolean isInStruct() {
+        return coreReader.isInStruct();
+    }
+
+    @Override
+    public boolean booleanValue() {
+        return coreReader.booleanValue();
+    }
+
+    @Override
+    public int intValue() {
+        return coreReader.intValue();
+    }
+
+    @Override
+    public long longValue() {
+        return coreReader.longValue();
+    }
+
+    @Override
+    public BigInteger bigIntegerValue() {
+        return coreReader.bigIntegerValue();
+    }
+
+    @Override
+    public double doubleValue() {
+        return coreReader.doubleValue();
+    }
+
+    @Override
+    public BigDecimal bigDecimalValue() {
+        return coreReader.bigDecimalValue();
+    }
+
+    @Override
+    public Decimal decimalValue() {
+        return coreReader.decimalValue();
+    }
+
+    @Override
+    public Date dateValue() {
+        return coreReader.dateValue();
+    }
+
+    @Override
+    public Timestamp timestampValue() {
+        return coreReader.timestampValue();
+    }
+
+
+
+
+    private static class ApplicationReaderSpan implements Span {
+
+        final SymbolTable symbolTable;
+        final Span coreSpan;
+
+        private ApplicationReaderSpan(SymbolTable symbolTable, Span coreSpan) {
+            this.symbolTable = symbolTable;
+            this.coreSpan = coreSpan;
+        }
+
+        @Override
+        public <T> T asFacet(Class<T> facetType) {
+            return coreSpan.asFacet(facetType);
+        }
+    }
+
+    private class SpanProviderFacet implements SpanProvider {
+
+        private final SpanProvider coreSpanProvider;
+
+        public SpanProviderFacet(SpanProvider coreSpanProvider) {
+            this.coreSpanProvider = coreSpanProvider;
+        }
+
+        @Override
+        public Span currentSpan() {
+            if (getType() == null) {
+                throw new IllegalStateException("IonReader isn't positioned on a value");
+            }
+            return new ApplicationReaderSpan(getSymbolTable(), coreSpanProvider.currentSpan());
+        }
+    }
+
+    @Override
+    public <T> T asFacet(Class<T> facetType) {
+
+        if (facetType == SpanProvider.class) {
+            SpanProvider coreSpanProvider = coreReader.asFacet(SpanProvider.class);
+            if (coreSpanProvider == null) return null;
+            return facetType.cast(new SpanProviderFacet(coreSpanProvider));
+        }
+
+        // If it's a facet that's not supported directly by this reader, give the core reader a chance to fulfill it.
+        return coreReader.asFacet(facetType);
+    }
 }

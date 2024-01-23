@@ -3,12 +3,7 @@
 
 package com.amazon.ion.impl;
 
-import com.amazon.ion.Decimal;
-import com.amazon.ion.IntegerSize;
-import com.amazon.ion.IonBufferConfiguration;
-import com.amazon.ion.IonException;
-import com.amazon.ion.IonType;
-import com.amazon.ion.Timestamp;
+import com.amazon.ion.*;
 import com.amazon.ion.impl.bin.IntList;
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoder;
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoderPool;
@@ -18,6 +13,8 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Date;
+
+import static com.amazon.ion.SystemSymbols.ION_SYMBOL_TABLE_SID;
 
 /**
  * An IonCursor capable of raw parsing of binary Ion streams.
@@ -789,7 +786,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * Gets the annotation symbol IDs for the current value, reading them from the buffer first if necessary.
      * @return the annotation symbol IDs, or an empty list if the current value is not annotated.
      */
-    IntList getAnnotationSidList() {
+    public IntList getAnnotationSidList() {
         annotationSids.clear();
         long savedPeekIndex = peekIndex;
         peekIndex = annotationSequenceMarker.startIndex;
@@ -841,4 +838,129 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         utf8Decoder.close();
         super.close();
     }
+
+    /**
+     * @return true if current value has a sequence of annotations that begins with `$ion_symbol_table`; otherwise,
+     *  false.
+     */
+    public boolean startsWithIonSymbolTable() {
+        long savedPeekIndex = peekIndex;
+        peekIndex = annotationSequenceMarker.startIndex;
+        int sid = getIonMinorVersion() == 0 ? readVarUInt_1_0() : readVarUInt_1_1();
+        peekIndex = savedPeekIndex;
+        return ION_SYMBOL_TABLE_SID == sid;
+    }
+
+    private static class IonReaderBinarySpan extends DowncastingFaceted implements Span, OffsetSpan {
+        final long bufferOffset;
+        final long bufferLimit;
+        final long totalOffset;
+        final long minorVersion;
+
+        /**
+         * @param bufferOffset the offset of the span's first byte in the cursor's internal buffer.
+         * @param bufferLimit the offset after the span's last byte in the cursor's internal buffer.
+         * @param totalOffset the total stream offset of the span's first byte. This can differ from 'bufferOffset' if
+         *                    the cursor's internal buffer is refillable, such as when it consumes data from an input
+         *                    stream.
+         */
+        IonReaderBinarySpan(long bufferOffset, long bufferLimit, long totalOffset, long minorVersion) {
+            this.bufferOffset = bufferOffset;
+            this.bufferLimit = bufferLimit;
+            this.totalOffset = totalOffset;
+            this.minorVersion = minorVersion;
+        }
+
+        @Override
+        public long getStartOffset() {
+            return totalOffset;
+        }
+
+        @Override
+        public long getFinishOffset() {
+            return totalOffset + (bufferLimit - bufferOffset);
+        }
+
+    }
+
+    private class RawValueSpanProviderFacet implements RawValueSpanProvider {
+
+        @Override
+        public Span valueSpan() {
+            if (getType() == null) {
+                throw new IllegalStateException("IonReader isn't positioned on a value");
+            }
+            return new IonReaderBinarySpan(
+                    valueMarker.startIndex,
+                    valueMarker.endIndex,
+                    valueMarker.startIndex,
+                    minorVersion
+            );
+        }
+
+        @Override
+        public byte[] buffer() {
+            return buffer;
+        }
+    }
+
+    private class SpanProviderFacet implements SpanProvider {
+
+        @Override
+        public Span currentSpan() {
+            if (getType() == null) {
+                throw new IllegalStateException("IonReader isn't positioned on a value");
+            }
+            return new IonReaderContinuableCoreBinary.IonReaderBinarySpan(
+                    valuePreHeaderIndex,
+                    valueMarker.endIndex,
+                    getTotalOffset(),
+                    minorVersion
+            );
+        }
+    }
+
+
+    private class SeekableReaderFacet extends SpanProviderFacet implements SeekableReader {
+
+        @Override
+        public void hoist(Span span) {
+            if (! (span instanceof IonReaderBinarySpan)) {
+                throw new IllegalArgumentException("Span isn't compatible with this reader.");
+            }
+            IonReaderBinarySpan binarySpan = (IonReaderBinarySpan) span;
+            // Note: setting the limit at the end of the hoisted value causes the reader to consider the end
+            // of the value to be the end of the stream, in order to comply with the SeekableReader contract. From
+            // an implementation perspective, this is not necessary; if we leave the buffer's limit unchanged, the
+            // reader can continue after processing the hoisted value.
+            slice(binarySpan.bufferOffset, binarySpan.bufferLimit, "$ion_1_" + binarySpan.minorVersion);
+        }
+    }
+
+    @Override
+    public <T> T asFacet(Class<T> facetType) {
+        if (facetType == SpanProvider.class) {
+            return facetType.cast(new SpanProviderFacet());
+        }
+        // Note: because IonCursorBinary has an internal buffer that can grow, it is possible to relax the restriction
+        // that readers must have been constructed with a byte array in order to be seekable or provide raw value spans.
+        // However, it requires some considerations that do not fit well with the existing interfaces. Most importantly,
+        // because the cursor's internal buffer is a byte array, its size is limited to 2GB. Pinning all bytes after the
+        // first span is requested could lead to buffer overflow for large streams, so there would need to be a way for
+        // a user to release a span and allow the reader to reclaim its bytes. This functionality is not included in the
+        // existing Span interfaces. See: amzn/ion-java/issues/17
+        if (isByteBacked()) {
+            if (facetType == SeekableReader.class) {
+                return facetType.cast(new SeekableReaderFacet());
+            }
+            if (facetType == RawValueSpanProvider.class) {
+                return facetType.cast(new RawValueSpanProviderFacet());
+            }
+        }
+        if (facetType.isInstance(this)) {
+            return facetType.cast(this);
+        }
+        return null;
+    }
+
 }

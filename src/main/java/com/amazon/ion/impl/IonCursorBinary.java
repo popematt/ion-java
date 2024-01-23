@@ -1208,7 +1208,8 @@ class IonCursorBinary implements IonCursor {
             }
             setMarker(endIndex, markerToSet);
             if (endIndex > limit) {
-                isValueIncomplete = true;
+                // isValueIncomplete = true;
+                // throw new IonException("Unexpected EOF.");
             }
         }
         markerToSet.typeId = valueTid;
@@ -1797,7 +1798,7 @@ class IonCursorBinary implements IonCursor {
         return hasAnnotations;
     }
 
-    Marker getValueMarker() {
+    public Marker getValueMarker() {
         return valueMarker;
     }
 
@@ -1843,7 +1844,7 @@ class IonCursorBinary implements IonCursor {
         this.ivmConsumer = ivmConsumer;
     }
 
-    void registerOversizedValueHandler(BufferConfiguration.OversizedValueHandler oversizedValueHandler) {
+    public void registerOversizedValueHandler(BufferConfiguration.OversizedValueHandler oversizedValueHandler) {
         // Non-refillable streams cannot overflow.
         if (refillableState != null) {
             refillableState.oversizedValueHandler = oversizedValueHandler;
@@ -1901,6 +1902,11 @@ class IonCursorBinary implements IonCursor {
         buffer = null;
         containerStack = null;
         byteBuffer = null;
+    }
+
+    @Override
+    public Marker parent() {
+        return parent;
     }
 
     /* ---- End: version-agnostic parsing, utility, and public API methods ---- */

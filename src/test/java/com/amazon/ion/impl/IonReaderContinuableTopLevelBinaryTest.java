@@ -55,9 +55,9 @@ import java.util.zip.GZIPInputStream;
 
 import static com.amazon.ion.BitUtils.bytes;
 import static com.amazon.ion.TestUtils.gzippedBytes;
-import static com.amazon.ion.impl.IonCursorTestUtilities.Expectation;
-import static com.amazon.ion.impl.IonCursorTestUtilities.ExpectationProvider;
-import static com.amazon.ion.impl.IonCursorTestUtilities.type;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.Expectation;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.ExpectationProvider;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.type;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -453,7 +453,7 @@ public class IonReaderContinuableTopLevelBinaryTest {
 
     @SafeVarargs
     private final void assertSequence(ExpectationProvider<IonReaderContinuableTopLevelBinary>... providers) {
-        IonCursorTestUtilities.assertSequence((IonReaderContinuableTopLevelBinary) reader, providers);
+        IonReaderContinuableApplicationTestUtilities.assertSequence((IonReaderContinuableTopLevelBinary) reader, providers);
     }
 
     private void nextExpect(IonType type) {

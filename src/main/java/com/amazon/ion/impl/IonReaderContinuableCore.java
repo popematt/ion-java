@@ -11,6 +11,8 @@ import com.amazon.ion.IonType;
 import com.amazon.ion.IvmNotificationConsumer;
 import com.amazon.ion.Timestamp;
 import com.amazon.ion.UnknownSymbolException;
+import com.amazon.ion.facet.Faceted;
+import com.amazon.ion.impl.bin.IntList;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -20,7 +22,7 @@ import java.util.Date;
  * IonCursor with the core IonReader interface methods. Useful for adapting an IonCursor implementation into a
  * system-level IonReader.
  */
-interface IonReaderContinuableCore extends IonCursor {
+interface IonReaderContinuableCore extends IonCursor, Faceted {
 
     /**
      * Returns the depth into the Ion value that this reader has traversed.
@@ -253,4 +255,7 @@ interface IonReaderContinuableCore extends IonCursor {
      */
     boolean hasAnnotations();
 
+
+
+    boolean startsWithIonSymbolTable();
 }

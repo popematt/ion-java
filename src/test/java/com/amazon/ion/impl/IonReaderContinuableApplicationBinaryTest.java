@@ -3,6 +3,7 @@
 
 package com.amazon.ion.impl;
 
+import com.amazon.ion.IonCursor;
 import com.amazon.ion.system.IonReaderBuilder;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -11,17 +12,16 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.io.ByteArrayInputStream;
 
 import static com.amazon.ion.BitUtils.bytes;
-import static com.amazon.ion.impl.IonCursorTestUtilities.STANDARD_BUFFER_CONFIGURATION;
-import static com.amazon.ion.impl.IonCursorTestUtilities.Expectation;
-import static com.amazon.ion.impl.IonCursorTestUtilities.ExpectationProvider;
-import static com.amazon.ion.impl.IonCursorTestUtilities.assertSequence;
-import static com.amazon.ion.impl.IonCursorTestUtilities.container;
-import static com.amazon.ion.impl.IonCursorTestUtilities.endContainer;
-import static com.amazon.ion.impl.IonCursorTestUtilities.endStream;
-import static com.amazon.ion.impl.IonCursorTestUtilities.fillIntValue;
-import static com.amazon.ion.impl.IonCursorTestUtilities.scalar;
-import static com.amazon.ion.impl.IonCursorTestUtilities.scalar;
-import static com.amazon.ion.impl.IonCursorTestUtilities.fillSymbolValue;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.STANDARD_BUFFER_CONFIGURATION;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.Expectation;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.ExpectationProvider;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.assertSequence;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.container;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.endContainer;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.endStream;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.fillIntValue;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.scalar;
+import static com.amazon.ion.impl.IonReaderContinuableApplicationTestUtilities.fillSymbolValue;
 
 public class IonReaderContinuableApplicationBinaryTest {
 
@@ -41,7 +41,8 @@ public class IonReaderContinuableApplicationBinaryTest {
                 0
             );
         }
-        reader.registerOversizedValueHandler(
+        // TODO: See if there's a better way to expose registering the oversized value handler
+        reader.asFacet(IonCursorBinary.class).registerOversizedValueHandler(
             STANDARD_READER_BUILDER.getBufferConfiguration().getOversizedValueHandler()
         );
         return reader;
@@ -51,7 +52,7 @@ public class IonReaderContinuableApplicationBinaryTest {
      * Provides an Expectation that verifies that the value on which the cursor is currently positioned has the given
      * field name.
      */
-    private static Expectation<IonReaderContinuableApplicationBinary> fieldName(String expectedFieldName) {
+    private static Expectation<IonReaderContinuableApplication> fieldName(String expectedFieldName) {
         return new Expectation<>(
             String.format("fieldName(%s)", expectedFieldName),
             reader -> Assertions.assertEquals(expectedFieldName, reader.getFieldName())
@@ -62,8 +63,8 @@ public class IonReaderContinuableApplicationBinaryTest {
      * Provides Expectations that verify that advancing the cursor positions it on a scalar value with the given field
      * name, without filling the scalar.
      */
-    private static ExpectationProvider<IonReaderContinuableApplicationBinary> scalarFieldName(String expectedFieldName) {
-        return IonCursorTestUtilities.scalar(fieldName(expectedFieldName));
+    private static ExpectationProvider<IonReaderContinuableApplication> scalarFieldName(String expectedFieldName) {
+        return scalar(fieldName(expectedFieldName));
     }
 
     @ParameterizedTest(name = "constructFromBytes={0}")

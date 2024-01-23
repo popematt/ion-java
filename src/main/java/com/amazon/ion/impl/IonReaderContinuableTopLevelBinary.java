@@ -3,20 +3,11 @@
 
 package com.amazon.ion.impl;
 
-import com.amazon.ion.IonBufferConfiguration;
-import com.amazon.ion.IonException;
-import com.amazon.ion.IonReader;
-import com.amazon.ion.IonCursor;
-import com.amazon.ion.IonType;
-import com.amazon.ion.OffsetSpan;
-import com.amazon.ion.OversizedValueException;
-import com.amazon.ion.RawValueSpanProvider;
-import com.amazon.ion.SeekableReader;
-import com.amazon.ion.Span;
-import com.amazon.ion.SpanProvider;
-import com.amazon.ion.SymbolTable;
+import com.amazon.ion.*;
+import com.amazon.ion.IonCursor.Event;
 import com.amazon.ion.system.IonReaderBuilder;
 
+import java.io.IOException;
 import java.io.InputStream;
 
 /**
@@ -115,15 +106,15 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
      */
     private void nextAndFill() {
         while (true) {
-            if (!isFillingValue && nextValue() == IonCursor.Event.NEEDS_DATA) {
+            if (!isFillingValue && nextValue() == Event.NEEDS_DATA) {
                 return;
             }
             isFillingValue = true;
-            if (fillValue() == IonCursor.Event.NEEDS_DATA) {
+            if (coreReader.fillValue() == Event.NEEDS_DATA) {
                 return;
             }
             isFillingValue = false;
-            if (event != IonCursor.Event.NEEDS_INSTRUCTION) {
+            if (coreReader.getCurrentEvent() != Event.NEEDS_INSTRUCTION) {
                 type = super.getType();
                 return;
             }
@@ -135,23 +126,23 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
      * Handles the case where the current value extends beyond the end of the reader's internal buffer.
      */
     private void handleIncompleteValue() {
-        if (event == Event.NEEDS_DATA) {
+        if (coreReader.getCurrentEvent() == Event.NEEDS_DATA) {
             // The reader has already consumed all bytes from the buffer. If non-continuable, this is the end of the
             // stream. If continuable, continue to return null from next().
             if (isNonContinuable) {
-                endStream();
+                coreReader.endStream();
             }
         } else if (isNonContinuable) {
             // The reader is non-continuable and has not yet consumed all bytes from the buffer, so it can continue
             // reading the incomplete container until the end is reached.
             // Each value contains its own length prefix, so it is safe to reset the incomplete flag before attempting
             // to read the value.
-            isValueIncomplete = false;
-            if (nextValue() == IonCursor.Event.NEEDS_DATA) {
+            // coreReader.isValueIncomplete = false;
+            if (nextValue() == Event.NEEDS_DATA) {
                 // Attempting to read the partial value required consuming the remaining bytes in the stream, which
                 // is now at its end.
-                isValueIncomplete = true;
-                endStream();
+                // coreReader.isValueIncomplete = true;
+                coreReader.endStream();
             } else {
                 // The reader successfully positioned itself on a value within an incomplete container.
                 type = super.getType();
@@ -162,37 +153,45 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
     @Override
     public IonType next() {
         type = null;
-        if (isValueIncomplete) {
-            handleIncompleteValue();
-        } else if (!isSlowMode || isNonContinuable || parent != null) {
-            if (nextValue() == IonCursor.Event.NEEDS_DATA) {
-                if (isNonContinuable) {
-                    endStream();
-                }
-            } else if (isValueIncomplete && !isNonContinuable) {
-                // The value is incomplete and the reader is continuable, so the reader must return null from next().
-                // Setting the event to NEEDS_DATA ensures that if the user attempts to skip past the incomplete
-                // value, null will continue to be returned.
-                event = Event.NEEDS_DATA;
-            } else {
-                isFillingValue = false;
-                type = super.getType();
-            }
-        } else {
+//        if (isValueIncomplete) {
+//            handleIncompleteValue();
+//        } else if (isNonContinuable || coreReader.parent() != null) {
+//            if (nextValue() == Event.NEEDS_DATA) {
+//                if (isNonContinuable) {
+//                    coreReader.endStream();
+//                }
+//            } else if (isValueIncomplete && !isNonContinuable) {
+//                // The value is incomplete and the reader is continuable, so the reader must return null from next().
+//                // Setting the event to NEEDS_DATA ensures that if the user attempts to skip past the incomplete
+//                // value, null will continue to be returned.
+//                event = Event.NEEDS_DATA;
+//            } else {
+//                isFillingValue = false;
+//                type = super.getType();
+//            }
+//        } else {
+//            nextAndFill();
+//        }
+
+        if (!isNonContinuable && coreReader.parent() == null) {
             nextAndFill();
+        } else {
+            nextValue();
+            isFillingValue = false;
+            type = super.getType();
         }
         return type;
     }
 
     @Override
     public void stepIn() {
-        super.stepIntoContainer();
+        coreReader.stepIntoContainer();
         type = null;
     }
 
     @Override
     public void stepOut() {
-        super.stepOutOfContainer();
+        coreReader.stepOutOfContainer();
         type = null;
     }
 
@@ -201,148 +200,137 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
         return type;
     }
 
-    /**
-     * Prepares a scalar value to be parsed by ensuring it is present in the buffer.
-     */
     @Override
-    void prepareScalar() {
-        if (!isValueIncomplete) {
-            if (!isSlowMode || event == IonCursor.Event.VALUE_READY) {
-                super.prepareScalar();
-                return;
-            }
-            if (isFillRequired) {
-                if (fillValue() == Event.VALUE_READY) {
-                    super.prepareScalar();
-                    return;
-                }
-                if (event == Event.NEEDS_INSTRUCTION) {
-                    throw new OversizedValueException();
-                }
-            }
-        }
-        throw new IonException("Unexpected EOF.");
+    public int getFieldId() {
+        return coreReader.getFieldId();
     }
 
-    private static class IonReaderBinarySpan extends DowncastingFaceted implements Span, OffsetSpan {
-        final long bufferOffset;
-        final long bufferLimit;
-        final long totalOffset;
-        final SymbolTable symbolTable;
+    /* //*
+     * Prepares a scalar value to be parsed by ensuring it is present in the buffer.
+     */
+    // @Override
+//    void prepareScalar() {
+//        if (!coreReader.isValueIncomplete) {
+//            if (!coreReader.isSlowMode || coreReader.event == Event.VALUE_READY) {
+//                coreReader.prepareScalar();
+//                return;
+//            }
+//            if (isFillRequired) {
+//                if (fillValue() == Event.VALUE_READY) {
+//                    coreReader.prepareScalar();
+//                    return;
+//                }
+//                if (coreReader.event == Event.NEEDS_INSTRUCTION) {
+//                    throw new OversizedValueException();
+//                }
+//            }
+//        }
+//        throw new IonException("Unexpected EOF.");
+//    }
 
-        /**
-         * @param bufferOffset the offset of the span's first byte in the cursor's internal buffer.
-         * @param bufferLimit the offset after the span's last byte in the cursor's internal buffer.
-         * @param totalOffset the total stream offset of the span's first byte. This can differ from 'bufferOffset' if
-         *                    the cursor's internal buffer is refillable, such as when it consumes data from an input
-         *                    stream.
-         * @param symbolTable the symbol table active where the span occurs.
-         */
-        IonReaderBinarySpan(long bufferOffset, long bufferLimit, long totalOffset, SymbolTable symbolTable) {
-            this.bufferOffset = bufferOffset;
-            this.bufferLimit = bufferLimit;
-            this.totalOffset = totalOffset;
+    private static class ApplicationReaderSpan implements Span {
+
+        final SymbolTable symbolTable;
+        final Span coreSpan;
+
+        private ApplicationReaderSpan(SymbolTable symbolTable, Span coreSpan) {
             this.symbolTable = symbolTable;
+            this.coreSpan = coreSpan;
+        }
+
+        @Override
+        public <T> T asFacet(Class<T> facetType) {
+            return coreSpan.asFacet(facetType);
+        }
+    }
+
+    private static class ApplicationReaderOffsetSpan extends ApplicationReaderSpan implements Span, OffsetSpan {
+
+        private ApplicationReaderOffsetSpan(SymbolTable symbolTable, Span coreSpan) {
+            super(symbolTable, coreSpan);
         }
 
         @Override
         public long getStartOffset() {
-            return totalOffset;
+            return ((OffsetSpan) coreSpan).getStartOffset();
         }
 
         @Override
         public long getFinishOffset() {
-            return totalOffset + (bufferLimit - bufferOffset);
+            return ((OffsetSpan) coreSpan).getFinishOffset();
         }
-
     }
 
     private class SpanProviderFacet implements SpanProvider {
 
+        private final SpanProvider coreSpanProvider;
+
+        public SpanProviderFacet(SpanProvider coreSpanProvider) {
+            this.coreSpanProvider = coreSpanProvider;
+        }
+
         @Override
         public Span currentSpan() {
-            if (type == null) {
+            if (getType() == null) {
                 throw new IllegalStateException("IonReader isn't positioned on a value");
             }
-            return new IonReaderBinarySpan(
-                valuePreHeaderIndex,
-                valueMarker.endIndex,
-                getTotalOffset(),
-                getSymbolTable()
-            );
-        }
-    }
-
-    private class RawValueSpanProviderFacet implements RawValueSpanProvider {
-
-        @Override
-        public Span valueSpan() {
-            if (type == null) {
-                throw new IllegalStateException("IonReader isn't positioned on a value");
-            }
-            return new IonReaderBinarySpan(
-                valueMarker.startIndex,
-                valueMarker.endIndex,
-                valueMarker.startIndex,
-                null
-            );
-        }
-
-        @Override
-        public byte[] buffer() {
-            return buffer;
+            return new ApplicationReaderOffsetSpan(getSymbolTable(), coreSpanProvider.currentSpan());
         }
     }
 
     private class SeekableReaderFacet extends SpanProviderFacet implements SeekableReader {
 
+        private final SeekableReader coreSeekableReader;
+
+        public SeekableReaderFacet(SpanProvider coreSeekableReader, SeekableReader readerDelegate) {
+            super(coreSeekableReader);
+            this.coreSeekableReader = readerDelegate;
+        }
+
         @Override
         public void hoist(Span span) {
-            if (! (span instanceof IonReaderBinarySpan)) {
+            if (! (span instanceof ApplicationReaderSpan)) {
                 throw new IllegalArgumentException("Span isn't compatible with this reader.");
             }
-            IonReaderBinarySpan binarySpan = (IonReaderBinarySpan) span;
-            if (binarySpan.symbolTable == null) {
+            ApplicationReaderSpan applicationSpan = (ApplicationReaderSpan) span;
+            if (applicationSpan.symbolTable == null) {
                 throw new IllegalArgumentException("Span is not seekable.");
             }
-            // Note: setting the limit at the end of the hoisted value causes the reader to consider the end
-            // of the value to be the end of the stream, in order to comply with the SeekableReader contract. From
-            // an implementation perspective, this is not necessary; if we leave the buffer's limit unchanged, the
-            // reader can continue after processing the hoisted value.
-            restoreSymbolTable(binarySpan.symbolTable);
-            slice(binarySpan.bufferOffset, binarySpan.bufferLimit, binarySpan.symbolTable.getIonVersionId());
+            restoreSymbolTable(applicationSpan.symbolTable);
+            coreSeekableReader.hoist(applicationSpan.coreSpan);
             type = null;
         }
     }
 
     @Override
     public <T> T asFacet(Class<T> facetType) {
+
         if (facetType == SpanProvider.class) {
-            return facetType.cast(new SpanProviderFacet());
+            SpanProvider coreSpanProvider = coreReader.asFacet(SpanProvider.class);
+            if (coreSpanProvider == null) return null;
+            return facetType.cast(new SpanProviderFacet(coreSpanProvider));
         }
-        // Note: because IonCursorBinary has an internal buffer that can grow, it is possible to relax the restriction
-        // that readers must have been constructed with a byte array in order to be seekable or provide raw value spans.
-        // However, it requires some considerations that do not fit well with the existing interfaces. Most importantly,
-        // because the cursor's internal buffer is a byte array, its size is limited to 2GB. Pinning all bytes after the
-        // first span is requested could lead to buffer overflow for large streams, so there would need to be a way for
-        // a user to release a span and allow the reader to reclaim its bytes. This functionality is not included in the
-        // existing Span interfaces. See: amzn/ion-java/issues/17
-        if (isByteBacked()) {
-            if (facetType == SeekableReader.class) {
-                return facetType.cast(new SeekableReaderFacet());
-            }
-            if (facetType == RawValueSpanProvider.class) {
-                return facetType.cast(new RawValueSpanProviderFacet());
-            }
+        if (facetType == SeekableReader.class) {
+            SpanProvider coreSpanProvider = coreReader.asFacet(SpanProvider.class);
+            if (coreSpanProvider == null) return null;
+            SeekableReader coreSeekableReader = coreReader.asFacet(SeekableReader.class);
+            if (coreSeekableReader == null) return null;
+            return facetType.cast(new SeekableReaderFacet(coreSpanProvider, coreSeekableReader));
         }
-        return null;
+
+        // If it's a facet that's not supported directly by this reader, give the core reader a chance to fulfill it.
+        return coreReader.asFacet(facetType);
     }
 
     @Override
     public void close() {
         if (!isNonContinuable) {
-            endStream();
+            coreReader.endStream();
         }
-        super.close();
+        try {
+            coreReader.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

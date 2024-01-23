@@ -24,13 +24,13 @@ final class IonTypeID {
     // NOTE: 'annotation wrapper' is not an IonType, but it is simplest to treat it as one for the purposes of this
     // implementation in order to have a direct mapping from binary type IDs to IonType enum values. IonType.DATAGRAM
     // does not have a type ID, so we will use it to mean 'annotation wrapper' instead.
-    static final IonType ION_TYPE_ANNOTATION_WRAPPER = IonType.DATAGRAM;
+    public static final IonType ION_TYPE_ANNOTATION_WRAPPER = IonType.DATAGRAM;
 
     // Lookup table from type ID to "binary token type", loosely represented by the IonType enum to avoid the need to
     // define a completely new enum with translations between them. "Binary token types" are a superset of IonType,
     // adding annotation wrapper and `null` (i.e., illegal).
     // See https://amzn.github.io/ion-docs/docs/binary.html#typed-value-formats
-    static final IonType[] BINARY_TOKEN_TYPES_1_0 = new IonType[] {
+    public static final IonType[] BINARY_TOKEN_TYPES_1_0 = new IonType[] {
         IonType.NULL,
         IonType.BOOL,
         IonType.INT,
@@ -53,8 +53,8 @@ final class IonTypeID {
     private static final IonTypeID ALWAYS_INVALID_TYPE_ID = new IonTypeID((byte) 0xFF, 0);
 
     // Pre-compute all possible type ID bytes.
-    static final IonTypeID[] TYPE_IDS_NO_IVM;
-    static final IonTypeID[] TYPE_IDS_1_0;
+    public static final IonTypeID[] TYPE_IDS_NO_IVM;
+    public static final IonTypeID[] TYPE_IDS_1_0;
     static {
         TYPE_IDS_NO_IVM = new IonTypeID[NUMBER_OF_BYTES];
         TYPE_IDS_1_0 = new IonTypeID[NUMBER_OF_BYTES];
@@ -64,20 +64,20 @@ final class IonTypeID {
         }
     }
 
-    final IonType type;
-    final int length;
-    final boolean variableLength;
-    final boolean isNull;
-    final boolean isNopPad;
-    final byte lowerNibble;
-    final boolean isValid;
-    final boolean isNegativeInt;
-    final boolean isTemplateInvocation; // Unused in Ion 1.0
-    final int templateId; // Unused in Ion 1.0
-    final boolean isDelimited; // Unused in Ion 1.0
+    public final IonType type;
+    public final int length;
+    public final boolean variableLength;
+    public final boolean isNull;
+    public final boolean isNopPad;
+    public final byte lowerNibble;
+    public final boolean isValid;
+    public final boolean isNegativeInt;
+    public final boolean isTemplateInvocation; // Unused in Ion 1.0
+    public final int templateId; // Unused in Ion 1.0
+    public final boolean isDelimited; // Unused in Ion 1.0
     // For structs, denotes whether field names are VarSyms. For symbols, denotes whether the text is inline.
     // For annotation wrappers, denotes whether tokens are VarSyms.
-    final boolean isInlineable; // Unused in Ion 1.0
+    public final boolean isInlineable; // Unused in Ion 1.0
 
     /**
      * Determines whether the Ion spec allows this particular upperNibble/lowerNibble pair.
