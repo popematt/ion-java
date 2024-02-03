@@ -36,24 +36,21 @@ import static com.amazon.ion.SystemSymbols.VERSION;
 import static com.amazon.ion.SystemSymbols.VERSION_SID;
 import static java.util.Arrays.asList;
 import static java.util.Collections.unmodifiableList;
-import static java.util.Collections.unmodifiableMap;
 
-import com.amazon.ion.IonException;
 import com.amazon.ion.SymbolTable;
 import com.amazon.ion.SymbolToken;
+import com.amazon.ion.impl._Private_Ion_1_0_SystemSymbolTable;
 import com.amazon.ion.impl._Private_Utils;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
  * Utilities for dealing with {@link SymbolToken} and {@link SymbolTable}.
  */
-/*package*/ class Symbols
+ class Symbols
 {
     private Symbols() {}
 
@@ -110,102 +107,10 @@ import java.util.NoSuchElementException;
         return SYSTEM_TOKENS.get(sid - 1);
     }
 
-    private static final Map<String, SymbolToken> SYSTEM_TOKEN_MAP;
-    static {
-        final Map<String, SymbolToken> symbols = new HashMap<String, SymbolToken>();
-        for (final SymbolToken token : SYSTEM_TOKENS)
-        {
-            symbols.put(token.getText(), token);
-        }
-        SYSTEM_TOKEN_MAP = unmodifiableMap(symbols);
-    }
-
-    private static SymbolTable SYSTEM_SYMBOL_TABLE = new AbstractSymbolTable(ION, 1)
-    {
-        public SymbolTable[] getImportedTables()
-        {
-            return null;
-        }
-
-        public int getImportedMaxId()
-        {
-            return 0;
-        }
-
-        public boolean isSystemTable()
-        {
-            return true;
-        }
-
-        public boolean isSubstitute()
-        {
-            return false;
-        }
-
-        public boolean isSharedTable()
-        {
-            return true;
-        }
-
-        public boolean isReadOnly()
-        {
-            return true;
-        }
-
-        public boolean isLocalTable()
-        {
-            return false;
-        }
-
-        public SymbolToken intern(final String text)
-        {
-            final SymbolToken token = SYSTEM_TOKEN_MAP.get(text);
-            if (token == null)
-            {
-                throw new IonException("Cannot intern new symbol into system symbol table");
-            }
-            return token;
-        }
-
-        public String findKnownSymbol(int id)
-        {
-            if (id < 1)
-            {
-                throw new IllegalArgumentException("SID cannot be less than 1: " + id);
-            }
-            if (id > ION_1_0_MAX_ID)
-            {
-                return null;
-            }
-
-            return SYSTEM_TOKENS.get(id - 1).getText();
-        }
-
-        public SymbolToken find(String text)
-        {
-            return SYSTEM_TOKEN_MAP.get(text);
-        }
-
-        public SymbolTable getSystemSymbolTable()
-        {
-            return this;
-        }
-
-        public int getMaxId()
-        {
-            return ION_1_0_MAX_ID;
-        }
-
-        public Iterator<String> iterateDeclaredSymbolNames()
-        {
-            return symbolNameIterator(SYSTEM_TOKENS.iterator());
-        }
-    };
-
     /** Returns a representation of the system symbol table. */
     public static SymbolTable systemSymbolTable()
     {
-        return SYSTEM_SYMBOL_TABLE;
+        return _Private_Ion_1_0_SystemSymbolTable.INSTANCE;
     }
 
     /** Returns the system symbols as a collection. */
