@@ -6,6 +6,24 @@ import java.math.BigDecimal
 import java.math.BigInteger
 import java.util.*
 
+// We could provide an IonElement adapter that points to an IonValue that is read only.
+// Compatibility use cases to consider:
+//   - library accepts IonValue, MyService uses "new thing"
+//   - library accepts IonValue and expects to mutate, MyService uses "new thing"
+//   - library accepts "new thing", MyService uses IonValue
+//   - library gives IonValue, MyService uses "new thing"
+//   - library gives "new thing", MyService uses IonValue
+// TODO: Make sure we cover all cases for (accepts, uses, modifies?, returns)
+
+// Possible solutions:
+// - IonElementWrapsIonValue
+// - ReadOnlyIonValue
+// - ImmutableIonValue (just no mutations)
+// - ImmutableIonValue (additional restrictions to avoid parent references, etc.)
+// - [Probably infeasible] IonValueWrapsIonElement
+// - [Possible dependency cycle] interface IntoIonValue/IntoIonElement
+
+
 /**
  * Implementations of this interface are _not_ guaranteed to be immutable. This interface
  * is just a view of Ion that does not expose any mutators.

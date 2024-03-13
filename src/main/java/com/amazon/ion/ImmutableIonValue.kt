@@ -1,22 +1,32 @@
 package com.amazon.ion
 
+
 import com.amazon.ion.impl.*
 import com.amazon.ion.system.*
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.io.InputStreamReader
+import java.io.OutputStream
 import java.io.Reader
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.charset.Charset
 import java.util.*
+import kotlin.NoSuchElementException
 
 private fun Any.readOnlyErr(): Nothing = throw ReadOnlyValueException(this.javaClass)
 
-// TODO: clean up isNull vs null values
+// TODO: clean up isNull vs null values, especially w.r.t. constructors
 // TODO: implement equals for all types
 // TODO: implement hashcode for all types
-sealed class ImmutableIonValue(protected val fieldName: SymbolToken?, protected val annotations: Array<out SymbolToken>, protected val isNull: Boolean, protected val type: IonType): IonValue {
+// TODO: Do these need to implement the _Private_IonValue, _Private_IonDatagram, _Private_IonSymbol, and
+//       _Private_IonContainer. interfaces?
+sealed class ImmutableIonValue(
+    protected val fieldName: SymbolToken?,
+    protected val annotations: Array<out SymbolToken>,
+    protected val isNull: Boolean,
+    protected val type: IonType
+): IonValue {
 
     final override fun isNullValue(): Boolean = isNull
 
@@ -41,10 +51,10 @@ sealed class ImmutableIonValue(protected val fieldName: SymbolToken?, protected 
 
 
     // TODO: Can we get away with this?
-    final override fun getContainer(): IonContainer? = null
+    final override fun getContainer(): Nothing = throw UnsupportedOperationException("ImmutableIonValue does not track references to parents.")
 
     // TODO: Contract specifies that this is thrown for IonDatagrams, but can we just throw this for all?
-    final override fun topLevelValue(): IonValue = throw UnsupportedOperationException()
+    final override fun topLevelValue(): Nothing = throw UnsupportedOperationException("ImmutableIonValue does not track references to parents.")
 
 
     override fun getSystem(): IonSystem {
@@ -82,6 +92,11 @@ sealed class ImmutableIonValue(protected val fieldName: SymbolToken?, protected 
         if (!this.annotations.contentEquals(other.typeAnnotationSymbols)) return false
         if (this.isNull != other.isNullValue) return false
         return valueCheck(other)
+    }
+
+    companion object {
+        @JvmStatic
+        val EMPTY_ARRAY = arrayOf<ImmutableIonValue>()
     }
 }
 
@@ -267,87 +282,118 @@ class ImmutableIonClob(fieldName: SymbolToken?, annotations: Array<out SymbolTok
     override fun setBytes(bytes: ByteArray?, offset: Int, length: Int) = readOnlyErr()
 }
 
-// TODO: Make this use an array
-sealed class ImmutableIonSequence(fieldName: SymbolToken?, annotations: Array<out SymbolToken>, isNull: Boolean, protected val elements: List<ImmutableIonValue>, type: IonType): IonSequence, ImmutableIonValue(fieldName, annotations, isNull, type) {
+sealed class ImmutableIonContainer(fieldName: SymbolToken?, annotations: Array<out SymbolToken>, isNull: Boolean, protected val elements: Array<ImmutableIonValue>, type: IonType): IonContainer, ImmutableIonValue(fieldName, annotations, isNull, type) {
+    final override fun size(): Int = if (isNull) 0 else elements.size
+    final override fun isEmpty(): Boolean = returnIfNotNull { elements.isEmpty() }
+    final override fun clear() = readOnlyErr()
+    final override fun makeNull() = readOnlyErr()
+    final override fun remove(element: IonValue?): Boolean = readOnlyErr()
 
-    override fun isEmpty(): Boolean = returnIfNotNull { elements.isEmpty() }
+    final override fun iterator(): MutableIterator<IonValue> = if (isNull) EMPTY_ITERATOR else ImmutableIterator(elements)
+
+    protected class ImmutableIterator(private val elements: Array<ImmutableIonValue>, private var i: Int = 0): MutableListIterator<IonValue> {
+        override fun add(element: IonValue) = readOnlyErr()
+        override fun remove() = readOnlyErr()
+        override fun set(element: IonValue) = readOnlyErr()
+
+        override fun hasNext(): Boolean = i + 1 < elements.size
+        override fun hasPrevious(): Boolean = i > 0
+
+        override fun nextIndex(): Int = i + 1
+        override fun previousIndex(): Int = i - 1
+
+        override fun next(): IonValue = if (hasNext()) elements[++i] else throw NoSuchElementException()
+        override fun previous(): IonValue = if (hasPrevious()) elements[--i] else throw NoSuchElementException()
+    }
+
+    companion object {
+        @JvmStatic
+        protected val EMPTY_ITERATOR: MutableListIterator<IonValue> = ImmutableIterator(emptyArray())
+    }
+}
+
+sealed class ImmutableIonSequence(fieldName: SymbolToken?, annotations: Array<out SymbolToken>, isNull: Boolean, elements: Array<ImmutableIonValue>, type: IonType): IonSequence, ImmutableIonContainer(fieldName, annotations, isNull, elements, type) {
+
     override val size: Int get() = if (isNull) 0 else elements.size
     override fun get(index: Int): IonValue = returnIfNotNull { elements[index] }
 
-    final override fun iterator(): MutableIterator<IonValue> = if (isNull) EMPTY_ITERATOR else ImmutableIterator(elements.listIterator())
-
-    final override fun listIterator(): MutableListIterator<IonValue> = if (isNull) EMPTY_ITERATOR else ImmutableIterator(elements.listIterator())
+    final override fun listIterator(): MutableListIterator<IonValue> = if (isNull) EMPTY_ITERATOR else ImmutableIterator(elements)
 
     final override fun listIterator(index: Int): MutableListIterator<IonValue> = when {
-        !isNull -> ImmutableIterator(elements.listIterator(index))
+        !isNull -> ImmutableIterator(elements, index)
         index == 0 -> EMPTY_ITERATOR
         else -> throw IndexOutOfBoundsException()
     }
 
     // TODO: Apparently these use _reference_ equality. :facepalm:
-    final override fun contains(o: IonValue): Boolean = o in elements
-    final override fun containsAll(elements: Collection<IonValue>): Boolean = elements.all { it in this.elements }
+    final override fun contains(o: IonValue): Boolean = elements.any { it === o }
+    final override fun containsAll(elements: Collection<IonValue>): Boolean = elements.all { it in this }
+    final override fun indexOf(o: IonValue): Int = elements.indexOfFirst { it === o }
+    final override fun lastIndexOf(o: IonValue): Int = elements.indexOfLast { it === o }
 
-    final override fun indexOf(o: IonValue?): Int {
-        TODO("Not yet implemented")
-    }
-    override fun lastIndexOf(o: IonValue?): Int {
-        TODO("Not yet implemented")
-    }
-
-    override fun subList(fromIndex: Int, toIndex: Int): MutableList<IonValue> {
+    final override fun subList(fromIndex: Int, toIndex: Int): MutableList<IonValue> {
         // TODO: Make a proper immutable list view
-        return elements.subList(fromIndex, toIndex).toMutableList()
+        return elements.slice(fromIndex..toIndex).toMutableList()
     }
 
-    override fun toArray(): Array<IonValue> = if (isNull) IonValue.EMPTY_ARRAY else elements.toTypedArray()
+    final override fun toArray(): Array<ImmutableIonValue> = if (isNull) EMPTY_ARRAY else elements.copyOf()
 
-    override fun <T : Any?> toArray(a: Array<out T>?): Array<T> {
+
+    /**
+     * Returns an array containing all of the elements in this sequence in
+     * proper order; the runtime type of the returned array is that of the
+     * specified array. Obeys the general contract of the
+     * {@link Collection#toArray()} method.
+     * <p>
+     * If this sequence is an {@linkplain #isNullValue() Ion null value}, it
+     * will behave like an empty sequence.
+     *
+     * @param a the array into which the elements of this sequence are to be
+     *        stored, if it is big enough; otherwise, a new array of the same
+     *        runtime type is allocated for this purpose.
+     *
+     * @return an array containing all of the elements in this sequence in
+     *         proper order.
+     *
+     * @throws ArrayStoreException if the runtime type of the specified array
+     *         is not a supertype of the runtime type of every element in this
+     *         sequence.
+     * @throws NullPointerException if the specified array is <code>null</code>.
+     */
+    final override fun <T : Any> toArray(a: Array<T?>): Array<T?> {
+        var destination = a
         val size: Int = this.size
-        if (a!!.size < size) {
+        if (a.size < size) {
             // TODO JDK 1.6 this could use Arrays.copyOf
             val type = a.javaClass.componentType
             // generates unchecked warning
-            a = java.lang.reflect.Array.newInstance(type, size) as Array<T>
+            destination = java.lang.reflect.Array.newInstance(type, size) as Array<T?>
         }
         if (size > 0) {
-            System.arraycopy(elements, 0, a, 0, size)
+            System.arraycopy(elements, 0, destination, 0, size)
         }
         if (size < a.size) {
             // A surprising bit of spec.
             // this is required even with a 0 entries
-            a[size] = null
+            destination[size] = null
         }
-        return a
+        return destination
     }
 
-    final override fun clear() = readOnlyErr()
-    final override fun makeNull() = readOnlyErr()
-    final override fun add(element: IonValue?): Boolean = readOnlyErr()
     final override fun add(): ValueFactory = readOnlyErr()
+    final override fun add(element: IonValue?): Boolean = readOnlyErr()
     final override fun add(index: Int, element: IonValue?) = readOnlyErr()
     final override fun add(index: Int): ValueFactory = readOnlyErr()
     final override fun set(index: Int, element: IonValue?): IonValue = readOnlyErr()
     final override fun removeAt(index: Int): IonValue = readOnlyErr()
-    final override fun remove(o: IonValue?): Boolean = readOnlyErr()
     final override fun removeAll(elements: Collection<IonValue>): Boolean = readOnlyErr()
     final override fun retainAll(elements: Collection<IonValue>): Boolean = readOnlyErr()
     final override fun addAll(elements: Collection<IonValue>): Boolean = readOnlyErr()
     final override fun addAll(index: Int, elements: Collection<IonValue>): Boolean = readOnlyErr()
     final override fun <T : IonValue?> extract(type: Class<T>?): Array<T> = readOnlyErr()
-
-    private class ImmutableIterator(delegate: ListIterator<IonValue>): ListIterator<IonValue> by delegate, MutableListIterator<IonValue> {
-        override fun add(element: IonValue) = readOnlyErr()
-        override fun remove() = readOnlyErr()
-        override fun set(element: IonValue) = readOnlyErr()
-    }
-
-    companion object {
-        private val EMPTY_ITERATOR = ImmutableIterator(emptyList<IonValue>().listIterator())
-    }
 }
 
-class ImmutableIonList(fieldName: SymbolToken?, annotations: Array<out SymbolToken>, isNull: Boolean, elements: List<ImmutableIonValue>): IonList, ImmutableIonSequence(fieldName, annotations, isNull, elements, IonType.LIST) {
+class ImmutableIonList(fieldName: SymbolToken?, annotations: Array<out SymbolToken>, isNull: Boolean, elements: Array<ImmutableIonValue>): IonList, ImmutableIonSequence(fieldName, annotations, isNull, elements, IonType.LIST) {
     override fun clone(): IonList = this
     override fun writeTo(writer: IonWriter) {
         writer.superWriteTo {
@@ -358,4 +404,133 @@ class ImmutableIonList(fieldName: SymbolToken?, annotations: Array<out SymbolTok
     }
 
     override fun accept(visitor: ValueVisitor) { visitor.visit(this) }
+
+    // TODO: It would be good to have builders for all of the containers.
+    fun toBuilder() = Builder(annotations.toMutableList(), elements.toMutableList())
+
+    class Builder(
+        private val annotations: MutableList<SymbolToken> = mutableListOf(),
+        private val elements: MutableList<ImmutableIonValue> = mutableListOf()
+    ) {
+        fun add(element: ImmutableIonValue) = apply { elements.add(element) }
+        fun add(index: Int, element: ImmutableIonValue) = apply { elements.add(index, element) }
+        operator fun set(index: Int, element: ImmutableIonValue)= apply { elements.set(index, element) }
+        fun removeAt(index: Int): IonValue = readOnlyErr()
+        fun removeAll(elements: Collection<IonValue>): Boolean = readOnlyErr()
+        fun retainAll(elements: Collection<IonValue>): Boolean = readOnlyErr()
+        fun addAll(elements: Collection<IonValue>): Boolean = readOnlyErr()
+        fun addAll(index: Int, elements: Collection<IonValue>): Boolean = readOnlyErr()
+    }
 }
+
+class ImmutableIonSexp(fieldName: SymbolToken?, annotations: Array<out SymbolToken>, isNull: Boolean, elements: Array<ImmutableIonValue>): IonSexp, ImmutableIonSequence(fieldName, annotations, isNull, elements, IonType.SEXP) {
+    override fun clone(): IonSexp = this
+    override fun writeTo(writer: IonWriter) {
+        writer.superWriteTo {
+            stepIn(IonType.SEXP)
+            elements.forEach { it.writeTo(writer) }
+            stepOut()
+        }
+    }
+
+    override fun accept(visitor: ValueVisitor) { visitor.visit(this) }
+}
+
+
+class ImmutableIonStruct(fieldName: SymbolToken?, annotations: Array<out SymbolToken>, isNull: Boolean, elements: Array<ImmutableIonValue>): IonStruct, ImmutableIonContainer(fieldName, annotations, isNull, elements, IonType.STRUCT) {
+    override fun clone(): IonStruct = this
+
+    override fun writeTo(writer: IonWriter) {
+        writer.superWriteTo {
+            stepIn(IonType.STRUCT)
+            elements.forEach { it.writeTo(writer) }
+            stepOut()
+        }
+    }
+
+    override fun accept(visitor: ValueVisitor) { visitor.visit(this) }
+
+    override fun containsKey(fieldName: Any): Boolean = get(fieldName as String) != null
+
+    // Reference equality! :(
+    override fun containsValue(value: Any?): Boolean = elements.any { it === value }
+
+    // Guaranteed to be thread-safe because:
+    // 1. The initialization occurs in a synchronized method.
+    // 2. The field is only ever set with a fully-populated map rather than starting with an empty map and building it up.
+    lateinit var fieldsByName: Map<String, ImmutableIonValue>
+    @Synchronized
+    private fun initFieldNamesMap() {
+        if (this::fieldsByName.isInitialized) return
+        fieldsByName = elements.filter { it.fieldName != null }.associateBy { it.fieldName!! }
+    }
+
+    override fun get(fieldName: String): IonValue? {
+        if (!this::fieldsByName.isInitialized) initFieldNamesMap()
+        return fieldsByName[fieldName]
+    }
+
+    override fun put(fieldName: String?, child: IonValue?) = readOnlyErr()
+    override fun put(fieldName: String?) = readOnlyErr()
+    override fun putAll(m: MutableMap<out String, out IonValue>?) = readOnlyErr()
+    override fun add(fieldName: String?, child: IonValue?) = readOnlyErr()
+    override fun add(fieldName: SymbolToken?, child: IonValue?) = readOnlyErr()
+    override fun add(fieldName: String?): ValueFactory = readOnlyErr()
+    override fun remove(fieldName: String?): IonValue = readOnlyErr()
+    override fun removeAll(vararg fieldNames: String?) = readOnlyErr()
+    override fun retainAll(vararg fieldNames: String?) = readOnlyErr()
+
+    override fun cloneAndRemove(vararg fieldNames: String?): IonStruct {
+        return ImmutableIonStruct(fieldName, annotations, isNull, elements.filter { it.fieldName !in fieldNames }.toTypedArray())
+    }
+
+    override fun cloneAndRetain(vararg fieldNames: String?): IonStruct {
+        return ImmutableIonStruct(fieldName, annotations, isNull, elements.filter { it.fieldName in fieldNames }.toTypedArray())
+    }
+}
+
+class ImmutableIonDatagram(elements: Array<ImmutableIonValue>): IonDatagram, ImmutableIonSequence(null, emptyArray(), false, elements, IonType.DATAGRAM) {
+    override fun clone(): IonDatagram = this
+    override fun writeTo(writer: IonWriter) {
+        elements.forEach { it.writeTo(writer) }
+    }
+
+    override fun accept(visitor: ValueVisitor) { visitor.visit(this) }
+
+    override fun systemSize(): Int {
+        TODO("Not yet implemented")
+    }
+
+    override fun systemGet(index: Int): IonValue {
+        TODO("Not yet implemented")
+    }
+
+    override fun systemIterator(): MutableListIterator<IonValue> {
+        TODO("Not yet implemented")
+    }
+
+    override fun byteSize(): Int {
+        TODO("Not yet implemented")
+    }
+
+    override fun toBytes(): ByteArray {
+        TODO("Not yet implemented")
+    }
+
+    override fun getBytes(): ByteArray {
+        TODO("Not yet implemented")
+    }
+
+    override fun getBytes(dst: ByteArray?): Int {
+        TODO("Not yet implemented")
+    }
+
+    override fun getBytes(dst: ByteArray?, offset: Int): Int {
+        TODO("Not yet implemented")
+    }
+
+    override fun getBytes(out: OutputStream?): Int {
+        TODO("Not yet implemented")
+    }
+}
+

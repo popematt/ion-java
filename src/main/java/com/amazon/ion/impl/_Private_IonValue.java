@@ -93,7 +93,9 @@ public interface _Private_IonValue
      */
     public SymbolTable getAssignedSymbolTable();
 
+    // TODO: Only used for testing in com.amazon.ion.StructTest. See if this can be removed.
     public void dump(PrintWriter out);
 
+    // TODO: Only used for testing in com.amazon.ion.StructTest. See if this can be removed.
     public String validate();
 }
