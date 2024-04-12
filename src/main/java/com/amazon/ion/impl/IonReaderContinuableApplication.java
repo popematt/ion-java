@@ -14,7 +14,7 @@ import java.util.Iterator;
  * IonCursor with the application-level IonReader interface methods. Useful for adapting an IonCursor implementation
  * into a application-level IonReader.
  */
-interface IonReaderContinuableApplication extends IonReaderContinuableCore {
+public interface IonReaderContinuableApplication extends IonReaderContinuableCore {
 
     /**
      * Returns the symbol table that is applicable to the current value.

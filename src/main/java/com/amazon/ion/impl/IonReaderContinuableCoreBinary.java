@@ -14,6 +14,7 @@ import com.amazon.ion.impl.bin.IntList;
 import com.amazon.ion.impl.bin.OpCodes;
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoder;
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoderPool;
+import com.amazon.ion.impl.macro.MacroRef;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -97,7 +98,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @param offset the offset into the byte array at which the first byte of Ion data begins.
      * @param length the number of bytes to be read from the byte array.
      */
-    IonReaderContinuableCoreBinary(IonBufferConfiguration configuration, byte[] bytes, int offset, int length) {
+    protected IonReaderContinuableCoreBinary(IonBufferConfiguration configuration, byte[] bytes, int offset, int length) {
         super(configuration, bytes, offset, length);
         scalarConverter = new _Private_ScalarConversions.ValueVariant();
         annotationSids = new IntList(ANNOTATIONS_LIST_INITIAL_CAPACITY);
@@ -110,7 +111,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @param alreadyReadOff the offset into `alreadyRead` at which the first byte that was already read exists.
      * @param alreadyReadLen the number of bytes already read from `alreadyRead`.
      */
-    IonReaderContinuableCoreBinary(IonBufferConfiguration configuration, InputStream inputStream, byte[] alreadyRead, int alreadyReadOff, int alreadyReadLen) {
+    protected IonReaderContinuableCoreBinary(IonBufferConfiguration configuration, InputStream inputStream, byte[] alreadyRead, int alreadyReadOff, int alreadyReadLen) {
         super(configuration, inputStream, alreadyRead, alreadyReadOff, alreadyReadLen);
         scalarConverter = new _Private_ScalarConversions.ValueVariant();
         annotationSids = new IntList(ANNOTATIONS_LIST_INITIAL_CAPACITY);
@@ -1236,6 +1237,31 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         System.arraycopy(buffer, (int) (valueMarker.startIndex + lobBytesRead), bytes, offset, length);
         lobBytesRead += length;
         return length;
+    }
+
+    @Override
+    public boolean isMacro() {
+        return valueTid.isMacroInvocation;
+    }
+
+    private MacroRef currentMacro = null;
+
+    @Override
+    public MacroRef getMacroRef() {
+        if (!isMacro()) {
+            throw new IonException("Reader must be positioned on a macro to get a MacroRef");
+        }
+        if (currentMacro == null) {
+            long id = valueTid.macroId;
+            if (id == -1) {
+                long length = readFlexUInt_1_1();
+                id = readFixedUInt_1_1(peekIndex, peekIndex + length);
+            } else if (valueTid.variableLength) {
+                id = (readFlexUInt_1_1() << 4) + valueTid.lowerNibble;
+            }
+            currentMacro = new MacroRef.ById(id);
+        }
+        return currentMacro;
     }
 
     /**

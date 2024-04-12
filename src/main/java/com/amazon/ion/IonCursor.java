@@ -34,6 +34,11 @@ public interface IonCursor extends Closeable {
         START_SCALAR,
 
         /**
+         * The cursor is positioned on a macro invocation.
+         */
+        START_MACRO,
+
+        /**
          * The cursor has successfully buffered the entirety of the value on which it is currently positioned, as
          * requested by an invocation of `fillValue()`.
          */
@@ -55,6 +60,7 @@ public interface IonCursor extends Closeable {
      * <ul>
      *     <li>NEEDS_DATA, if not enough data is available in the stream</li>
      *     <li>START_SCALAR, if the reader is now positioned on a scalar value</li>
+     *     <li>START_MACRO, if the reader is now positioned on a macro invocation</li>
      *     <li>START_CONTAINER, if the reader is now positioned on a container value</li>
      *     <li>END_CONTAINER, if the reader is now positioned at the end of a container value, or</li>
      *     <li>NEEDS_INSTRUCTION, if the reader skipped a value for exceeding the configured maximum buffer size</li>
@@ -123,4 +129,24 @@ public interface IonCursor extends Closeable {
      * incomplete value.
      */
     Event endStream();
+
+    /**
+     * Buffers the entirety of the value on which the cursor is currently positioned.
+     *
+     * Unlike {@code fillValue()}, this method allows the caller to provide the tag (type id) for the next value. The
+     * next value is assumed to be a tagless type, and the provided tag is used to interpret the following bytes.
+     *
+     * TODO: List out caveats/limitations
+     * TODO: Confirm that `byte` is the right type for the method parameter.
+     * TODO: What about text encoding?
+     *
+     *This method may return:
+     * <ul>
+     *     <li>NEEDS_DATA, if not enough data is available in the stream</li>
+     *     <li>VALUE_READY, if the value was successfully filled</li>
+     *     <li>NEEDS_INSTRUCTION, if the value exceeded the configured maximum buffer size and could not be buffered</li>
+     * </ul>
+     * @return an Event conveying the result of the operation.
+     */
+    Event fillTaglessValue(byte tag);
 }

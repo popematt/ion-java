@@ -38,4 +38,18 @@ class Marker {
     public String toString() {
         return String.format("%s[%d:%d]", typeId, startIndex, endIndex);
     }
+
+    public Marker copy() {
+        Marker copy = new Marker(0, 0);
+        copy.startIndex = startIndex;
+        copy.endIndex = endIndex;
+        copy.typeId = typeId;
+        return copy;
+    }
+
+    public void copyFrom(Marker other) {
+        startIndex = other.startIndex;
+        endIndex = other.endIndex;
+        typeId = other.typeId;
+    }
 }

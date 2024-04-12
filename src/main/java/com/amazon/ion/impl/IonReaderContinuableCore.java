@@ -11,6 +11,7 @@ import com.amazon.ion.IvmNotificationConsumer;
 import com.amazon.ion.SymbolToken;
 import com.amazon.ion.Timestamp;
 import com.amazon.ion.UnknownSymbolException;
+import com.amazon.ion.impl.macro.MacroRef;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -21,7 +22,7 @@ import java.util.function.Consumer;
  * IonCursor with the core IonReader interface methods. Useful for adapting an IonCursor implementation into a
  * system-level IonReader.
  */
-interface IonReaderContinuableCore extends IonCursor {
+public interface IonReaderContinuableCore extends IonCursor {
 
     /**
      * Returns the depth into the Ion value that this reader has traversed.
@@ -285,4 +286,27 @@ interface IonReaderContinuableCore extends IonCursor {
      */
     boolean hasAnnotations();
 
+
+    // To expose to the higher layers. Encoding agnostic:
+
+    boolean isMacro();
+
+    MacroRef getMacroRef();
+
+    // Unfortunately, this is a binary only API:
+    /*
+     * Positions this reader on the next sibling after the current value. This method tells the reader that the next
+     * value is tagless, and provides the tag to the reader so that the reader knows how to interpret the value.
+     *
+     * Once so positioned the contents of this value can be accessed with the {@code *Value()} methods.
+     * If desired, {@code getType()} can be called to get the Ion type of the value that the reader is positioned on.
+     *
+     * TODO: Are there multibyte tags...?
+     *
+     * TODO: Can we replace this with something else?
+     *
+     * @param tag
+     * @return
+     */
+    // void taglessNext(byte tag);
 }

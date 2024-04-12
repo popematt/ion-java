@@ -6,6 +6,8 @@ import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.TemplateBodyExpression.*
 import com.amazon.ion.util.*
+import com.amazon.ion.impl.macro.Expression.*
+import com.amazon.ion.util.confirm
 
 /**
  * [MacroCompiler] wraps an [IonReader]. When directed to do so, it will take over advancing and getting values from the
@@ -125,7 +127,7 @@ class MacroCompiler(private val reader: IonReader) {
             IonType.INT -> expressions.add(
                 when (reader.integerSize!!) {
                     IntegerSize.INT,
-                    IntegerSize.LONG -> IntValue(annotations, reader.longValue())
+                    IntegerSize.LONG -> LongIntValue(annotations, reader.longValue())
                     IntegerSize.BIG_INTEGER -> BigIntValue(annotations, reader.bigIntegerValue())
                 }
             )
@@ -143,7 +145,7 @@ class MacroCompiler(private val reader: IonReader) {
                     reader.confirmNoAnnotations("on variable reference '$name'")
                     val index = signature.indexOfFirst { it.variableName == name }
                     confirm(index >= 0) { "variable '$name' is not recognized" }
-                    expressions.add(Variable(index))
+                    expressions.add(VariableReference(index))
                 }
             }
             IonType.LIST -> compileSequence(isQuoted) { start, end -> ListValue(annotations, start, end) }

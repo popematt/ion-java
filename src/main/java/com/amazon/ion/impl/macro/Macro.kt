@@ -101,4 +101,5 @@ enum class SystemMacro(override val signature: List<Macro.Parameter>) : Macro {
     Annotate(emptyList()),
     MakeString(listOf(Macro.Parameter("text", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ZeroOrMore))),
     // TODO: Other system macros
+    ;
 }
