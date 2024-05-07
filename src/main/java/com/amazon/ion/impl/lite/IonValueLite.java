@@ -23,15 +23,23 @@ import com.amazon.ion.impl._Private_IonValue;
 import com.amazon.ion.impl._Private_IonWriter;
 import com.amazon.ion.impl._Private_Utils;
 import com.amazon.ion.system.IonTextWriterBuilder;
+import com.amazon.ion.view.IonDataType;
+import com.amazon.ion.view.IonDataViewBase;
+import kotlin.Unit;
+import kotlin.jvm.functions.Function2;
+import org.jetbrains.annotations.NotNull;
+
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.function.BiConsumer;
 
 /**
  *  Base class of the light weight implementation of
  *  Ion values.
  */
-abstract class IonValueLite
+abstract class IonValueLite extends IonDataViewBase
     implements _Private_IonValue
 {
     private static final int TYPE_ANNOTATION_HASH_SIGNATURE =
@@ -955,6 +963,7 @@ abstract class IonValueLite
                                                        annotations);
     }
 
+    @Override
     public final boolean hasTypeAnnotation(String annotation)
     {
         if (annotation != null && annotation.length() > 0) {
@@ -1357,6 +1366,42 @@ abstract class IonValueLite
     public String validate()
     {
         return null;
+    }
+
+    @NotNull
+    @Override
+    public Iterator<SymbolToken> annotationSymbolsIterator() {
+        return new Iterator<SymbolToken>() {
+            int i = 0;
+
+            @Override
+            public boolean hasNext() {
+                return i < _annotations.length;
+            }
+
+            @Override
+            public SymbolToken next() {
+                return _annotations[i++];
+            }
+        };
+    }
+
+    @NotNull
+    @Override
+    public IonDataType getIonDataType() {
+        return IonDataType.fromIonType(getType());
+    }
+
+    @Override
+    public boolean isNull() {
+        return this.isNullValue();
+    }
+
+    @Override
+    public void forEachAnnotation(@NotNull BiConsumer<String, Integer> action) {
+        for (SymbolToken ann : _annotations) {
+            action.accept(ann.getText(), ann.getSid());
+        }
     }
 }
 

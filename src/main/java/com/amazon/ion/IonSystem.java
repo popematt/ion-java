@@ -17,6 +17,8 @@ package com.amazon.ion;
 
 import com.amazon.ion.system.IonSystemBuilder;
 import com.amazon.ion.system.IonTextWriterBuilder;
+import com.amazon.ion.view.IonDataViewFactory;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -47,7 +49,7 @@ import java.util.Iterator;
  * @see IonSystemBuilder
  */
 public interface IonSystem
-    extends ValueFactory
+    extends ValueFactory, IonDataViewFactory<IonValue>
 {
     /**
      * Gets the default system symbol table.

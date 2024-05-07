@@ -21,6 +21,8 @@ import com.amazon.ion.ValueVisitor;
 import com.amazon.ion.impl._Private_CurriedValueFactory;
 import com.amazon.ion.impl._Private_IonDatagram;
 import com.amazon.ion.impl._Private_Utils;
+import com.amazon.ion.view.IonDataStreamView;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Array;

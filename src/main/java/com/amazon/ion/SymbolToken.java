@@ -69,4 +69,12 @@ public interface SymbolToken
      * {@link SymbolTable#UNKNOWN_SYMBOL_ID} if the sid is unknown.
      */
     public int getSid();
+
+    // Destructuring functions for Kotlin users
+    public default String component1() {
+        return getText();
+    }
+    public default int component2() {
+        return getSid();
+    }
 }

@@ -12,24 +12,7 @@ import static com.amazon.ion.impl._Private_Utils.initialSymtab;
 import static com.amazon.ion.impl._Private_Utils.newSymbolToken;
 import static com.amazon.ion.util.IonTextUtils.printString;
 
-import com.amazon.ion.IntegerSize;
-import com.amazon.ion.IonBinaryWriter;
-import com.amazon.ion.IonCatalog;
-import com.amazon.ion.IonContainer;
-import com.amazon.ion.IonDatagram;
-import com.amazon.ion.IonException;
-import com.amazon.ion.IonLoader;
-import com.amazon.ion.IonReader;
-import com.amazon.ion.IonStruct;
-import com.amazon.ion.IonTextReader;
-import com.amazon.ion.IonTimestamp;
-import com.amazon.ion.IonType;
-import com.amazon.ion.IonValue;
-import com.amazon.ion.IonWriter;
-import com.amazon.ion.SymbolTable;
-import com.amazon.ion.SymbolToken;
-import com.amazon.ion.UnexpectedEofException;
-import com.amazon.ion.UnsupportedIonVersionException;
+import com.amazon.ion.*;
 import com.amazon.ion.impl._Private_IonBinaryWriterBuilder;
 import com.amazon.ion.impl._Private_IonReaderBuilder;
 import com.amazon.ion.impl._Private_IonSystem;
@@ -37,6 +20,9 @@ import com.amazon.ion.impl._Private_IonWriterFactory;
 import com.amazon.ion.impl._Private_Utils;
 import com.amazon.ion.system.IonReaderBuilder;
 import com.amazon.ion.system.IonTextWriterBuilder;
+import com.amazon.ion.view.IonDataView;
+import org.jetbrains.annotations.NotNull;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -858,5 +844,63 @@ final class IonSystemLite
                 }
             }
         }
+    }
+
+    @Override
+    public IonValue fromView(@NotNull IonDataView data) {
+        if (data instanceof IonValueLite) {
+            return ((IonValueLite) data).clone();
+        } else {
+            IonValue v = constructUnannotatedFromView(data);
+            data.forEachAnnotation(v::addTypeAnnotation);
+            return v;
+        }
+    }
+
+    private IonValue constructUnannotatedFromView(IonDataView data) {
+        if (data.isNull()) {
+            return newNull(data.getIonDataType().toIonType());
+        } else {
+            switch (data.getIonDataType()) {
+                case BOOL:
+                    return newBool(data.boolValue());
+                case INT:
+                    throw new IllegalStateException("Unimplemented");
+                case FLOAT:
+                    return newFloat(data.doubleValue());
+                case DECIMAL:
+                    return newDecimal(data.decimalValue());
+                case TIMESTAMP:
+                    return newTimestamp(data.timestampValue());
+                case STRING:
+                    return newString(data.stringValue());
+                case SYMBOL:
+                    return newSymbol(data.symbolTextValue());
+                case BLOB:
+                    return newBlob(data.blobValue().copyOfBytes());
+                case CLOB:
+                    return newClob(data.clobValue().copyOfBytes());
+                case LIST:
+                    IonList list = newEmptyList();
+                    data.forEachListValue(it -> list.add(fromView(it)));
+                    return list;
+                case SEXP:
+                    IonSexp sexp = newEmptySexp();
+                    data.forEachListValue(it -> sexp.add(fromView(it)));
+                    return sexp;
+                case STRUCT:
+                    IonStruct struct = newEmptyStruct();
+                    data.forEachStructValue((name, value) -> struct.add(name, fromView(value)));
+                    return struct;
+                default:
+                    throw new IllegalStateException("Unreachable!");
+            }
+        }
+    }
+
+    @NotNull
+    @Override
+    public IonDataView intoView(IonValue data) {
+        return (IonValueLite) data;
     }
 }
