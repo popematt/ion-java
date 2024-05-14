@@ -48,6 +48,10 @@ plugins {
     id("me.champeau.jmh") version "0.7.2"
 }
 
+// This is different than the ktlint gradle plugin version. When this version changes, there could be new rules
+// applied to the Kotlin code. The plugin version needs to be updated for new versions of Gradle.
+val ktlintVersion = "0.40.0"
+
 jacoco {
     toolVersion = "0.8.10+"
 }
@@ -171,7 +175,7 @@ spotless {
     // release branch.
     if (isReleaseWorkflow) return@spotless
 
-    ratchetFrom("$sourceRepoRemoteName/master")
+    // ratchetFrom("$sourceRepoRemoteName/master")
 
     val shortFormLicenseHeader = """
         // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
@@ -180,10 +184,12 @@ spotless {
 
     java {
         licenseHeader(shortFormLicenseHeader)
+        palantirJavaFormat("2.46.0")
         removeUnusedImports()
     }
     kotlin {
         licenseHeader(shortFormLicenseHeader)
+        ktlint(ktlintVersion)
     }
 }
 
@@ -368,7 +374,7 @@ tasks {
     }
 
     ktlint {
-        version.set("0.40.0")
+        version.set(ktlintVersion)
         outputToConsole.set(true)
     }
 
