@@ -1,30 +1,17 @@
-/*
- * Copyright 2007-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
- */
-
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 package com.amazon.ion;
 
 import static com.amazon.ion.impl._Private_Utils.EMPTY_STRING_ARRAY;
 import static com.amazon.ion.junit.IonAssert.assertNoCurrentValue;
 import static com.amazon.ion.junit.IonAssert.expectNextField;
 
+import com.amazon.ion.impl._Private_SystemReader;
 import com.amazon.ion.junit.IonAssert;
 import java.util.Date;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
-
 
 
 public abstract class ReaderSystemProcessingTestCase
@@ -189,6 +176,88 @@ public abstract class ReaderSystemProcessingTestCase
 
     //=========================================================================
 
+    @Test
+    public void testIsCurrentValueActuallyAnIVM_withIVM()
+        throws Exception
+    {
+        // $ion_1_1 $ion_2_0
+        String text = "$ion_1_0 $ion_1_0 $ion_1_0";
+        startIteration(text);
+        startSystemIteration();
+
+        _Private_SystemReader asSystemReader = (_Private_SystemReader) myReader;
+
+        int i = 0;
+        while (myReader.next() != null) {
+            assertTrue(
+                "Value " + i + " was incorrectly identified as not an IVM",
+                asSystemReader.isCurrentValueActuallyAnIVM()
+            );
+            i++;
+        }
+    }
+
+    @Test
+    public void testIsCurrentValueActuallyAnIVM_notIVM()
+        throws Exception
+    {
+        String text = " '''start''' " +
+            "foo::$ion_1_0 " +
+            "$0::$ion_1_0 " +
+            "{foo: $ion_1_0} " +
+            "[$ion_1_0] " +
+            "($ion_1_0) " +
+            "false " +
+            " \"$ion_1_0\" " +
+            "123";
+        startIteration(text);
+        startSystemIteration();
+
+        _Private_SystemReader asSystemReader = (_Private_SystemReader) myReader;
+
+        // Implementations are inconsistent regarding the presence of an initial IVM.
+        // Skip the starting IVM if there is one by advancing to the symbol 'start'
+        while (true) {
+            if (myReader.next() == IonType.STRING && "start".equals(myReader.stringValue())) {
+                break;
+            }
+        }
+
+        for (int i = 0; i < 1000; i++) {
+            IonType type = myReader.next();
+            System.out.println(type);
+            System.out.flush();
+
+            if (type == null) {
+                if (myReader.getDepth() > 0) {
+                    myReader.stepOut();
+                    continue;
+                } else {
+                    return;
+                }
+            }
+
+            if (myReader.getDepth() == 0) {
+                assertFalse(
+                    "Value " + i + " was incorrectly identified as an IVM",
+                    asSystemReader.isCurrentValueActuallyAnIVM()
+                );
+            } else {
+                assertFalse(
+                    "A child of value " + i + " at depth " + myReader.getDepth() + " was incorrectly identified as an IVM",
+                    asSystemReader.isCurrentValueActuallyAnIVM()
+                );
+            }
+
+            if (IonType.isContainer(myReader.getType())) {
+                myReader.stepIn();
+                continue;
+            }
+
+             if (myReader.getDepth() == 0) i++;
+        }
+        Assert.fail("We should have returned before this.");
+    }
 
     @Test
     public void testNoAnnotations()

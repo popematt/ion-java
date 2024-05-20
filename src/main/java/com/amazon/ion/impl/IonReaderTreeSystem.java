@@ -1,20 +1,8 @@
-/*
- * Copyright 2007-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
- */
-
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 package com.amazon.ion.impl;
 
+import static com.amazon.ion.impl.IonReaderTextUserX.isIonVersionMarker;
 import static com.amazon.ion.impl._Private_Utils.readFully;
 
 import com.amazon.ion.Decimal;
@@ -49,7 +37,7 @@ import java.util.Iterator;
 
 
 class IonReaderTreeSystem
-    implements IonReader, _Private_ReaderWriter
+    implements IonReader, _Private_ReaderWriter, _Private_SystemReader
 {
     protected final SymbolTable   _system_symtab;
     protected Iterator<IonValue>  _iter;
@@ -538,5 +526,14 @@ class IonReaderTreeSystem
 
         }
         return null;
+    }
+
+    @Override
+    public boolean isCurrentValueActuallyAnIVM() {
+        return getDepth() == 0
+            && _parent instanceof IonDatagram
+            && _curr.getTypeAnnotationSymbols().length == 0
+            && _curr instanceof IonSymbol
+            && isIonVersionMarker(((IonSymbol) _curr).symbolValue().getText());
     }
 }

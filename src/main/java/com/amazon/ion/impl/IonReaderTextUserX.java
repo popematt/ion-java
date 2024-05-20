@@ -127,28 +127,47 @@ class IonReaderTextUserX
                     }
                     break;
                 case SYMBOL:
-                    if (_annotation_count == 0)
+                    if (isCurrentValueActuallyAnIVM())
                     {
-                        // $ion_1_0 is read as an IVM only if it is not annotated
                         String version = symbolValue().getText();
-                        if (isIonVersionMarker(version))
+                        // TODO: Determine if Ion 1.0 and 1.1 need separate branches here.
+                        if (ION_1_0.equals(version) || "$ion_1_1".equals(version))
                         {
-                            // TODO: Determine if Ion 1.0 and 1.1 need separate branches here.
-                            if (ION_1_0.equals(version) || "$ion_1_1".equals(version))
+                            if (_value_keyword != IonTokenConstsX.KEYWORD_sid)
                             {
-                                if (_value_keyword != IonTokenConstsX.KEYWORD_sid)
-                                {
-                                    symbol_table_reset();
-                                    push_symbol_table(_system_symtab);
-                                }
-                                _has_next_called = false;
+                                symbol_table_reset();
+                                push_symbol_table(_system_symtab);
                             }
-                            else
-                            {
-                                throw new UnsupportedIonVersionException(version);
-                            }
+                            _has_next_called = false;
+                        }
+                        else
+                        {
+                            throw new UnsupportedIonVersionException(version);
                         }
                     }
+
+//                    if (_annotation_count == 0)
+//                    {
+//                        // $ion_1_0 is read as an IVM only if it is not annotated
+//                        String version = symbolValue().getText();
+//                        if (isIonVersionMarker(version))
+//                        {
+//                            // TODO: Determine if Ion 1.0 and 1.1 need separate branches here.
+//                            if (ION_1_0.equals(version) || "$ion_1_1".equals(version))
+//                            {
+//                                if (_value_keyword != IonTokenConstsX.KEYWORD_sid)
+//                                {
+//                                    symbol_table_reset();
+//                                    push_symbol_table(_system_symtab);
+//                                }
+//                                _has_next_called = false;
+//                            }
+//                            else
+//                            {
+//                                throw new UnsupportedIonVersionException(version);
+//                            }
+//                        }
+//                    }
                     break;
                 default:
                     break;
@@ -158,7 +177,7 @@ class IonReaderTextUserX
         return (!_eof);
     }
 
-    private static boolean isIonVersionMarker(String text)
+    static boolean isIonVersionMarker(String text)
     {
         return text != null && ION_VERSION_MARKER_REGEX.matcher(text).matches();
     }
@@ -420,5 +439,10 @@ class IonReaderTextUserX
         {
             hoistImpl(span);
         }
+    }
+
+    @Override
+    public boolean isUserReader() {
+        return true;
     }
 }
