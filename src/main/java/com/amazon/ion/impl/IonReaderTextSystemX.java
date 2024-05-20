@@ -15,6 +15,7 @@
 
 package com.amazon.ion.impl;
 
+import static com.amazon.ion.impl.IonReaderTextUserX.isIonVersionMarker;
 import static com.amazon.ion.impl._Private_ScalarConversions.getValueTypeName;
 
 import com.amazon.ion.Decimal;
@@ -56,7 +57,7 @@ import java.lang.Character;
  */
 class IonReaderTextSystemX
     extends IonReaderTextRawX
-    implements _Private_ReaderWriter
+    implements _Private_ReaderWriter, _Private_SystemReader
 {
     private static int UNSIGNED_BYTE_MAX_VALUE = 255;
 
@@ -1008,5 +1009,12 @@ class IonReaderTextSystemX
     public SymbolTable pop_passed_symbol_table()
     {
         return null;
+    }
+
+    @Override
+    public boolean isCurrentValueActuallyAnIVM() {
+        return _annotation_count == 0
+            && _value_type == IonType.SYMBOL
+            && isIonVersionMarker(symbolValue().getText());
     }
 }
