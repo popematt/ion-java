@@ -930,6 +930,67 @@ public final class _Private_IonTextAppender
         }
     }
 
+    private static final char[] HEX_DIGITS = new char[] {
+        '0', '1', '2', '3', '4', '5', '6', '7',
+        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+    };
+
+    public void printBlob_1_1(_Private_IonTextWriterBuilder _options,
+                          int currentDepth,
+                          byte[] value, int start, int len)
+        throws IOException
+    {
+        if (value == null)
+        {
+            appendAscii("null.blob");
+            return;
+        }
+
+        if (_options._blob_as_string) {
+            printBlob(_options, value, start, len);
+            return;
+        }
+
+        appendAscii("{{");
+
+        if (_options.isPrettyPrintOn() && value.length > 36) {
+            int i = start;
+            while (i + 32 < len) {
+                appendAscii(_options.lineSeparator());
+                printLeadingWhiteSpace(currentDepth + 1);
+                // We could manually unroll this loop if it improves performance
+                for (int j = 0 ; j < 32; j++) {
+                    // Yes, there is Integer.toString(value, radix), but this is much shorter and simpler
+                    // because we always know the radix, and we always produce exactly two characters for each byte.
+                    byte b = value[i++];
+                    appendAscii(HEX_DIGITS[b >> 4]);
+                    appendAscii(HEX_DIGITS[b & 0xF]);
+                }
+            }
+            appendAscii(_options.lineSeparator());
+            printLeadingWhiteSpace(currentDepth + 1);
+            while (i < len) {
+                byte b = value[i++];
+                appendAscii(HEX_DIGITS[b >> 4]);
+                appendAscii(HEX_DIGITS[b & 0xF]);
+            }
+            appendAscii(_options.lineSeparator());
+            printLeadingWhiteSpace(currentDepth);
+        } else {
+            if (_options.isPrettyPrintOn()) {
+                appendAscii(' ');
+            }
+            for (int i = start; i < len; i++) {
+                byte b = value[i];
+                appendAscii(HEX_DIGITS[b >> 4]);
+                appendAscii(HEX_DIGITS[b & 0xF]);
+            }
+            if (_options.isPrettyPrintOn()) {
+                appendAscii(' ');
+            }
+        }
+        appendAscii("}}");
+    }
 
     private void printClobBytes(byte[] value, int start, int end,
                                 String[] escapes)
@@ -1005,6 +1066,34 @@ public final class _Private_IonTextAppender
             }
             appendAscii("}}");
         }
+    }
+
+
+    private static final String[] INDENTS = new String[] {
+        "",
+        "  ",
+        "    ",
+        "      ",
+        "        ",
+        "          ",
+        "            ",
+        "              ",
+        "                ",
+        "                  ",
+        "                    ",
+        "                      ",
+        "                        ",
+        "                          ",
+        "                            ",
+        "                              ",
+    };
+    private static final int MAX_PRECOMPUTED_INDENT = INDENTS.length - 1;
+    void printLeadingWhiteSpace(int depth) throws IOException {
+        while (depth > MAX_PRECOMPUTED_INDENT) {
+            appendAscii(INDENTS[MAX_PRECOMPUTED_INDENT]);
+            depth -= MAX_PRECOMPUTED_INDENT;
+        }
+        appendAscii(INDENTS[depth]);
     }
 
     /**

@@ -105,6 +105,16 @@ class MacroCompilerTest {
                 BoolValue(emptyList(), false),
             )
         ),
+        """(macro using_expr_group () (values (; 42 "hello" false)))""" shouldCompileTo TemplateMacro(
+            signature = emptyList(),
+            body = listOf(
+                MacroInvocation(ByName("values"), startInclusive = 0, endInclusive = 4),
+                ExpressionGroup(startInclusive = 1, endInclusive = 4),
+                LongIntValue(emptyList(), 42),
+                StringValue(emptyList(), "hello"),
+                BoolValue(emptyList(), false),
+            )
+        ),
         """(macro invoke_by_id () (12 true false))""" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(

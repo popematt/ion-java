@@ -28,7 +28,7 @@ import static com.amazon.ion.impl.bin.Ion_1_1_Constants.*;
 /**
  * An IonCursor capable of raw parsing of binary Ion streams.
  */
-class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReaderContinuableCore {
+public class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReaderContinuableCore {
 
     // Isolates the highest bit in a byte.
     private static final int HIGHEST_BIT_BITMASK = 0x80;

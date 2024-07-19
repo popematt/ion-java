@@ -222,16 +222,10 @@ class IonWriterSystemText
         return (topType == tidSexp);
     }
 
-    void printLeadingWhiteSpace() throws IOException {
-        for (int ii=0; ii<_top; ii++) {
-            _output.appendAscii(' ');
-            _output.appendAscii(' ');
-        }
-    }
     void closeCollection(char closeChar) throws IOException {
        if (_options.isPrettyPrintOn()) {
            _output.appendAscii(_options.lineSeparator());
-           printLeadingWhiteSpace();
+           _output.printLeadingWhiteSpace(_top);
        }
        _output.appendAscii(closeChar);
     }
@@ -343,7 +337,7 @@ class IonWriterSystemText
                 followingLongString = false;
             }
             _output.appendAscii(_options.lineSeparator());
-            printLeadingWhiteSpace();
+            _output.printLeadingWhiteSpace(_top);
         }
         else if (_pending_separator) {
             _output.appendAscii(_separator_character);

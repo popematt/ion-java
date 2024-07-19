@@ -5,12 +5,21 @@ import java.util.Stack
 
 class EncodingContext(
     val macroTable: Map<MacroRef, Macro>
-)
+) {
+    companion object {
+        @JvmStatic
+        val EMPTY = EncodingContext(emptyMap())
+    }
+}
 
 class Environment(
-    val arguments: List<EncodingExpression>,
-    val argumentsBySignatureIndex: List<Expression>
-)
+    val arguments: List<List<Expression>>
+) {
+    companion object {
+        @JvmStatic
+        val EMPTY = Environment(emptyList())
+    }
+}
 
 
 
@@ -80,6 +89,7 @@ class Evaluator(
                         next = nextCandidate
                         return
                     }
+                    is Expression.EExpression -> pushEExpression(currentExpander.expressions, nextCandidate)
                     is Expression.MacroInvocation -> pushMacro(currentExpander.expressions, nextCandidate)
                     is Expression.ExpressionGroup -> {
                         // push expression group?
@@ -87,15 +97,16 @@ class Evaluator(
                     is Expression.VariableReference -> {
                         // TODO: do we need to push a variable expander in order to look at a different list of expressions?
                         val signatureIndex = nextCandidate.signatureIndex
-                        nextCandidate = environment.argumentsBySignatureIndex[signatureIndex]
+                        nextCandidate = environment.arguments[signatureIndex][0]
                     }
                     Expression.Placeholder -> TODO("Unreachable")
+                    Expr.Placeholder -> TODO()
                 }
             } else {
                 when (currentExpander) {
                     is MacroExpansionIterator -> popMacro()
                     // If it's a container, require the caller to call stepOut()
-                    is ContainerIterator -> break
+                    is SequenceIterator -> break
                     is ExpressionGroupIterator -> {}
                     else -> TODO("Unreachable")
                 }
@@ -115,6 +126,15 @@ class Evaluator(
         return current ?: throw NoSuchElementException("No more elements")
     }
 
+    private fun pushEExpression(expressions: List<Expression>, macroInvocation: Expression.EExpression) {
+
+        // TODO:
+        //   1. Look up macro in macro table
+        //   2. ?
+
+        iteratorStack.push(MacroExpansionIterator(expressions))
+    }
+
     private fun pushMacro(expressions: List<Expression>, macroInvocation: Expression.MacroInvocation) {
 
         // TODO:
@@ -130,14 +150,14 @@ class Evaluator(
     }
 
     fun stepIn() {
-        iteratorStack.push(ContainerIterator(iteratorStack.peek().expressions, current as Expression.Container))
+        iteratorStack.push(SequenceIterator(iteratorStack.peek().expressions, current as Expression.Container))
     }
 
     fun stepOut() {
         // TODO: Consider checking the state to see if we can step out _before_ modifying the state
         while (iteratorStack.isNotEmpty()) {
             val popped = iteratorStack.pop()
-            if (popped is ContainerIterator) return
+            if (popped is SequenceIterator) return
         }
         throw IonException("Nothing to step out of.")
     }

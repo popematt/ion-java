@@ -55,6 +55,8 @@ class MacroExpressionizer(
             val nextType = reader.next()
             if (nextType == null && !reader.isMacro()) {
                 // End of container?
+
+                // If so, let's check that all required parameters are present.
                 break
             }
             if (reader.isExpressionGroup()) {
@@ -65,7 +67,7 @@ class MacroExpressionizer(
                             // Easy case, parameter must have a type.
                             readTaggedValue()
                         }
-                        uint8 -> {
+                        else -> {
                             TODO()
                         }
                         // TODO: Other types
@@ -77,7 +79,7 @@ class MacroExpressionizer(
                         // Easy case, parameter must have a type.
                         readTaggedValue()
                     }
-                    uint8 -> {
+                    else -> {
                         TODO()
                     }
                     // TODO: Other types
@@ -86,7 +88,7 @@ class MacroExpressionizer(
         }
 
         val endInclusive = expressions.size - 1
-        expressions[placeholderIndex] = Expression.MacroInvocation(macroRef, placeholderIndex, endInclusive)
+        expressions[placeholderIndex] = Expression.EExpression(macroRef, placeholderIndex, endInclusive)
     }
 
     /**

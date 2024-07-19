@@ -34,10 +34,11 @@ sealed interface TemplateBodyExpression: Expression
  * and variable references.
  */
 sealed interface Expression {
-    sealed interface Container: Expression {
+    sealed interface HasStartAndEnd: Expression {
         val startInclusive: Int
         val endInclusive: Int
     }
+    sealed interface Container: HasStartAndEnd
 
     val type: IonType?
         get() = null
@@ -60,7 +61,7 @@ sealed interface Expression {
      * @property startInclusive the index of the first expression of the expression group (i.e. this instance)
      * @property endInclusive the index of the last expression contained in the expression group
      */
-    data class ExpressionGroup(val startInclusive: Int, val endInclusive: Int) : EncodingExpression
+    data class ExpressionGroup(override val startInclusive: Int, override val endInclusive: Int) : EncodingExpression, TemplateBodyExpression, HasStartAndEnd
 
     // Scalars
     data class NullValue(override val annotations: List<SymbolToken> = emptyList(), override val type: IonType) : TemplateBodyExpression, EncodingExpression, ResolvedExpression
@@ -156,7 +157,12 @@ sealed interface Expression {
     /**
      * A macro invocation that needs to be expanded.
      */
-    data class MacroInvocation(val address: MacroRef, val startInclusive: Int, val endInclusive: Int) : TemplateBodyExpression, EncodingExpression
+    data class MacroInvocation(val address: MacroRef, override val startInclusive: Int, override val endInclusive: Int) : TemplateBodyExpression, HasStartAndEnd
+
+    /**
+     * An e-expression that needs to be expanded.
+     */
+    data class EExpression(val address: MacroRef, override val startInclusive: Int, override val endInclusive: Int) : EncodingExpression, HasStartAndEnd
 }
 
 /**

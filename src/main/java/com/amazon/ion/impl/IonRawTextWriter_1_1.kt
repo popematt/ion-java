@@ -25,6 +25,7 @@ class IonRawTextWriter_1_1 internal constructor(
 
     companion object {
         const val IVM = "\$ion_1_1"
+        private val indents = Array(40) { i -> " ".repeat(i * 2) }
     }
 
     enum class ContainerType {
@@ -307,7 +308,7 @@ class IonRawTextWriter_1_1 internal constructor(
 
     override fun writeString(value: CharSequence) = writeScalar { output.printString(value) }
 
-    override fun writeBlob(value: ByteArray, start: Int, length: Int) = writeScalar { output.printBlob(options, value, start, length) }
+    override fun writeBlob(value: ByteArray, start: Int, length: Int) = writeScalar { output.printBlob_1_1(options, depth(), value, start, length) }
 
     override fun writeClob(value: ByteArray, start: Int, length: Int) = writeScalar { output.printClob(options, value, start, length) }
 
@@ -385,9 +386,10 @@ class IonRawTextWriter_1_1 internal constructor(
         closeValue {
             if (options.isPrettyPrintOn && currentContainerHasValues) {
                 output.appendAscii(options.lineSeparator())
-                output.appendAscii(" ".repeat(ancestorContainersStack.size * 2))
+                output.printLeadingWhiteSpace(ancestorContainersStack.size)
             }
             output.appendAscii(endChar)
         }
     }
+
 }

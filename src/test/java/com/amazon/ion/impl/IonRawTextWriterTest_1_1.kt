@@ -17,7 +17,7 @@ import org.junit.jupiter.params.provider.CsvSource
 
 class IonRawTextWriterTest_1_1 {
 
-    private fun IonRawTextWriter_1_1.stepInEExp(id: Int) = stepInEExp(id, false, SystemMacro.Stream)
+    private fun IonRawTextWriter_1_1.stepInEExp(id: Int) = stepInEExp(id, false, SystemMacro.Values)
 
     private fun standardBuilder(): _Private_IonTextWriterBuilder_1_1 {
         return _Private_IonTextWriterBuilder_1_1.standard()
@@ -686,6 +686,14 @@ class IonRawTextWriterTest_1_1 {
     fun `write blob`() {
         assertWriterOutputEquals("{{AQID}}") {
             writeBlob(byteArrayOf(1, 2, 3), 0, 3)
+        }
+    }
+
+    @Test
+    fun `write a long blob`() {
+        val bytes = "The quick brown fox jumps over the lazy dog! Lorem ipsum dolors est.".toByteArray()
+        assertWriterOutputEquals("{{AQID}}", builderConfigurator = { withPrettyPrinting() }) {
+            writeBlob(bytes, 0, bytes.size)
         }
     }
 

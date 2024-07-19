@@ -148,5 +148,5 @@ public interface IonCursor extends Closeable {
      * </ul>
      * @return an Event conveying the result of the operation.
      */
-    Event fillTaglessValue(byte tag);
+    // Event fillTaglessValue(byte tag);
 }

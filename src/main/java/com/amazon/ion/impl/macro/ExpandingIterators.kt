@@ -9,7 +9,7 @@ interface Expander: Iterator<Expression> {
 
 // TODO: Expander pool(s)
 
-class ContainerIterator(override val expressions: List<Expression>, private val container: Expression.Container): Expander {
+class SequenceIterator(override val expressions: List<Expression>, private val container: Expression.Container): Expander {
     // The index of the next element to return
     private var i: Int = container.startInclusive + 1
 
@@ -49,7 +49,7 @@ class VariableExpansionIterator(override val expressions: List<Expression>, val 
     init { initCheckForVoid() }
 
     private fun initCheckForVoid() {
-        if (cardinality.canBeZero) return
+        if (cardinality.canBeVoid) return
         if (!wrapped.hasNext()) {
             throw IonException("Expected $cardinality arguments, found 0")
         }
