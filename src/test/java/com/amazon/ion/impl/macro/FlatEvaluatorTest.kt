@@ -2,8 +2,6 @@ package com.amazon.ion.impl.macro
 
 import com.amazon.ion.IonType
 import com.amazon.ion.impl.macro.Expression.*
-import com.amazon.ion.impl.macro.Macro.*
-import com.amazon.ion.impl.macro.Macro.ParameterEncoding.*
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -248,7 +246,8 @@ class FlatEvaluatorTest {
 
         evaluator.initExpansion(
             listOf(
-                EExpression(MacroRef.ByName("make_string"), 0, 3),
+                EExpression(MacroRef.ByName("make_string"), 0, 4),
+                ExpressionGroup(1, 4),
                 StringValue(emptyList(), "a"),
                 StringValue(emptyList(), "b"),
                 StringValue(emptyList(), "c"),

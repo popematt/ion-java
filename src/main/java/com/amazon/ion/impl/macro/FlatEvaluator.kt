@@ -8,6 +8,9 @@ class FlatEvaluator(private val encodingContext: EncodingContext) {
 
     companion object {
         @JvmStatic
+        val VALUES_TEMPLATE_BODY = listOf(Expression.VariableReference(0))
+
+        @JvmStatic
         private fun defaultNextFun(ei: ExpansionInfo, fe: FlatEvaluator): Expression = with(ei) {
             val next = expressions!![i]
             if (next is Expression.Container) i = next.endInclusive
@@ -25,17 +28,25 @@ class FlatEvaluator(private val encodingContext: EncodingContext) {
         TemplateBody(::defaultNextFun),
         MakeString({
             val sb = StringBuilder()
-            for (j in startInclusive .. endExclusive) {
-                val text = when (val expr = expressions!![j]) {
-                    // There might be an expression group or just a single arg.
-                    is Expression.ExpressionGroup -> continue
+
+
+
+            while (hasNext()) {
+                val expr = defaultNextFun(this, it)
+                val text = when (expr) {
+                    is Expression.ExpressionGroup -> {
+                        // We'll just ignore the expression group marker and look at the args directly.
+                        i = expr.startInclusive + 1
+                        continue
+                    }
                     is Expression.StringValue -> expr.value
                     is Expression.SymbolValue -> expr.value.assumeText()
                     is Expression.NullValue -> ""
                     is Expression.MacroInvocation -> {
-                        it.pushMacroExpansion(expressions!!, j)
+                        it.pushMacroExpansion(expressions!!, i)
                         TODO("Read the expressions produced by this macro expansion")
                     }
+                    // TODO: References
                     else -> throw IonException("Not a valid argument for make_string: $expr")
                 }
                 sb.append(text)
@@ -47,7 +58,7 @@ class FlatEvaluator(private val encodingContext: EncodingContext) {
     private inner class ExpansionInfo: Iterator<Expression> {
         // The type of container, if this is a container.
         @JvmField var type: IonType? = null
-        @JvmField var environment: Environment? = null
+        @JvmField var environment: Environment3? = null
         // The Expressions being expanded
         @JvmField var expressions: List<Expression>? = null
         // Start of the content being expanded.
@@ -84,6 +95,8 @@ class FlatEvaluator(private val encodingContext: EncodingContext) {
     private var currentExpr: Expression? = null
 
     private fun pushMacroExpansion(encodingExpressions: List<Expression>, i: Int) {
+        val currentEnvironment = expansionStack.peek()?.environment ?: Environment3.EMPTY
+
         val argsStartInclusive = i + 1
         val (address, argsEndExclusive) = when (val it = encodingExpressions[i]) {
             is Expression.EExpression -> it.address to it.endInclusive + 1
@@ -91,62 +104,88 @@ class FlatEvaluator(private val encodingContext: EncodingContext) {
             else -> throw IllegalStateException("Attempted to push macro for an expression that is not a macro: $it")
         }
 
-        val macro = encodingContext.macroTable[address]
+        val macro = encodingContext.macroTable[address] ?: throw IonException("No such macro: $address")
 
         val expansionInfo = expansionStack.push {
-            it.startInclusive = 0
-            it.i = 0
+            it.startInclusive = -1
+            it.endExclusive = -1
+            it.i = -1
             it.type = null
             it.expressions = null
+            it.environment = null
+            it.type = null
         }
 
-        when (macro) {
-            null -> throw IonException("No such macro: ${address}")
-            is TemplateMacro -> {
-                expansionInfo.endExclusive = macro.body.size
-                expansionInfo.expressions = macro.body
-                expansionInfo.expansionKind = ExpansionKind.TemplateBody
-            }
-            SystemMacro.Values -> {
-                expansionInfo.expansionKind = ExpansionKind.ExpressionGroup
-                expansionInfo.startInclusive++
-                expansionInfo.expressions = encodingExpressions
-            }
-            SystemMacro.MakeString -> {
-                expansionInfo.expansionKind = ExpansionKind.MakeString
-                expansionInfo.type = IonType.STRING
-                expansionInfo.expressions = encodingExpressions
-            }
-        }
-
-        val args = mutableListOf<List<Expression>>()
+        val argIndices = mutableListOf<Int>()
         var args_i = argsStartInclusive
         for (p in macro.signature) {
-            val arg = mutableListOf<Expression>()
 
             if (args_i >= argsEndExclusive) {
                 if (!p.cardinality.canBeVoid) {
                     throw IonException("No value provided for parameter ${p.variableName}")
+                } else {
+                    // Elided rest parameter.
+                    argIndices.add(-1)
                 }
             } else {
+                argIndices.add(args_i)
                 val argumentExpression = encodingExpressions[args_i]
-
                 if (argumentExpression is Expression.HasStartAndEnd) {
                     val argEndExclusive = argumentExpression.endInclusive + 1
-                    arg.addAll(encodingExpressions.subList(args_i, argEndExclusive))
                     args_i = argEndExclusive
                 } else {
-                    arg.add(argumentExpression)
                     args_i++
                 }
             }
-            args.add(arg)
+        }
+        while (args_i < argsEndExclusive) {
+            argIndices.add(args_i)
+            val argumentExpression = encodingExpressions[args_i]
+            if (argumentExpression is Expression.HasStartAndEnd) {
+                val argEndExclusive = argumentExpression.endInclusive + 1
+                args_i = argEndExclusive
+            } else {
+                args_i++
+            }
+        }
+        if (argIndices.size != macro.signature.size) {
+            throw IonException("Too many arguments. Expected ${macro.signature.size}, but found ${argIndices.size}; they were $argIndices")
         }
 
-        // Need to eagerly evaluate arguments, for now.
-        // If we look up arguments by name, then we might be able to lazily evaluate them...?
+        when (macro) {
+            is TemplateMacro -> {
+                expansionInfo.i = 0
+                expansionInfo.startInclusive = 0
+                expansionInfo.endExclusive = macro.body.size
+                expansionInfo.expressions = macro.body
+                expansionInfo.expansionKind = ExpansionKind.TemplateBody
+                expansionInfo.environment = currentEnvironment.createChild(encodingExpressions, argIndices)
+                // TODO: See if we can populate this based on static analysis of compiled template
+                expansionInfo.type = null
+            }
+            SystemMacro.Values -> {
+                // Expand `values` by expanding its expression group argument
+                expansionInfo.expansionKind = ExpansionKind.ExpressionGroup
 
-        expansionInfo.environment = Environment(args)
+                expansionInfo.i = argsStartInclusive
+                expansionInfo.startInclusive = argsStartInclusive
+                expansionInfo.endExclusive = argsEndExclusive
+
+                expansionInfo.expressions = encodingExpressions
+                expansionInfo.environment = currentEnvironment
+            }
+            SystemMacro.MakeString -> {
+                expansionInfo.expansionKind = ExpansionKind.MakeString
+                expansionInfo.type = IonType.STRING
+
+                expansionInfo.i = argsStartInclusive
+                expansionInfo.startInclusive = argsStartInclusive
+                expansionInfo.endExclusive = argsEndExclusive
+
+                expansionInfo.expressions = encodingExpressions
+                expansionInfo.environment = currentEnvironment
+            }
+        }
     }
 
     fun initExpansion(encodingExpressions: List<Expression>) {
@@ -167,46 +206,60 @@ class FlatEvaluator(private val encodingContext: EncodingContext) {
         //        If it is an expression group...
         //        If it is a macro invocation...
 
+
+        println("Starting expandNext()")
+
         currentExpr = null
         while (!expansionStack.isEmpty) {
+            println(expansionStack.peek())
             if (!expansionStack.peek().hasNext()) {
                 if (expansionStack.peek().expansionKind == ExpansionKind.Container) {
                     // End of container. User needs to step out.
+                    println("User needs to step out")
                     return null
                 } else {
                     // End of a macro invocation or something else that is not part of the data model,
                     // so we seamlessly close this out and continue with the parent expansion.
                     expansionStack.pop()
+                    println("Pop expansion")
                     continue
                 }
             }
-            when (val currentExpr = expansionStack.peek().next()) {
+            when (val currentExpr = expansionStack.peek().next().also { println(it) }) {
                 is Expression.MacroInvocation -> {
                     pushMacroExpansion(expansionStack.peek().expressions!!, currentExpr.startInclusive)
                 }
                 is Expression.VariableReference -> {
-                    val arg = expansionStack.peek().environment!!.arguments[currentExpr.signatureIndex]
+                    val currentEnvironment = expansionStack.peek().environment ?: Environment3.EMPTY
+                    val argumentExpressionIndex = currentEnvironment.argumentIndices[currentExpr.signatureIndex]
+
+                    if (argumentExpressionIndex < 0) {
+                        // Argument was elided.
+                        continue
+                    }
+
                     expansionStack.push {
-                        it.i = 0
                         it.type = null
-                        it.startInclusive = 0
-                        it.endExclusive = arg.size
+                        it.i = argumentExpressionIndex
+                        it.startInclusive = argumentExpressionIndex
+                        // There can only be one expression for an argument. It's either a value, macro, or expression group.
+                        it.endExclusive = argumentExpressionIndex + 1
                         it.expansionKind = ExpansionKind.ExpressionGroup
-                        it.expressions = arg
-                        it.environment = Environment.EMPTY
+                        it.expressions = currentEnvironment.arguments
+                        it.environment = currentEnvironment.parentEnvironment
                     }
                 }
                 is Expression.EExpression -> TODO()
                 is Expression.ExpressionGroup -> {
                     val currentExpansion = expansionStack.peek()
                     expansionStack.push {
-                        it.environment = currentExpansion.environment
-                        it.type = IonType.LIST
-                        it.expressions = currentExpansion.expressions
-                        it.startInclusive = currentExpr.startInclusive + 1
-                        it.endExclusive = currentExpr.endInclusive - 1
-                        it.i = it.startInclusive
                         it.expansionKind = ExpansionKind.ExpressionGroup
+                        it.type = null
+                        it.i = currentExpr.startInclusive + 1
+                        it.startInclusive = currentExpr.startInclusive + 1
+                        it.endExclusive = currentExpr.endInclusive + 1
+                        it.expressions = currentExpansion.expressions
+                        it.environment = currentExpansion.environment
                     }
                     continue
                 }
@@ -221,6 +274,19 @@ class FlatEvaluator(private val encodingContext: EncodingContext) {
             }
         }
         return currentExpr
+    }
+
+    private fun pushExpressionGroup(expr: Expression.ExpressionGroup) {
+        val currentEnvironment = expansionStack.peek().environment ?: Environment3.EMPTY
+        expansionStack.push {
+            it.i = expr.startInclusive
+            it.type = null
+            it.startInclusive = expr.startInclusive
+            it.endExclusive = expr.endInclusive + 1
+            it.expansionKind = ExpansionKind.ExpressionGroup
+            it.expressions = currentEnvironment.arguments
+            it.environment = currentEnvironment.parentEnvironment
+        }
     }
 
     fun stepOut() {
