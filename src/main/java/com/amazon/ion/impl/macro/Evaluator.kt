@@ -12,12 +12,28 @@ class EncodingContext(
     }
 }
 
-class Environment(
+data class Environment(
     val arguments: List<List<Expression>>
 ) {
     companion object {
         @JvmStatic
         val EMPTY = Environment(emptyList())
+    }
+}
+
+data class Environment3 private constructor(
+    // Any variables found here have to be looked up in [parentEnvironment]
+    val arguments: List<Expression>,
+    // TODO: Replace with IntArray
+    val argumentIndices: List<Int>,
+    val parentEnvironment: Environment3?,
+) {
+    fun createChild(arguments: List<Expression>, argumentIndices: List<Int>) = Environment3(arguments, argumentIndices, this)
+    companion object {
+        @JvmStatic
+        val EMPTY = Environment3(emptyList(), emptyList(), null)
+        @JvmStatic
+        fun create(arguments: List<Expression>, argumentIndices: List<Int>) = Environment3(arguments, argumentIndices, null)
     }
 }
 
@@ -101,6 +117,7 @@ class Evaluator(
                     }
                     Expression.Placeholder -> TODO("Unreachable")
                     Expr.Placeholder -> TODO()
+                    is Expression.VariableSubstitution -> TODO()
                 }
             } else {
                 when (currentExpander) {
