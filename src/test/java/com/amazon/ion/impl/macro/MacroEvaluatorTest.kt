@@ -5,7 +5,7 @@ import com.amazon.ion.impl.macro.Expression.*
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
-class FlatEvaluatorTest {
+class MacroEvaluatorTest {
 
     // Variables in a list
     // Args pass through to nested macros
@@ -48,7 +48,7 @@ class FlatEvaluatorTest {
             +VariableReference(0)
         },
     )
-    val evaluator = FlatEvaluator(encodingContext)
+    val evaluator = MacroEvaluator(encodingContext)
 
     @Test
     fun `a trivial constant macro evaluation`() {
@@ -74,7 +74,7 @@ class FlatEvaluatorTest {
 
     @Test
     fun `constant macro with empty list`() {
-        val evaluator = FlatEvaluator(
+        val evaluator = MacroEvaluator(
             encodingContext(
                 "foo" to template("") {
                     +ListValue(emptyList(), 0, 0)
@@ -97,7 +97,7 @@ class FlatEvaluatorTest {
 
     @Test
     fun `constant macro with single element list`() {
-        val evaluator = FlatEvaluator(
+        val evaluator = MacroEvaluator(
             encodingContext(
                 "foo" to template("") {
                     +ListValue(emptyList(), 0, 1)
@@ -122,7 +122,7 @@ class FlatEvaluatorTest {
 
     @Test
     fun `constant macro with multi element list`() {
-        val evaluator = FlatEvaluator(
+        val evaluator = MacroEvaluator(
             encodingContext(
                 "foo" to template("") {
                     +ListValue(emptyList(), 0, 3)
@@ -194,6 +194,25 @@ class FlatEvaluatorTest {
 
         assertEquals(IonType.LIST, evaluator.expandNext()?.type)
         evaluator.stepIn()
+        assertEquals(StringValue(value = "a"), evaluator.expandNext())
+        assertEquals(null, evaluator.expandNext())
+        evaluator.stepOut()
+        assertEquals(null, evaluator.expandNext())
+    }
+
+    @Test
+    fun `a variable that gets used twice`() {
+
+        evaluator.initExpansion(
+            listOf(
+                EExpression(MacroRef.ByName("double_identity"), 0, 1),
+                StringValue(value = "a"),
+            )
+        )
+
+        assertEquals(IonType.LIST, evaluator.expandNext()?.type)
+        evaluator.stepIn()
+        assertEquals(StringValue(value = "a"), evaluator.expandNext())
         assertEquals(StringValue(value = "a"), evaluator.expandNext())
         assertEquals(null, evaluator.expandNext())
         evaluator.stepOut()

@@ -7,12 +7,14 @@ import com.amazon.ion.util.confirm
 import java.util.*
 
 /**
+ * Purpose is to read from IonReader of some sort and construct [Expression]s.
+ *
  * Expansion Algorithm.
  *
  * There are two sources of expressions. The template macro definitions, and the macro arguments.
  * The macro expander merges those.
  *
- * In order to avoid having to seek/skip around, we eagerly read all macro arguments.
+ * In order to avoid having to seek/skip around, we eagerly read all macro arguments into [Expression]s.
  * We also need to eagerly read any nested macro arguments because macro invocations aren't
  * length prefixed, so we can't skip past them.
  *

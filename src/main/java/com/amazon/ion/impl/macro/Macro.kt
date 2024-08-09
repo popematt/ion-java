@@ -78,8 +78,6 @@ sealed interface Macro {
     }
 }
 
-data class TemplateMacro2(override val signature: List<Macro.Parameter>, val body: Expr) : Macro2
-
 /**
  * Represents a template macro. A template macro is defined by a signature, and a list of template expressions.
  * A template macro only gains a name and/or ID when it is added to a macro table.

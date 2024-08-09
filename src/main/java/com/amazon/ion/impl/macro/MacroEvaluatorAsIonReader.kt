@@ -13,9 +13,11 @@ import java.util.*
 
 /**
  * This class wraps the macro evaluator's [Expression] model, adapting it to an [IonReader]
+ *
+ * TODO: Consider merging this with [MacroEvaluator]
  */
-class IonReaderShim(
-    private val evaluator: Evaluator,
+class MacroEvaluatorAsIonReader(
+    private val evaluator: MacroEvaluator,
 ): IonReader {
 
     private var currentFieldName: Expression.FieldName? = null
@@ -27,10 +29,10 @@ class IonReaderShim(
     private fun queueNext() {
         queuedExpression = null
         while (queuedExpression == null) {
-            if (!evaluator.hasNext()) return
-            when (val next = evaluator.next()) {
-                is Expression.FieldName -> queuedFieldName = next
-                else -> queuedExpression = next
+            val nextCandidate = evaluator.expandNext() ?: return
+            when (nextCandidate) {
+                is Expression.FieldName -> queuedFieldName = nextCandidate
+                else -> queuedExpression = nextCandidate
             }
         }
     }

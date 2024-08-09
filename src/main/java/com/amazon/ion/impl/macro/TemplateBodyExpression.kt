@@ -154,8 +154,6 @@ sealed interface Expression {
      */
     data class VariableReference(val signatureIndex: Int) : TemplateBodyExpression
 
-    data class VariableSubstitution(val environment: Environment, override val startInclusive: Int, override val endInclusive: Int): HasStartAndEnd, Expression
-
     /**
      * A macro invocation that needs to be expanded.
      */
