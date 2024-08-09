@@ -26,7 +26,7 @@ import java.util.*
  */
 class MacroExpressionizer(
     private val reader: IonReader,
-    private val macroLookup: java.util.function.Function<MacroRef, Macro>
+    private val encodingContext: EncodingContext,
 ){
     // TODO: We need these added to a reader in some way.
     private fun IonReader.isMacro(): Boolean = TODO()
@@ -48,7 +48,7 @@ class MacroExpressionizer(
             INT -> MacroRef.ById(reader.longValue())
             else -> throw IonException("macro invocation must start with an id (int) or identifier (symbol); found ${reader.type ?: "nothing"}\"")
         }
-        val macro = macroLookup.apply(macroRef)
+        val macro = encodingContext.macroTable[macroRef] ?: throw IonException("No such macro: $macroRef")
         val signature = macro.signature
         val placeholderIndex = expressions.size
         expressions.add(Expression.Placeholder)
@@ -59,6 +59,8 @@ class MacroExpressionizer(
                 // End of container?
 
                 // If so, let's check that all required parameters are present.
+                // If we're checking parameters, consider adding a mapping of signature index
+                // to argument position to the EExpression instance.
                 break
             }
             if (reader.isExpressionGroup()) {
@@ -99,8 +101,7 @@ class MacroExpressionizer(
      */
     private fun readTaggedValue() {
         // TODO: Could typeAnnotations ever be an array of nulls?
-        // NOTE: `toList()` does not allocate for an empty list.
-        val annotations = reader.typeAnnotationSymbols.toList()
+        val annotations = reader.typeAnnotationSymbols.asList()
 
         if (reader.isNullValue) {
             expressions.add(Expression.NullValue(annotations, reader.type))
@@ -172,19 +173,6 @@ class MacroExpressionizer(
     }
 
     // Helper functions
-
-    /** Utility method for checking that annotations are empty or a single array with the given annotations */
-    private fun Array<String>.isEmptyOr(text: String): Boolean = isEmpty() || (size == 1 && this[0] == text)
-
-    /** Throws [IonException] if any annotations are on the current value in this [IonReader]. */
-    private fun IonReader.confirmNoAnnotations(location: String) {
-        confirm(typeAnnotations.isEmpty()) { "found annotations on $location" }
-    }
-
-    /** Moves to the next type and throw [IonException] if it is not the `expected` [IonType]. */
-    private fun IonReader.nextAndCheckType(expected: IonType, location: String) {
-        confirm(next() == expected) { "$location must be a $expected; found ${type ?: "nothing"}" }
-    }
 
     /** Steps into a container, executes [block], and steps out. */
     private inline fun IonReader.readContainer(block: IonReader.() -> Unit) { stepIn(); block(); stepOut() }

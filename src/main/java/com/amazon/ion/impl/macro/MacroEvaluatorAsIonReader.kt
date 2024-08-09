@@ -7,6 +7,7 @@ import com.amazon.ion.IonType
 import com.amazon.ion.SymbolTable
 import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
+import com.amazon.ion.impl._Private_RecyclingStack
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.util.*
@@ -19,6 +20,12 @@ import java.util.*
 class MacroEvaluatorAsIonReader(
     private val evaluator: MacroEvaluator,
 ): IonReader {
+
+    private class ContainerInfo {
+        @JvmField var currentFieldName: Expression.FieldName? = null
+        @JvmField var container: Expression.Container? = null
+    }
+    private val containerStack = _Private_RecyclingStack(8) { ContainerInfo() }
 
     private var currentFieldName: Expression.FieldName? = null
     private var currentExpression: Expression? = null
@@ -51,16 +58,27 @@ class MacroEvaluatorAsIonReader(
     }
 
     override fun stepIn() {
+        // This is essentially a no-op for Lists and SExps
+        containerStack.peek().currentFieldName = this.currentFieldName
+
+        val containerToStepInto = currentExpression
         evaluator.stepIn()
+        containerStack.push {
+            it.container = containerToStepInto as Expression.Container
+            it.currentFieldName = null
+        }
     }
 
     override fun stepOut() {
         evaluator.stepOut()
+        containerStack.pop()
+        // This is essentially a no-op for Lists and SExps
+        currentFieldName = containerStack.peek().currentFieldName
     }
 
     override fun close() { TODO("Not yet implemented") }
     override fun <T : Any?> asFacet(facetType: Class<T>?): Nothing = TODO("Not supported")
-    override fun getDepth(): Int = TODO("Not implemented in this abstraction")
+    override fun getDepth(): Int = containerStack.size()
     override fun getSymbolTable(): SymbolTable = TODO("Not implemented in this abstraction")
 
     override fun getType(): IonType? = currentExpression?.type

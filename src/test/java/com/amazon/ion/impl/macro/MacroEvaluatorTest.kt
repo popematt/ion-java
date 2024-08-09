@@ -1,5 +1,6 @@
 package com.amazon.ion.impl.macro
 
+import com.amazon.ion.FakeSymbolToken
 import com.amazon.ion.IonType
 import com.amazon.ion.impl.macro.Expression.*
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -16,22 +17,31 @@ class MacroEvaluatorTest {
     // Values
     // Annotate
 
-
-    val encodingContext = encodingContext(
-        "identity" to template("x!") {
+    private object Macros {
+        val MAKE_STRING = "make_string" to SystemMacro.MakeString
+        val VALUES = "values" to SystemMacro.Values
+        val IDENTITY = "identity" to template("x!") {
             +VariableReference(0)
-        },
-        "nested_identity" to template("x!") {
-            +MacroInvocation(MacroRef.ByName("identity"), 0, 1)
-            +VariableReference(0)
-        },
-        "double_identity" to template("x!") {
+        }
+        val DOUBLE_IDENTITY = "double_identity" to template("x!") {
             +ListValue(emptyList(), 0, 2)
             +VariableReference(0)
             +VariableReference(0)
-        },
-        "pi" to template("") {
+        }
+        val PI = "pi" to template("") {
             +FloatValue(emptyList(), 3.14159)
+        }
+    }
+
+    val encodingContext = encodingContext(
+        Macros.VALUES,
+        Macros.MAKE_STRING,
+        Macros.IDENTITY,
+        Macros.DOUBLE_IDENTITY,
+        Macros.PI,
+        "nested_identity" to template("x!") {
+            +MacroInvocation(MacroRef.ByName("identity"), 0, 1)
+            +VariableReference(0)
         },
         "special_number" to template("") {
             +MacroInvocation(MacroRef.ByName("pi"), 0, 0)
@@ -42,8 +52,6 @@ class MacroEvaluatorTest {
             +StringValue(emptyList(), "b")
             +StringValue(emptyList(), "c")
         },
-        "make_string" to SystemMacro.MakeString,
-        "values" to SystemMacro.Values,
         "voidable_identity" to template("x?") {
             +VariableReference(0)
         },
@@ -277,46 +285,154 @@ class MacroEvaluatorTest {
         assertEquals(null, evaluator.expandNext())
     }
 
+    @Test
+    fun `nested make_string`() {
 
+        evaluator.initExpansion(
+            listOf(
+                EExpression(MacroRef.ByName("make_string"), 0, 7),
+                ExpressionGroup(1, 7),
+                StringValue(emptyList(), "a"),
+                EExpression(MacroRef.ByName("make_string"), 3, 7),
+                ExpressionGroup(4, 7),
+                StringValue(emptyList(), "b"),
+                StringValue(emptyList(), "c"),
+                StringValue(emptyList(), "d"),
+            )
+        )
 
-
-
-
-
-
-
-
-
-
-    private fun encodingContext(vararg pairs: Pair<Any, Macro>): EncodingContext {
-        return EncodingContext(pairs.associate { (k, v) ->
-            when (k) {
-                is Number -> MacroRef.ById(k.toLong())
-                is String -> MacroRef.ByName(k)
-                else -> throw IllegalArgumentException("Unsupported macro id $k")
-            } to v
-        })
+        assertEquals(StringValue(emptyList(), "abcd"), evaluator.expandNext())
+        assertEquals(null, evaluator.expandNext())
     }
 
-    fun signature(text: String): List<Macro.Parameter> {
-        if (text.isBlank()) return emptyList()
-        return text.split(Regex(" +")).map {
-            val cardinality = Macro.ParameterCardinality.fromSigil("${it.last()}")
-            if (cardinality == null) {
-                Macro.Parameter(it, Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
-            } else {
-                Macro.Parameter(it.dropLast(1), Macro.ParameterEncoding.Tagged, cardinality)
+    @Test
+    fun `macro with a variable substitution in struct field position`() {
+        val evaluator = MacroEvaluator(
+            encodingContext(
+                "foo" to template("x*") {
+                    +StructValue(emptyList(), 0, 2, mapOf("foo" to listOf(2)))
+                    +FieldName(FakeSymbolToken("foo", -1))
+                    +VariableReference(0)
+                }
+            )
+        )
+
+        evaluator.initExpansion(
+            listOf(
+                EExpression(MacroRef.ByName("foo"), 0, 1),
+                StringValue(value = "bar")
+            )
+        )
+
+        assertEquals(IonType.STRUCT, evaluator.expandNext()?.type)
+        evaluator.stepIn()
+        assertEquals(FieldName(FakeSymbolToken("foo", -1)), evaluator.expandNext())
+        assertEquals(StringValue(value = "bar"), evaluator.expandNext())
+        assertEquals(null, evaluator.expandNext())
+        evaluator.stepOut()
+        assertEquals(null, evaluator.expandNext())
+    }
+
+    @Test
+    fun `macro with a variable substitution in struct field position with multiple arguments`() {
+        val evaluator = MacroEvaluator(
+            encodingContext(
+                "foo" to template("x*") {
+                    +StructValue(emptyList(), 0, 2, mapOf("foo" to listOf(2)))
+                    +FieldName(FakeSymbolToken("foo", -1))
+                    +VariableReference(0)
+                }
+            )
+        )
+
+        evaluator.initExpansion(
+            listOf(
+                EExpression(MacroRef.ByName("foo"), 0, 1),
+                ExpressionGroup(1, 3),
+                StringValue(value = "bar"),
+                StringValue(value = "baz")
+            )
+        )
+
+        assertEquals(IonType.STRUCT, evaluator.expandNext()?.type)
+        evaluator.stepIn()
+        assertEquals(FieldName(FakeSymbolToken("foo", -1)), evaluator.expandNext())
+        assertEquals(StringValue(value = "bar"), evaluator.expandNext())
+        assertEquals(StringValue(value = "baz"), evaluator.expandNext())
+        assertEquals(null, evaluator.expandNext())
+        evaluator.stepOut()
+        assertEquals(null, evaluator.expandNext())
+    }
+
+    @Test
+    fun `macro with a variable substitution in struct field position with void argument`() {
+        val evaluator = MacroEvaluator(
+            encodingContext(
+                "foo" to template("x*") {
+                    +StructValue(emptyList(), 0, 2, mapOf("foo" to listOf(2)))
+                    +FieldName(FakeSymbolToken("foo", -1))
+                    +VariableReference(0)
+                }
+            )
+        )
+
+        evaluator.initExpansion(
+            listOf(
+                EExpression(MacroRef.ByName("foo"), 0, 1),
+                ExpressionGroup(1, 1),
+            )
+        )
+
+        assertEquals(IonType.STRUCT, evaluator.expandNext()?.type)
+        evaluator.stepIn()
+        assertEquals(FieldName(FakeSymbolToken("foo", -1)), evaluator.expandNext())
+        assertEquals(null, evaluator.expandNext())
+        evaluator.stepOut()
+        assertEquals(null, evaluator.expandNext())
+    }
+
+    @Test
+    fun `e-expression with another e-expression as one of the arguments`() {
+        evaluator.initExpansion(
+            listOf(
+                EExpression(MacroRef.ByName("identity"), 0, 1),
+                EExpression(MacroRef.ByName("pi"), 1, 1),
+            )
+        )
+
+        assertEquals(FloatValue(emptyList(), 3.14159), evaluator.expandNext())
+        assertEquals(null, evaluator.expandNext())
+    }
+
+    companion object {
+        private fun encodingContext(vararg pairs: Pair<Any, Macro>): EncodingContext {
+            return EncodingContext(pairs.associate { (k, v) ->
+                when (k) {
+                    is Number -> MacroRef.ById(k.toLong())
+                    is String -> MacroRef.ByName(k)
+                    else -> throw IllegalArgumentException("Unsupported macro id $k")
+                } to v
+            })
+        }
+
+        fun signature(text: String): List<Macro.Parameter> {
+            if (text.isBlank()) return emptyList()
+            return text.split(Regex(" +")).map {
+                val cardinality = Macro.ParameterCardinality.fromSigil("${it.last()}")
+                if (cardinality == null) {
+                    Macro.Parameter(it, Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
+                } else {
+                    Macro.Parameter(it.dropLast(1), Macro.ParameterEncoding.Tagged, cardinality)
+                }
             }
         }
-    }
 
-    fun templateMacro(name: String, signature: String, body: List<TemplateBodyExpression>): Pair<String, TemplateMacro> = name to TemplateMacro(signature(signature), body)
-
-    fun template(parameters: String, body: BodyBuilder.() -> Unit): TemplateMacro {
-        return TemplateMacro(
-            signature(parameters),
-            BodyBuilder().apply(body).expressions
-        )
+        fun template(parameters: String, body: BodyBuilder.() -> Unit): TemplateMacro {
+            return TemplateMacro(
+                signature(parameters),
+                BodyBuilder().apply(body).expressions
+            )
+        }
     }
 
     class BodyBuilder {
