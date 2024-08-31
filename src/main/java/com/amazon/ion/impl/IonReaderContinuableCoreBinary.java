@@ -1368,11 +1368,9 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     // The current state.
     private State state = State.READING_VALUE;
 
-    /**
-     * Navigates to the next raw Ion 1.1 value, consuming any encoding directives that occur between raw values.
-     * @return an event conveying the result of the operation.
-     */
-    private Event nextValue_1_1() {
+    @Override
+    public Event nextValue() {
+        lobBytesRead = 0;
         if (parent == null || state != State.READING_VALUE) {
             while (true) {
                 if (state != State.READING_VALUE && state != State.COMPILING_MACRO) {
@@ -1383,7 +1381,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                     }
                 }
                 event = super.nextValue();
-                if (parent == null && isPositionedOnEncodingDirective()) {
+                if (minorVersion == 1 && parent == null && isPositionedOnEncodingDirective()) {
                     encodingDirectiveReader.resetState();
                     state = State.ON_ION_ENCODING_SEXP;
                     continue;
@@ -1395,18 +1393,8 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         }
         if (valueTid != null && valueTid.isMacroInvocation) {
             // TODO delegate to macroEvaluatorIonReader while this invocation is active.
-            throw new UnsupportedOperationException("Cannot yet invoke a macro.");
         }
         return event;
-    }
-
-    @Override
-    public Event nextValue() {
-        lobBytesRead = 0;
-        if (minorVersion == 1) {
-            return nextValue_1_1();
-        }
-        return super.nextValue();
     }
 
     /**
