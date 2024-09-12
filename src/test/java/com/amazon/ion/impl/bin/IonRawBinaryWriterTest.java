@@ -145,9 +145,12 @@ public class IonRawBinaryWriterTest extends Assert
     {
         writer.finish();
         final byte[] data = writer.getBytes();
+        System.out.println(hexDump(data));
+        system().getLoader().load(data).systemIterator().forEachRemaining(System.out::println);
         final IonValue actual;
         try {
             actual = system().singleValue(data);
+            System.out.println(actual);
         } catch (final Exception e) {
             throw new IonException("Bad generated data:\n" + hexDump(data), e);
         }
@@ -350,7 +353,6 @@ public class IonRawBinaryWriterTest extends Assert
     {
         writer.writeSymbolToken(null);
         assertValue("null.symbol");
-
         writer.writeSymbolToken(systemSymbol(NAME_SID));
         assertValue("name");
     }

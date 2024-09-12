@@ -152,6 +152,18 @@ public class IonManagedBinaryWriterTest extends IonManagedBinaryWriterTestCase
     {
         writer.setTypeAnnotations("a", "b", "c", "d", "e", "z");
         writer.writeInt(1);
+        System.out.println(((IonManagedBinaryWriter) writer.getDelegate()).__all_symbols__);
+        /*
+        E0 01 00 EA
+        EE AD 81 83 DE A9 86 BE A0 DE 8E 84 86 74 65 73 74 5F 31 85 21 01 88 21 03 DE 8E 84 86 74 65 73 74 5F 32 85 21 01 88 21 02 87 B4 81 65 81 7A
+
+        E9 // Annotation container, length 9
+        86 // Annotation symbols, length 6
+        8A 8B 8C 8D 8E 8F
+
+        21 01
+
+         */
         assertValue("a::b::c::d::e::z::1");
     }
 
@@ -161,13 +173,16 @@ public class IonManagedBinaryWriterTest extends IonManagedBinaryWriterTestCase
         writer.addTypeAnnotation("a");
         writer.addTypeAnnotation("b");
         writer.writeInt(1);
+        System.out.println(((IonManagedBinaryWriter) writer.getDelegate()).__all_symbols__);
         assertValue("a::b::1");
     }
 
     @Test
     public void testUserSymbol() throws Exception
     {
+        System.out.println(((IonManagedBinaryWriter) writer.getDelegate()).__all_symbols__);
         writer.writeSymbol("hello");
+        System.out.println(((IonManagedBinaryWriter) writer.getDelegate()).__all_symbols__);
         assertValue("hello");
     }
 
@@ -175,6 +190,7 @@ public class IonManagedBinaryWriterTest extends IonManagedBinaryWriterTestCase
     public void testSystemSymbol() throws Exception
     {
         writer.writeSymbol("name");
+        System.out.println(((IonManagedBinaryWriter) writer.getDelegate()).__all_symbols__);
         assertValue("name");
     }
 
@@ -182,8 +198,10 @@ public class IonManagedBinaryWriterTest extends IonManagedBinaryWriterTestCase
     public void testLocalSymbolTableAppend() throws Exception
     {
         writer.writeSymbol("taco");
+        System.out.println(((IonManagedBinaryWriter) writer.getDelegate()).__all_symbols__);
         writer.flush();
         writer.writeSymbol("burrito");
+        System.out.println(((IonManagedBinaryWriter) writer.getDelegate()).__all_symbols__);
         writer.finish();
 
         IonReader reader = system().newReader(writer.getBytes());

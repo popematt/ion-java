@@ -281,6 +281,7 @@ class AddressMapImpl<K>(initialCapacity: Int = 64) : AddressMap<K> {
         if (node == null) {
             if (size == resizeThreshold) grow()
             node = newNode(hash, size++)
+            keysById[node.address] = key
             nodes.insertNode(node)
         }
         return node.address

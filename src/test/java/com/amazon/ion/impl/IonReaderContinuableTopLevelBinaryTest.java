@@ -665,6 +665,10 @@ public class IonReaderContinuableTopLevelBinaryTest {
         closeAndCount();
     }
 
+    @Test
+    public void foo() {
+    }
+
     @ParameterizedTest(name = "constructFromBytes={0}")
     @ValueSource(booleans = {true, false})
     public void lstNonAppend(boolean constructFromBytes) throws Exception {

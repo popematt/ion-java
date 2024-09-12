@@ -180,6 +180,7 @@ public class BinaryWriterWithLocalSymtabsTest
         final int localSidOffset = systemMaxId();
 
         SymbolTable localSymtab = makeLocalSymtab(system(), LOCAL_SYMBOLS_ABC);
+        System.out.println(localSymtab);
         makeBinaryWriterWithLocalSymbols(localSymtab);
 
         // write test data
@@ -196,7 +197,9 @@ public class BinaryWriterWithLocalSymtabsTest
         assertSame(localSymtab, myWriter.getSymbolTable());
 
         byte[] bytes = outputByteArray();
+
         IonDatagram dg = loader().load(bytes);
+        dg.systemIterator().forEachRemaining(System.out::println);
 
         // check written bytes
 

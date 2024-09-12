@@ -35,8 +35,10 @@ import com.amazon.ion.IonException;
 import com.amazon.ion.IonType;
 import com.amazon.ion.SymbolTable;
 import com.amazon.ion.SymbolToken;
+import com.amazon.ion.SystemSymbols;
 import com.amazon.ion.Timestamp;
 import com.amazon.ion.UnknownSymbolException;
+import com.amazon.ion.impl.AddressMapImpl;
 import com.amazon.ion.impl.bin.IonRawBinaryWriter.StreamCloseMode;
 import com.amazon.ion.impl.bin.IonRawBinaryWriter.StreamFlushMode;
 import java.io.IOException;
@@ -48,7 +50,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 /** Wraps {@link IonRawBinaryWriter} with symbol table management. */
@@ -380,6 +381,7 @@ import java.util.Map;
                         // replace the symbol table context with the user provided one
                         // TODO determine if the resolver mode should be configurable for this use case
                         self.imports = new ImportedSymbolContext(ImportedSymbolResolverMode.DELEGATE, self.userImports);
+                        self.userImports.forEach(st -> st.iterateDeclaredSymbolNames().forEachRemaining(self.__all_symbols__::assign));
                     }
 
                     // explicitly start the local symbol table with no version marker
@@ -406,12 +408,12 @@ import java.util.Map;
             }
 
             @Override
-            public void writeSymbolToken(final IonManagedBinaryWriter self, final SymbolToken value)
+            public void writeSymbolToken(final IonManagedBinaryWriter self, final int sid)
             {
                 if (
                     self.user.getDepth() == 1
-                    && self.user.getFieldId() == IMPORTS_SID
-                    && value.getSid() == ION_SYMBOL_TABLE_SID
+                        && self.user.getFieldId() == IMPORTS_SID
+                        && sid == ION_SYMBOL_TABLE_SID
                 ) {
                     self.isUserLSTAppend = true;
                     self.userState = LOCALS_AT_TOP;
@@ -536,7 +538,7 @@ import java.util.Map;
         public abstract void afterStepOut(final IonManagedBinaryWriter self) throws IOException;
 
         public void writeString(final IonManagedBinaryWriter self, final String value) throws IOException {}
-        public void writeSymbolToken(final IonManagedBinaryWriter self, final SymbolToken value) {}
+        public void writeSymbolToken(final IonManagedBinaryWriter self, final int sid) {}
         public void writeInt(final IonManagedBinaryWriter self, final long value) throws IOException {}
         public void writeInt(IonManagedBinaryWriter self, BigInteger value) throws IOException
         {
@@ -557,12 +559,12 @@ import java.util.Map;
 
         public Iterator<String> iterateDeclaredSymbolNames()
         {
-            return locals.keySet().iterator();
+            return __all_symbols__.iterator(imports.localSidStart);
         }
 
         public int getMaxId()
         {
-            return getImportedMaxId() + locals.size();
+            return __all_symbols__.size() - 1;
         }
 
         public SymbolTable[] getImportedTables()
@@ -595,41 +597,22 @@ import java.util.Map;
                 {
                     throw new IonException("Cannot intern into locked (read-only) local symbol table");
                 }
-                token = IonManagedBinaryWriter.this.intern(text);
+                int sid = IonManagedBinaryWriter.this.intern(text);
+                token = symbol(text, sid);
             }
             return token;
         }
 
         public String findKnownSymbol(final int id)
         {
-            for (final SymbolTable table : imports.parents)
-            {
-                final String text = table.findKnownSymbol(id);
-                if (text != null)
-                {
-                    return text;
-                }
-            }
-            // TODO decide if it is worth making this better than O(N)
-            //      requires more state tracking (but for what use case?)
-            for (final SymbolToken token : locals.values())
-            {
-                if (token.getSid() == id)
-                {
-                    return token.getText();
-                }
-            }
-            return null;
+            return __all_symbols__.get(id);
         }
 
         public SymbolToken find(final String text)
         {
-            final SymbolToken token = imports.importedSymbols.get(text);
-            if (token != null)
-            {
-                return token;
-            }
-            return locals.get(text);
+            int sid = __all_symbols__.get(text);
+            if (sid < 0) return null;
+            return symbol(text, sid);
         }
 
         @Override
@@ -643,9 +626,8 @@ import java.util.Map;
     private final ImportedSymbolContext         bootstrapImports;
 
     private ImportedSymbolContext               imports;
-    private final Map<String, SymbolToken>      locals;
     private boolean                             localsLocked;
-    private SymbolTable                         localSymbolTableView;
+    private final SymbolTable                   localSymbolTableView;
 
     private final IonRawBinaryWriter            symbols;
     private final IonRawBinaryWriter            user;
@@ -660,6 +642,8 @@ import java.util.Map;
     private final ImportDescriptor              userCurrentImport;
     private final boolean                       lstAppendEnabled;
     private boolean                             isUserLSTAppend;
+
+    public final AddressMapImpl<String> __all_symbols__;
 
     private boolean                             closed;
 
@@ -696,9 +680,11 @@ import java.util.Map;
         this.catalog = builder.catalog;
         this.bootstrapImports = builder.imports;
 
-        this.locals = new LinkedHashMap<String, SymbolToken>();
+        this.__all_symbols__ = new AddressMapImpl<>();
+        __all_symbols__.assign(null); // $0
         this.localsLocked = false;
         this.localSymbolTableView = new LocalSymbolTableView();
+        localSymbolTableView.getSystemSymbolTable().iterateDeclaredSymbolNames().forEachRemaining(__all_symbols__::assign);
         this.symbolState = SymbolState.SYSTEM_SYMBOLS;
         this.closed = false;
 
@@ -720,6 +706,7 @@ import java.util.Map;
             // TODO determine if the resolver mode should be configurable for this use case
             final ImportedSymbolContext lstImports = new ImportedSymbolContext(ImportedSymbolResolverMode.DELEGATE, lstImportList);
             this.imports = lstImports;
+            lstImportList.forEach(st -> st.iterateDeclaredSymbolNames().forEachRemaining(__all_symbols__::assign));
 
             // intern all of the local symbols provided from LST
             final Iterator<String> symbolIter = lst.iterateDeclaredSymbolNames();
@@ -735,6 +722,7 @@ import java.util.Map;
         else
         {
             this.imports = builder.imports;
+            imports.parents.forEach(st -> st.iterateDeclaredSymbolNames().forEachRemaining(__all_symbols__::assign));
         }
     }
 
@@ -822,30 +810,17 @@ import java.util.Map;
         }
     }
 
-    private SymbolToken intern(final String text)
+    private int intern(final String text)
     {
-        if (text == null)
-        {
-            return null;
-        }
         try
         {
-            SymbolToken token = imports.importedSymbols.get(text);
-            if (token != null)
-            {
-                if (token.getSid() > ION_1_0_MAX_ID)
-                {
-                    // using a symbol from an import triggers emitting locals
-                    startLocalSymbolTableIfNeeded(/*writeIVM*/ true);
-                }
-                return token;
-            }
             // try the locals
-            token = locals.get(text);
-            if (token == null)
+            int sid = __all_symbols__.getOrAssign(text);
+            if (sid == __all_symbols__.size() - 1)
             {
                 if (localsLocked)
                 {
+                    __all_symbols__.truncate(sid);
                     throw new IonException("Local symbol table was locked (made read-only)");
                 }
 
@@ -853,12 +828,9 @@ import java.util.Map;
                 startLocalSymbolTableIfNeeded(/*writeIVM*/ true);
                 startLocalSymbolTableSymbolListIfNeeded();
 
-                token = symbol(text, imports.localSidStart + locals.size());
-                locals.put(text, token);
-
                 symbols.writeString(text);
             }
-            return token;
+            return sid;
         }
         catch (final IOException e)
         {
@@ -866,11 +838,11 @@ import java.util.Map;
         }
     }
 
-    private SymbolToken intern(final SymbolToken token)
+    private int intern(final SymbolToken token)
     {
         if (token == null)
         {
-            return null;
+            return -1;
         }
         final String text = token.getText();
         if (text != null)
@@ -885,7 +857,7 @@ import java.util.Map;
             throw new UnknownSymbolException(sid);
         }
         // no text, we just return what we got
-        return token;
+        return token.getSid();
     }
 
     public SymbolTable getSymbolTable()
@@ -913,14 +885,12 @@ import java.util.Map;
         {
             throw new NullPointerException("Null field name is not allowed.");
         }
-        final SymbolToken token = intern(name);
-        user.setFieldNameSymbol(token);
+        user.setFieldNameSymbol(intern(name));
     }
 
     public void setFieldNameSymbol(SymbolToken token)
     {
-        token = intern(token);
-        user.setFieldNameSymbol(token);
+        user.setFieldNameSymbol(intern(token));
     }
 
     public void requireLocalSymbolTable() throws IOException
@@ -947,22 +917,23 @@ import java.util.Map;
     {
         if (annotations == null)
         {
-            user.setTypeAnnotationSymbols((SymbolToken[]) null);
+            user.setTypeAnnotationSymbols((int[]) null);
         }
         else
         {
             for (int i = 0; i < annotations.length; i++)
             {
-                annotations[i] = intern(annotations[i]);
+                SymbolToken st = annotations[i];
+                if (st != null) {
+                    user.addTypeAnnotationSymbol(intern(st));
+                }
             }
-            user.setTypeAnnotationSymbols(annotations);
         }
     }
 
     public void addTypeAnnotation(final String annotation)
     {
-        final SymbolToken token = intern(annotation);
-        user.addTypeAnnotationSymbol(token);
+        user.addTypeAnnotationSymbol(intern(annotation));
     }
 
     // Container Manipulation
@@ -1030,7 +1001,10 @@ import java.util.Map;
 
     public void writeSymbol(String content) throws IOException
     {
-        writeSymbolToken(intern(content));
+        int sid = intern(content);
+        if (handleIVM(sid)) return;
+        userState.writeSymbolToken(this, sid);
+        user.writeSymbolToken(sid);
     }
 
     private boolean handleIVM(int sid) throws IOException {
@@ -1054,13 +1028,17 @@ import java.util.Map;
 
     public void writeSymbolToken(SymbolToken token) throws IOException
     {
-        if (token != null && handleIVM(token.getSid()))
+        if (token == null) {
+            user.writeSymbolToken(null);
+            return;
+        }
+        if (handleIVM(token.getSid()))
         {
             return;
         }
-        token = intern(token);
-        userState.writeSymbolToken(this, token);
-        user.writeSymbolToken(token);
+        int sid = intern(token);
+        userState.writeSymbolToken(this, sid);
+        user.writeSymbolToken(sid);
     }
 
     public void writeString(final String value) throws IOException
@@ -1134,7 +1112,7 @@ import java.util.Map;
         unsafeFlush();
         // Reset local symbols
         // TODO be more configurable with respect to local symbol table caching
-        locals.clear();
+        __all_symbols__.truncate(imports.localSidStart);
         localsLocked = false;
         symbolState = SymbolState.SYSTEM_SYMBOLS;
         imports = bootstrapImports;
