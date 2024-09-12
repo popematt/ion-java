@@ -174,6 +174,7 @@ public class LocalSymbolTableTest
         assertTrue(copy.isLocalTable());
 
         int systemMaxId = orig.getSystemSymbolTable().getMaxId();
+
         checkSymbol("a", systemMaxId + 1, copy.find("a"));
         checkSymbol("b", systemMaxId + 2, copy.find("b"));
         checkSymbol("c", systemMaxId + 3, copy.find("c"));

@@ -25,11 +25,8 @@ import com.amazon.ion.SymbolToken;
 import com.amazon.ion.util.IonTextUtils;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
 
 /**
  * A local symbol table.
@@ -78,11 +75,6 @@ public class LocalSymbolTable
     public static final Factory DEFAULT_LST_FACTORY = new Factory();
 
     /**
-     * The initial length of {@link #mySymbolNames}.
-     */
-    private static final int DEFAULT_CAPACITY = 16;
-
-    /**
      * The system and shared symtabs imported by this symtab. Never null.
      * <p>
      * Note: this member field is immutable and assigned only during
@@ -94,7 +86,7 @@ public class LocalSymbolTable
      * Map of symbol names to symbol ids of local symbols that are not in
      * imports.
      */
-    private final Map<String, Integer> mySymbolsMap;
+    private final AddressMapImpl<String> mySymbolsMap;
 
     /**
      * Whether this symbol table is read only, and thus, immutable.
@@ -106,7 +98,7 @@ public class LocalSymbolTable
      * The sid of the first element is {@link #myFirstLocalSid}.
      * Only the first {@link #mySymbolsCount} elements are valid.
      */
-    String[] mySymbolNames;
+    // String[] mySymbolNames;
 
     /**
      * This is the number of symbols defined in this symbol table
@@ -118,25 +110,11 @@ public class LocalSymbolTable
      * The sid of the first local symbol, which is stored at
      * {@link #mySymbolNames}[0].
      */
-    final int myFirstLocalSid;
+    // final int myFirstLocalSid;
 
     //==========================================================================
     // Private constructor(s) and static factory methods
     //==========================================================================
-
-    private void buildSymbolsMap()
-    {
-        int sid = myFirstLocalSid;
-        for (int i = 0; i < mySymbolNames.length; i++, sid++)
-        {
-            String symbolText = mySymbolNames[i];
-            if (symbolText != null)
-            {
-                putToMapIfNotThere(mySymbolsMap, symbolText, sid);
-            }
-        }
-    }
-
 
     /**
      * @param imports           never null
@@ -144,26 +122,35 @@ public class LocalSymbolTable
      */
     protected LocalSymbolTable(LocalSymbolTableImports imports, List<String> symbolsList)
     {
-        if (symbolsList == null || symbolsList.isEmpty())
-        {
+        if (symbolsList == null) {
             mySymbolsCount = 0;
-            mySymbolNames  = _Private_Utils.EMPTY_STRING_ARRAY;
-        }
-        else
-        {
+        } else {
             mySymbolsCount = symbolsList.size();
-            mySymbolNames  = symbolsList.toArray(new String[mySymbolsCount]);
         }
 
         myImportsList = imports;
-        myFirstLocalSid = myImportsList.getMaxId() + 1;
+        // myFirstLocalSid = myImportsList.getMaxId() + 1;
 
         // Copy locally declared symbols to mySymbolsMap
         // The initial size is chosen so that resizing is avoided. The default load factor is 0.75. Resizing
         // could also be avoided by setting the initial size to mySymbolsCount and setting the load factor to
         // 1.0, but this would lead to more hash collisions.
-        mySymbolsMap = new HashMap<String, Integer>((int) Math.ceil(mySymbolsCount / 0.75));
-        buildSymbolsMap();
+        // mySymbolsMap //= new HashMap<String, Integer>((int) Math.ceil(mySymbolsCount / 0.75));
+        // buildSymbolsMap();
+
+        Integer foo;
+
+        mySymbolsMap = new AddressMapImpl<>();
+        // Start with $0
+        mySymbolsMap.assign(null);
+
+        for (SymbolTable symbolTable : imports.getImportedTablesNoCopy()) {
+            // TODO: Transitive imports?
+            symbolTable.iterateDeclaredSymbolNames().forEachRemaining(mySymbolsMap::assign);
+        }
+        if (symbolsList != null) {
+            symbolsList.forEach(mySymbolsMap::assign);
+        }
     }
 
     /**
@@ -173,23 +160,12 @@ public class LocalSymbolTable
     protected LocalSymbolTable(LocalSymbolTable other, int maxId)
     {
         isReadOnly      = false;
-        myFirstLocalSid = other.myFirstLocalSid;
         myImportsList   = other.myImportsList;
         mySymbolsCount  = maxId - myImportsList.getMaxId();
 
-        mySymbolNames   = copyOf(other.mySymbolNames, mySymbolsCount);
-
-        // Copy locally declared symbols to mySymbolsMap
-        if (maxId == other.getMaxId())
-        {
-            // Shallow copy
-            mySymbolsMap = new HashMap<String, Integer>(other.mySymbolsMap);
-        }
-        else
-        {
-            mySymbolsMap = new HashMap<String, Integer>(mySymbolsCount);
-            buildSymbolsMap();
-        }
+        mySymbolsMap = new AddressMapImpl<>();
+        // mySymbolsMap.assign(null);
+        other.mySymbolsMap.iterator().forEachRemaining(mySymbolsMap::assign);
     }
 
     /**
@@ -308,7 +284,7 @@ public class LocalSymbolTable
             // be appended in-place.
             LocalSymbolTable currentLocalSymbolTable = (LocalSymbolTable) currentSymbolTable;
             for (String newSymbol : symbolsListOut) {
-                currentLocalSymbolTable.putSymbol(newSymbol);
+                currentLocalSymbolTable.mySymbolsMap.assign(newSymbol);
             }
             return null;
         }
@@ -363,8 +339,7 @@ public class LocalSymbolTable
 
     public synchronized int getMaxId()
     {
-        int maxid = mySymbolsCount + myImportsList.getMaxId();
-        return maxid;
+        return mySymbolsMap.size() - 1;
     }
 
     public int getVersion()
@@ -385,71 +360,20 @@ public class LocalSymbolTable
 
     public synchronized Iterator<String> iterateDeclaredSymbolNames()
     {
-        return new SymbolIterator(mySymbolNames, mySymbolsCount);
+        return mySymbolsMap.iterator(getImportedMaxId() + 1);
     }
 
-    public String findKnownSymbol(int id)
-    {
-        String name = null;
-
-        if (id < 0)
-        {
-            String message = "symbol IDs must be >= 0";
-            throw new IllegalArgumentException(message);
-        }
-        else if (id < myFirstLocalSid)
-        {
-            name = myImportsList.findKnownSymbol(id);
-        }
-        else
-        {
-            int offset = id - myFirstLocalSid;
-
-            String[] names;
-            synchronized (this)
-            {
-                names = mySymbolNames;
-            }
-
-            if (offset < names.length)
-            {
-                name = names[offset];
-            }
+    public String findKnownSymbol(int id) {
+        if (id < 0) {
+            throw new IllegalArgumentException("symbol IDs must be >= 0");
         }
 
-        return name;
+        return mySymbolsMap.get(id);
     }
 
-    public int findSymbol(String name)
-    {
-        // Look in system then imports
-        int sid = myImportsList.findSymbol(name);
-
-        // Look in local symbols
-        if (sid == UNKNOWN_SYMBOL_ID)
-        {
-            sid = findLocalSymbol(name);
-        }
-
-        return sid;
+    public int findSymbol(String name) {
+        return mySymbolsMap.get(name);
     }
-
-    private int findLocalSymbol(String name)
-    {
-        Integer isid;
-        synchronized (this)
-        {
-            isid = mySymbolsMap.get(name);
-        }
-
-        if (isid != null)
-        {
-            assert isid != UNKNOWN_SYMBOL_ID;
-            return isid;
-        }
-        return UNKNOWN_SYMBOL_ID;
-    }
-
 
     public synchronized SymbolToken intern(String text)
     {
@@ -467,30 +391,19 @@ public class LocalSymbolTable
     {
         text.getClass(); // fast null check
 
-        // Look in system then imports
-        SymbolToken symTok = myImportsList.find(text);
+        int sid;
 
-        // Look in local symbols
-        if (symTok == null)
-        {
-            Integer  sid;
-            String[] names;
-            synchronized (this)
-            {
-                sid = mySymbolsMap.get(text);
-                names = mySymbolNames;
-            }
-
-            if (sid != null)
-            {
-                int offset = sid - myFirstLocalSid;
-                String internedText = names[offset];
-                assert internedText != null;
-                symTok = new SymbolTokenImpl(internedText, sid);
-            }
+        synchronized (this) {
+            sid = mySymbolsMap.get(text);
         }
 
-        return symTok;
+        if (sid != UNKNOWN_SYMBOL_ID) {
+            // There are (questionable) tests that call `assetSame()` on the symbol texts.
+            String name = mySymbolsMap.get(sid);
+            return new SymbolTokenImpl(name, sid);
+        } else {
+            return null;
+        }
     }
 
     private static final void validateSymbol(String name)
@@ -539,46 +452,14 @@ public class LocalSymbolTable
             throw new ReadOnlyValueException(SymbolTable.class);
         }
 
-        if (mySymbolsCount == mySymbolNames.length)
-        {
-            int newlen = mySymbolsCount * 2;
-            if (newlen < DEFAULT_CAPACITY)
-            {
-                newlen = DEFAULT_CAPACITY;
-            }
-            String[] temp = new String[newlen];
-            System.arraycopy(mySymbolNames, 0, temp, 0, mySymbolsCount);
-            mySymbolNames = temp;
-        }
-
         int sid = -1;
         if (symbolName != null)
         {
-            sid = mySymbolsCount + myFirstLocalSid;
-            assert sid == getMaxId() + 1;
-
-            putToMapIfNotThere(mySymbolsMap, symbolName, sid);
+            sid = mySymbolsMap.assign(symbolName);
         }
-        mySymbolNames[mySymbolsCount] = symbolName;
         mySymbolsCount++;
 
         return sid;
-    }
-
-    private static void putToMapIfNotThere(Map<String, Integer> symbolsMap,
-                                           String text,
-                                           int sid)
-    {
-        // When there's a duplicate name, don't replace the lower sid.
-        // This pattern avoids double-lookup in the normal happy case
-        // and only requires a second lookup when there's a duplicate.
-        Integer extantSid = symbolsMap.put(text, sid);
-        if (extantSid != null)
-        {
-            // We always insert symbols with increasing sids
-            assert extantSid < sid;
-            symbolsMap.put(text, extantSid);
-        }
     }
 
     public SymbolTable getSystemSymbolTable()
@@ -760,44 +641,7 @@ public class LocalSymbolTable
     @Override
     public String toString()
     {
-        return "(LocalSymbolTable max_id:" + getMaxId() + ')';
-    }
-
-    private static final class SymbolIterator
-        implements Iterator<String>
-    {
-        private final String[] mySymbolNames;
-        private final int      mySymbolsCount;
-        private int            _idx = 0;
-
-        SymbolIterator(String[] symbolNames, int count)
-        {
-            mySymbolNames = symbolNames;
-            mySymbolsCount = count;
-        }
-
-        public boolean hasNext()
-        {
-            if (_idx < mySymbolsCount)
-            {
-                return true;
-            }
-            return false;
-        }
-
-        public String next()
-        {
-            if (_idx < mySymbolsCount)
-            {
-                return mySymbolNames[_idx++];
-            }
-            throw new NoSuchElementException();
-        }
-
-        public void remove()
-        {
-            throw new UnsupportedOperationException();
-        }
+        return "(LocalSymbolTable max_id:" + getMaxId() + ", " + mySymbolsMap + ')';
     }
 
     /**
@@ -826,28 +670,7 @@ public class LocalSymbolTable
         // Superset extends subset if subset doesn't have any declared symbols.
         if (subLocalSymbolCount == 0) return true;
 
-        // Superset must have same/more declared (local) symbols than subset.
-        if (mySymbolsCount < subLocalSymbolCount) return false;
-
-        String[] subsetSymbols = subset.mySymbolNames;
-
-        // Before we go through the expensive iteration from the front,
-        // check the last (largest) declared symbol in subset beforehand
-        if (! safeEquals(mySymbolNames[subLocalSymbolCount- 1],
-                                  subsetSymbols[subLocalSymbolCount- 1]))
-        {
-            return false;
-        }
-
-        // Now, we iterate from the first declared symbol, note that the
-        // iteration below is O(n)!
-        for (int i = 0; i < subLocalSymbolCount - 1; i++)
-        {
-            if (! safeEquals(mySymbolNames[i], subsetSymbols[i]))
-                return false;
-        }
-
-        return true;
+        return mySymbolsMap.isExtensionOf(subset.mySymbolsMap);
     }
 
 }
