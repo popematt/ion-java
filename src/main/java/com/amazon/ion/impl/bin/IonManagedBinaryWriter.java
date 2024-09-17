@@ -815,15 +815,15 @@ import java.util.Map;
         try
         {
             // try the locals
-            int sid = __all_symbols__.getOrAssign(text);
-            if (sid == __all_symbols__.size() - 1)
+            int sid = __all_symbols__.get(text);
+            if (sid < 0)
             {
                 if (localsLocked)
                 {
-                    __all_symbols__.truncate(sid);
                     throw new IonException("Local symbol table was locked (made read-only)");
                 }
 
+                sid = __all_symbols__.assign(text);
                 // if we got here, this is a new symbol and we better start up the locals
                 startLocalSymbolTableIfNeeded(/*writeIVM*/ true);
                 startLocalSymbolTableSymbolListIfNeeded();
