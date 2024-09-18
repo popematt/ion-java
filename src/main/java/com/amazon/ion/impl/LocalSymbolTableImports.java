@@ -20,6 +20,7 @@ import static com.amazon.ion.SymbolTable.UNKNOWN_SYMBOL_ID;
 import com.amazon.ion.SymbolTable;
 import com.amazon.ion.SymbolToken;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -33,6 +34,8 @@ import java.util.List;
 //      there are zero or one imported non-system shared symtab(s).
 final class LocalSymbolTableImports
 {
+    public static final LocalSymbolTableImports EMPTY = new LocalSymbolTableImports(Collections.emptyList());
+
     /**
      * The symtabs imported by a local symtab, never null or empty. The first
      * symtab must be a system symtab, the rest must be non-system shared
@@ -139,6 +142,10 @@ final class LocalSymbolTableImports
      */
     private static int prepBaseSids(int[] baseSids, SymbolTable[] imports)
     {
+        if (imports.length == 0) {
+            return 0;
+        }
+
         SymbolTable firstImport = imports[0];
 
         assert firstImport.isSystemTable()
@@ -170,7 +177,7 @@ final class LocalSymbolTableImports
     {
         String name = null;
 
-        if (sid <= myMaxId)
+        if (sid > 0 && sid <= myMaxId)
         {
             int i, previousBaseSid = 0;
             for (i = 1; i < myImports.length; i++)

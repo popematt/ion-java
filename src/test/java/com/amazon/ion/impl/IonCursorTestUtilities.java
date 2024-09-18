@@ -5,9 +5,11 @@ package com.amazon.ion.impl;
 import com.amazon.ion.IntegerSize;
 import com.amazon.ion.IonBufferConfiguration;
 import com.amazon.ion.IonType;
+import com.amazon.ion.SymbolToken;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -200,13 +202,13 @@ public class IonCursorTestUtilities {
      * Provides Expectations that verify that advancing the cursor to the next value positions the cursor on a scalar
      * with type symbol and the given expected value.
      */
-    static <T extends IonReaderContinuableApplicationBinary> ExpectationProvider<T> fillSymbolValue(String expectedValue) {
+    static <T extends IonReaderContinuableCoreBinary> ExpectationProvider<T> fillSymbolValue(String expectedValue) {
         return consumer -> consumer.accept(new Expectation<>(
             String.format("symbol(%s)", expectedValue),
             reader -> {
                 assertEquals(VALUE_READY, reader.fillValue());
                 assertEquals(IonType.SYMBOL, reader.getType());
-                assertEquals(expectedValue, reader.stringValue());
+                assertEquals(expectedValue, reader.getSymbolText());
             }
         ));
     }
@@ -311,6 +313,32 @@ public class IonCursorTestUtilities {
                 consumer.accept((Expectation<IonReaderContinuableCoreBinary>) STEP_OUT);
             }
         };
+    }
+
+
+    static <T extends IonReaderContinuableCoreBinary> ExpectationProvider<T> fieldName(String expectedValue) {
+        return consumer -> consumer.accept(new Expectation<>(
+            String.format("fieldName(%s)", expectedValue),
+            reader -> {
+                assertEquals(expectedValue, reader.getFieldText());
+            }
+        ));
+    }
+
+    static <T extends IonReaderContinuableCoreBinary> ExpectationProvider<T> annotations(String... expectedAnnotations) {
+        return consumer -> consumer.accept(new Expectation<>(
+            String.format("annotations(%s)", Arrays.toString(expectedAnnotations)),
+            reader -> {
+                reader.nextValue();
+                assertTrue(reader.hasAnnotations(), "Expected there to be annotations");
+                List<SymbolToken> tokens = new ArrayList<>();
+                reader.consumeAnnotationTokens(tokens::add);
+                for (int i = 0; i < Math.min(tokens.size(), expectedAnnotations.length); i++) {
+                    assertEquals(expectedAnnotations[i], tokens.get(i).getText());
+                }
+                assertEquals(expectedAnnotations.length, tokens.size());
+            }
+        ));
     }
 
     /**

@@ -823,8 +823,8 @@ public class IonCursorBinaryTest {
     @ParameterizedTest(name = "inputType={0}")
     @EnumSource(InputType.class)
     public void macroInvocationWithFlexUIntId(InputType inputType) throws Exception {
-        // Opcode 0xEE; 3-byte FlexUInt 0xFC, 0xFF, 0xFF follows
-        testMacroInvocation(bytes(0xEE, 0xFC, 0xFF, 0xFF), inputType, 8, -1, 2097151, false);
+        // Opcode 0xF4; 3-byte FlexUInt 0xFC, 0xFF, 0xFF follows
+        testMacroInvocation(bytes(0xF4, 0xFC, 0xFF, 0xFF), inputType, 8, -1, 2097151, false);
     }
 
     @ParameterizedTest(name = "inputType={0}")
@@ -844,18 +844,18 @@ public class IonCursorBinaryTest {
     @ParameterizedTest(name = "inputType={0}")
     @EnumSource(InputType.class)
     public void systemSymbolValue(InputType inputType) throws Exception {
-        // Opcode 0xEF; 1-byte FixedInt follows. 0xFE (-2) indicates system symbol ID 2.
-        byte[] data = withIvm(1, bytes(0xEF, 0xFE));
+        // Opcode 0xEE; 1-byte FixedUInt follows. 0xFE (-2) indicates system symbol ID 2.
+        byte[] data = withIvm(1, bytes(0xEE, 0x02));
         try (IonCursorBinary cursor = inputType.initializeCursor(data)) {
             assertEquals(START_SCALAR, cursor.nextValue());
             assertTrue(cursor.isSystemInvocation());
             Marker invocationMarker = cursor.getValueMarker();
             assertFalse(invocationMarker.typeId.isMacroInvocation);
-            assertEquals(6, invocationMarker.startIndex);
+            assertEquals(5, invocationMarker.startIndex);
             assertEquals(6, invocationMarker.endIndex);
             // Note: a higher-level reader will use the sign to direct the lookup to the system symbol table instead of
             // the system macro table.
-            assertEquals(-2, cursor.getMacroInvocationId());
+            assertEquals(2, invocationMarker.endIndex);
         }
     }
 

@@ -26,6 +26,8 @@ import static com.amazon.ion.impl.IonTypeID.SYSTEM_SYMBOL_VALUE;
 import static com.amazon.ion.impl.IonTypeID.TWO_ANNOTATION_FLEX_SYMS_LOWER_NIBBLE_1_1;
 import static com.amazon.ion.impl.IonTypeID.TWO_ANNOTATION_SIDS_LOWER_NIBBLE_1_1;
 import static com.amazon.ion.impl.IonTypeID.TYPE_IDS_1_1;
+import static com.amazon.ion.impl.bin.Ion_1_1_Constants.FLEX_SYM_SYSTEM_SYMBOL_OFFSET;
+import static com.amazon.ion.impl.bin.OpCodes.SYSTEM_MACRO_INVOCATION;
 import static com.amazon.ion.util.IonStreamUtils.throwAsIonException;
 
 /**
@@ -372,12 +374,6 @@ class IonCursorBinary implements IonCursor {
      * is not a macro invocation.
      */
     private long macroInvocationId = -1;
-
-    /**
-     * True if the given token represents a system invocation (either a system macro invocation or a system symbol
-     * value). When true, `macroInvocationId` is used to retrieve the ID of the system token.
-     */
-    private boolean isSystemInvocation = false;
 
     /**
      * The type of the current value, if tagless. Otherwise, null.
@@ -1490,24 +1486,24 @@ class IonCursorBinary implements IonCursor {
      * Marker's endIndex is set to the symbol ID value and its startIndex is set to -1. When this FlexSym wraps a
      * delimited end marker, neither the Marker's startIndex nor its endIndex is set.
      * @param markerToSet the marker to populate.
-     * @return the symbol ID value if one was present, otherwise -1.
+     * @return the user-space symbol ID value if one was present, otherwise -1.
      */
     private long uncheckedReadFlexSym_1_1(Marker markerToSet) {
         long result = uncheckedReadFlexInt_1_1();
         if (result == 0) {
             int nextByte = buffer[(int)(peekIndex++)];
-            if (nextByte == OpCodes.INLINE_SYMBOL_ZERO_LENGTH) {
+            // TODO: We could pretend $0 is a system symbol and consolidate some of the branches here. Is it worth it?
+            if (nextByte == FLEX_SYM_SYSTEM_SYMBOL_OFFSET) {
                 // Symbol zero.
                 markerToSet.endIndex = 0;
                 return 0;
             }
-            if (nextByte == OpCodes.STRING_ZERO_LENGTH) {
-                // Inline symbol with zero length.
-                markerToSet.startIndex = peekIndex;
-                markerToSet.endIndex = peekIndex;
+            if (nextByte > 0x60 || nextByte < (byte) (0xE0)) {
+                markerToSet.endIndex = (byte)(nextByte - FLEX_SYM_SYSTEM_SYMBOL_OFFSET);
+                markerToSet.typeId = SYSTEM_SYMBOL_VALUE;
                 return -1;
             } else if (nextByte != OpCodes.DELIMITED_END_MARKER) {
-                throw new IonException("FlexSym 0 may only precede symbol zero, empty string, or delimited end.");
+                throw new IonException("FlexSym 0 may only precede symbol zero, system symbol, or delimited end.");
             }
             markerToSet.typeId = IonTypeID.DELIMITED_END_ID;
             return -1;
@@ -1521,6 +1517,12 @@ class IonCursorBinary implements IonCursor {
             markerToSet.endIndex = result;
         }
         return result;
+    }
+
+    private static boolean isFlexSymSystemSymbol(int byteAfterEscapeCode) {
+        // TODO: We could pretend $0 is a system symbol and consolidate some of the branches elsewhere. Is it worth it?
+        return byteAfterEscapeCode > FLEX_SYM_SYSTEM_SYMBOL_OFFSET
+            || byteAfterEscapeCode <= (byte) (FLEX_SYM_SYSTEM_SYMBOL_OFFSET + Byte.MAX_VALUE);
     }
 
     /**
@@ -1589,15 +1591,16 @@ class IonCursorBinary implements IonCursor {
             if (nextByte < 0) {
                 return true;
             }
-            if ((byte) nextByte == OpCodes.INLINE_SYMBOL_ZERO_LENGTH) {
+            // TODO: We could pretend $0 is a system symbol and consolidate some of the branches here. Is it worth it?
+            if ((byte) nextByte == FLEX_SYM_SYSTEM_SYMBOL_OFFSET) {
                 // Symbol zero.
                 markerToSet.endIndex = 0;
                 return false;
             }
-            if ((byte) nextByte == OpCodes.STRING_ZERO_LENGTH) {
-                // Inline symbol with zero length.
-                markerToSet.startIndex = peekIndex;
-                markerToSet.endIndex = peekIndex;
+            // nextByte > 0x60 || nextByte < (byte) (0xE0)
+            if (SystemSymbol_1_1.contains(nextByte - 0x60)) {
+                markerToSet.endIndex = nextByte - FLEX_SYM_SYSTEM_SYMBOL_OFFSET;
+                markerToSet.typeId = SYSTEM_SYMBOL_VALUE;
                 return false;
             } else if ((byte) nextByte != OpCodes.DELIMITED_END_MARKER) {
                 throw new IonException("FlexSyms may only wrap symbol zero, empty string, or delimited end.");
@@ -1645,6 +1648,13 @@ class IonCursorBinary implements IonCursor {
                 return TYPE_IDS_1_1[OpCodes.SYMBOL_ADDRESS_MANY_BYTES & SINGLE_BYTE_MASK];
             }
         },
+        SYSTEM_SYMBOL_ID {
+            @Override
+            IonTypeID typeIdFor(int length) {
+                if (length > 1) throw new IllegalStateException("System Symbols always have a length of 1");
+                return SYSTEM_SYMBOL_VALUE;
+            }
+        },
         STRUCT_END {
             @Override
             IonTypeID typeIdFor(int length) {
@@ -1661,11 +1671,12 @@ class IonCursorBinary implements IonCursor {
             if (specialByte < 0) {
                 return FlexSymType.INCOMPLETE;
             }
-            if ((byte) specialByte == OpCodes.INLINE_SYMBOL_ZERO_LENGTH) {
+            // TODO: We could pretend $0 is a system symbol and consolidate some of the branches here. Is it worth it?
+            if ((byte) specialByte == FLEX_SYM_SYSTEM_SYMBOL_OFFSET) {
                 return FlexSymType.SYMBOL_ID;
             }
-            if ((byte) specialByte == OpCodes.STRING_ZERO_LENGTH) {
-                return FlexSymType.INLINE_TEXT;
+            if (specialByte > 0x60 && specialByte < 0xE0) {
+                return FlexSymType.SYSTEM_SYMBOL_ID;
             }
             if ((byte) specialByte == OpCodes.DELIMITED_END_MARKER) {
                 return FlexSymType.STRUCT_END;
@@ -2140,7 +2151,6 @@ class IonCursorBinary implements IonCursor {
         annotationSequenceMarker.startIndex = -1;
         annotationSequenceMarker.endIndex = -1;
         macroInvocationId = -1;
-        isSystemInvocation = false;
         taglessType = null;
     }
 
@@ -2237,7 +2247,6 @@ class IonCursorBinary implements IonCursor {
      * @param markerToSet the marker to set.
      */
     private void setSystemTokenMarker(IonTypeID valueTid, Marker markerToSet) {
-        isSystemInvocation = true;
         markerToSet.startIndex = peekIndex;
         if (macroInvocationId < 0) {
             // This is a system symbol value.
@@ -3607,7 +3616,7 @@ class IonCursorBinary implements IonCursor {
     }
 
     boolean isSystemInvocation() {
-        return isSystemInvocation;
+        return valueMarker.typeId == IonTypeID.SYSTEM_MACRO_INVOCATION_ID || valueMarker.typeId == SYSTEM_SYMBOL_VALUE;
     }
 
     /**

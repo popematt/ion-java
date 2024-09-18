@@ -23,6 +23,7 @@ import com.amazon.ion.impl.macro.MacroCompiler;
 import com.amazon.ion.impl.macro.MacroEvaluator;
 import com.amazon.ion.impl.macro.MacroEvaluatorAsIonReader;
 import com.amazon.ion.impl.macro.MacroRef;
+import kotlin.NotImplementedError;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -128,7 +129,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
     // The text representations of the symbol table that is currently in scope, indexed by symbol ID. If the element at
     // a particular index is null, that symbol has unknown text.
-    protected String[] symbols;
+    protected String[] symbols = new String[5];
 
     // The maximum offset into the 'symbols' array that points to a valid local symbol.
     protected int localSymbolMaxOffset = -1;
@@ -1085,16 +1086,27 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     /**
      * @return true if current value has a sequence of annotations that begins with `$ion_encoding`; otherwise, false.
      */
-    private boolean startsWithIonEncoding() {
-        Marker marker = annotationTokenMarkers.get(0);
-        if (marker.startIndex < 0) {
-            // TODO this is temporary until the Ion 1.1 system symbol table is finalized. At that point, we will
-            //  look up the symbol ID (held in `marker.endIndex`) in the system symbol table. Below, 10 is the
-            //  number of Ion 1.1 system symbols, providing the conversion from local symbol ID to `symbols` array
-            //  index.
-            return ION_ENCODING.equals(symbols[(int) (marker.endIndex) - 10]);
+    boolean startsWithIonEncoding() {
+        if (minorVersion > 0) {
+            Marker marker = annotationTokenMarkers.get(0);
+            return matchesSystemSymbol_1_1(marker, SystemSymbol_1_1.ION_ENCODING);
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if the symbol at `marker`...
+     * * is a system symbol with the same ID as the expected System Symbol
+     * * (TODO) is an interned user-symbol with the same text as the expected System Symbol
+     * * is an inline symbol with the same utf8 bytes as the expected System Symbol
+     */
+    boolean matchesSystemSymbol_1_1(Marker marker, SystemSymbol_1_1 systemSymbol) {
+        if (marker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+            return marker.endIndex == systemSymbol.getId();
+//        } else if (marker.startIndex < 0) {
+//            return systemSymbol.getText().equals(getSymbol((int) marker.endIndex));
         } else {
-            return bytesMatch(ION_ENCODING_UTF8, buffer, (int) marker.startIndex, (int) marker.endIndex);
+            return bytesMatch(systemSymbol.getUtf8Bytes(), buffer, (int) marker.startIndex, (int) marker.endIndex);
         }
     }
 
@@ -1131,6 +1143,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @param newSymbols the symbols to install.
      */
     protected void installSymbols(List<String> newSymbols) {
+        System.out.println("Installing: " + newSymbols);
         if (newSymbols != null) {
             int numberOfNewSymbols = newSymbols.size();
             int numberOfAvailableSlots = symbols.length - (localSymbolMaxOffset + 1);
@@ -1170,13 +1183,13 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         }
 
         private void classifySexpWithinEncodingDirective() {
-            String name = stringValue();
-            if (SYMBOL_TABLE.equals(name)) {
+            String name = getSymbolText();
+            if (SystemSymbol_1_1.SYMBOL_TABLE.getText().equals(name)) {
                 state = State.IN_SYMBOL_TABLE_SEXP;
-            } else if (MACRO_TABLE.equals(name)) {
+            } else if (SystemSymbol_1_1.MACRO_TABLE.getText().equals(name)) {
                 state = State.IN_MACRO_TABLE_SEXP;
             } else {
-                throw new IonException(String.format("$ion_encoding expressions %s not supported.", name));
+                throw new IonException(String.format("$ion_encoding expressions '%s' not supported.", name));
             }
         }
 
@@ -1213,7 +1226,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
          * Install any new symbols and macros, step out of the encoding directive, and resume reading raw values.
          */
         private void finishEncodingDirective() {
-            resetSymbolTable(); // TODO handle appended symbols
+            if (!isSymbolTableAppend) resetSymbolTable(); // TODO handle appended symbols
             installSymbols(newSymbols);
             installMacros();
             stepOutOfContainer();
@@ -1511,7 +1524,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
          */
         private void readValueAsExpression(List<Expression.EExpressionBodyExpression> expressions) {
             if (valueTid.isMacroInvocation) {
-                if (isSystemInvocation()) {
+                if (valueTid == IonTypeID.SYSTEM_MACRO_INVOCATION_ID) {
                     throw new UnsupportedOperationException("TODO: system macros");
                 }
                 collectEExpressionArgs(expressions); // TODO avoid recursion
@@ -2354,6 +2367,10 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.symbolValue().assumeText();
         }
+        if (valueTid == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+            int id = symbolValueId();
+            return SystemSymbol_1_1.get(id);
+        }
         return readString();
     }
 
@@ -2375,6 +2392,9 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (minorVersion == 0) {
             return (int) readUInt(valueMarker.startIndex, valueMarker.endIndex);
         } else {
+            if (valueTid == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+                return (int) readFixedUInt_1_1(valueMarker.startIndex, valueMarker.endIndex);
+            }
             if (taglessType != null) {
                 // It is the caller's responsibility to call 'symbolValueId()' only when 'hasSymbolText()' is false,
                 // meaning that the tagless FlexSym is encoded as a FlexInt representing a symbol ID.
@@ -2440,7 +2460,11 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             Marker marker = annotationTokenMarkers.get(i);
             if (marker.startIndex < 0) {
                 // This means the endIndex represents the token's symbol ID.
-                consumer.accept(getSymbolToken((int) marker.endIndex));
+                if (minorVersion == 1 && marker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+                    consumer.accept(new SymbolTokenImpl(SystemSymbol_1_1.get((int) marker.endIndex), -1));
+                } else {
+                    consumer.accept(getSymbolToken((int) marker.endIndex));
+                }
             } else {
                 // The token is inline UTF-8 text.
                 ByteBuffer utf8InputBuffer = prepareByteBuffer(marker.startIndex, marker.endIndex);
@@ -2484,13 +2508,16 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.getFieldName() != null;
         }
-        return fieldTextMarker.startIndex > -1;
+        return fieldTextMarker.startIndex > -1 || fieldTextMarker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE;
     }
 
     @Override
     public String getFieldText() {
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.getFieldName();
+        }
+        if (fieldTextMarker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+            return SystemSymbol_1_1.get((int) fieldTextMarker.endIndex);
         }
         ByteBuffer utf8InputBuffer = prepareByteBuffer(fieldTextMarker.startIndex, fieldTextMarker.endIndex);
         return utf8Decoder.decode(utf8InputBuffer, (int) (fieldTextMarker.endIndex - fieldTextMarker.startIndex));
@@ -2502,7 +2529,11 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             return macroEvaluatorIonReader.getFieldNameSymbol();
         }
         if (fieldTextMarker.startIndex > -1) {
-            return new SymbolTokenImpl(getFieldText(), -1);
+            return new SymbolTokenImpl(getFieldText(), SymbolTable.UNKNOWN_SYMBOL_ID);
+        }
+        // TODO: Is this correct?
+        if (fieldTextMarker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+            return new SymbolTokenImpl(getFieldText(), SymbolTable.UNKNOWN_SYMBOL_ID);
         }
         if (fieldSid < 0) {
             return null;
@@ -2516,7 +2547,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             return macroEvaluatorIonReader.symbolValue();
         }
         if (valueTid.isInlineable) {
-            return new SymbolTokenImpl(stringValue(), SymbolTable.UNKNOWN_SYMBOL_ID);
+            return new SymbolTokenImpl(getSymbolText(), SymbolTable.UNKNOWN_SYMBOL_ID);
         }
 
         int sid = symbolValueId();

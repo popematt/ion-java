@@ -40,16 +40,9 @@ internal class IonManagedWriter_1_1(
     }
 
     companion object {
-        private val SYSTEM_SYMBOL_TABLE_MAP = hashMapOf<String, Int>()
-
-        init {
-            var id = 1
-            Symbols.systemSymbolTable().iterateDeclaredSymbolNames().forEach {
-                SYSTEM_SYMBOL_TABLE_MAP[it] = id++
-            }
-        }
-
         private val ION_VERSION_MARKER_REGEX = Regex("^\\\$ion_\\d+_\\d+$")
+
+        private const val TDL_EXPRESSION_GROUP_START = ";"
 
         // These are chosen subjectively to be neither too big nor too small.
         private const val MAX_PARAMETERS_IN_ONE_LINE_SIGNATURE = 4
@@ -123,7 +116,7 @@ internal class IonManagedWriter_1_1(
     // plus a list of symbols added by the current encoding context.
 
     /** The symbol table for the prior encoding context */
-    private var symbolTable: HashMap<String, Int> = HashMap(SYSTEM_SYMBOL_TABLE_MAP)
+    private var symbolTable: HashMap<String, Int> = HashMap()
     /** Symbols to be interned since the prior encoding context. */
     private var newSymbols: HashMap<String, Int> = LinkedHashMap() // Preserves insertion order.
 
@@ -264,7 +257,6 @@ internal class IonManagedWriter_1_1(
         //       in order to avoid writing a data stream with leaky context.
         if (depth != 0) throw IllegalStateException("Cannot reset the encoding context while stepped in any value.")
         symbolTable.clear()
-        symbolTable.putAll(SYSTEM_SYMBOL_TABLE_MAP)
         macroNames.clear()
         macrosById.clear()
         macroTable.clear()
@@ -286,7 +278,7 @@ internal class IonManagedWriter_1_1(
     private fun writeEncodingDirective() {
         if (newSymbols.isEmpty() && newMacros.isEmpty()) return
 
-        systemData.writeAnnotations(SystemSymbols.ION_ENCODING)
+        systemData.writeAnnotations(SystemSymbol_1_1.ION_ENCODING)
         writeSystemSexp {
             writeSymbolTableClause()
             writeMacroTableClause()
@@ -307,17 +299,17 @@ internal class IonManagedWriter_1_1(
      */
     private fun writeSymbolTableClause() {
         val hasSymbolsToAdd = newSymbols.isNotEmpty()
-        val hasSymbolsToRetain = symbolTable.size > SystemSymbols.ION_1_0_MAX_ID
+        val hasSymbolsToRetain = symbolTable.isNotEmpty()
         if (!hasSymbolsToAdd && !hasSymbolsToRetain) return
 
         writeSystemSexp {
             forceNoNewlines(true)
-            systemData.writeSymbol(SystemSymbols.SYMBOL_TABLE)
+            systemData.writeSymbol(SystemSymbol_1_1.SYMBOL_TABLE)
 
             // Add previous symbol table
             if (hasSymbolsToRetain) {
                 if (newSymbols.size > 0) forceNoNewlines(false)
-                writeSymbol(SystemSymbols.ION_ENCODING)
+                writeSymbol(SystemSymbol_1_1.ION_ENCODING)
             }
 
             // Add new symbols
@@ -344,10 +336,10 @@ internal class IonManagedWriter_1_1(
 
         writeSystemSexp {
             forceNoNewlines(true)
-            writeSymbol(SystemSymbols.MACRO_TABLE)
+            writeSymbol(SystemSymbol_1_1.MACRO_TABLE)
             if (newMacros.size > 0) forceNoNewlines(false)
             if (hasMacrosToRetain) {
-                writeSymbol(SystemSymbols.ION_ENCODING)
+                writeSymbol(SystemSymbol_1_1.ION_ENCODING)
             }
             forceNoNewlines(false)
             newMacros.forEach { (macro, address) ->
@@ -366,8 +358,8 @@ internal class IonManagedWriter_1_1(
         // TODO: Support for aliases
         writeSystemSexp {
             forceNoNewlines(true)
-            writeSymbol(SystemSymbols.EXPORT)
-            writeAnnotations(SystemSymbols.ION)
+            writeSymbol(SystemSymbol_1_1.EXPORT)
+            writeAnnotations(SystemSymbol_1_1.ION)
             writeSymbol(macro.macroName)
         }
         systemData.forceNoNewlines(false)
@@ -376,7 +368,7 @@ internal class IonManagedWriter_1_1(
     private fun writeMacroDefinition(name: String?, macro: TemplateMacro) {
         writeSystemSexp {
             forceNoNewlines(true)
-            writeSymbol(SystemSymbols.MACRO)
+            writeSymbol(SystemSymbol_1_1.MACRO)
             if (name != null) writeSymbol(name) else writeNull()
 
             if (macro.signature.size > MAX_PARAMETERS_IN_ONE_LINE_SIGNATURE) forceNoNewlines(false)
@@ -441,7 +433,7 @@ internal class IonManagedWriter_1_1(
                             IonType.TIMESTAMP -> writeTimestamp((expression as Expression.TimestampValue).value)
                             IonType.SYMBOL -> {
                                 writeSystemSexp {
-                                    writeSymbol(SystemSymbols.LITERAL)
+                                    writeSymbol(SystemSymbol_1_1.LITERAL)
                                     expression.annotations.forEach {
                                         if (it.text != null) {
                                             // TODO: If it's already in the symbol table we could check the
@@ -474,11 +466,11 @@ internal class IonManagedWriter_1_1(
                                 if (expression.annotations.isNotEmpty()) {
                                     stepInSExp(usingLengthPrefix = false)
                                     numberOfTimesToStepOut[expression.endExclusive]++
-                                    writeSymbol(SystemSymbols.ANNOTATE)
+                                    writeSymbol(SystemSymbol_1_1.ANNOTATE)
 
                                     // Write the annotations as symbols within an expression group
                                     writeSystemSexp {
-                                        writeSymbol(SystemSymbols.TDL_EXPRESSION_GROUP)
+                                        writeSymbol(TDL_EXPRESSION_GROUP_START)
                                         expression.annotations.forEach {
                                             if (it.text != null) {
                                                 // TODO: If it's already in the symbol table we could check the
@@ -490,7 +482,7 @@ internal class IonManagedWriter_1_1(
                                             } else {
                                                 // TODO: See if there is a less verbose way to use SIDs in TDL
                                                 writeSystemSexp {
-                                                    writeSymbol(SystemSymbols.LITERAL)
+                                                    writeSymbol(SystemSymbol_1_1.LITERAL)
                                                     writeSymbol(it.sid)
                                                 }
                                             }
@@ -500,7 +492,7 @@ internal class IonManagedWriter_1_1(
                                 // Start a `(make_sexp [ ...` invocation
                                 stepInSExp(usingLengthPrefix = false)
                                 numberOfTimesToStepOut[expression.endExclusive]++
-                                writeSymbol(SystemSymbols.MAKE_SEXP)
+                                writeSymbol(SystemSymbol_1_1.MAKE_SEXP)
 
                                 if (expression.startInclusive != expression.endExclusive) {
                                     stepInList(usingLengthPrefix = false)
@@ -527,7 +519,7 @@ internal class IonManagedWriter_1_1(
                     is Expression.ExpressionGroup -> {
                         stepInSExp(usingLengthPrefix = false)
                         numberOfTimesToStepOut[expression.endExclusive]++
-                        writeSymbol(SystemSymbols.TDL_EXPRESSION_GROUP)
+                        writeSymbol(TDL_EXPRESSION_GROUP_START)
                     }
                     is Expression.MacroInvocation -> {
                         stepInSExp(usingLengthPrefix = false)
@@ -598,7 +590,7 @@ internal class IonManagedWriter_1_1(
             IonType.LIST -> userData.stepInList(options.writeLengthPrefix(ContainerType.LIST, newDepth))
             IonType.SEXP -> userData.stepInSExp(options.writeLengthPrefix(ContainerType.SEXP, newDepth))
             IonType.STRUCT -> {
-                if (depth == 0 && userData._private_hasFirstAnnotation(SystemSymbols.ION_SYMBOL_TABLE_SID, SystemSymbols.ION_SYMBOL_TABLE)) {
+                if (depth == 0 && userData._private_hasFirstAnnotation(SystemSymbol_1_1.ION_SYMBOL_TABLE.id, SystemSymbol_1_1.ION_SYMBOL_TABLE.text)) {
                     throw IonException("User-defined symbol tables not permitted by the Ion 1.1 managed writer.")
                 }
                 userData.stepInStruct(options.writeLengthPrefix(ContainerType.STRUCT, newDepth))
@@ -632,8 +624,8 @@ internal class IonManagedWriter_1_1(
             userData.writeNull(IonType.SYMBOL)
         } else {
             val text: String? = content.text
-            if (content.sid == SystemSymbols.ION_1_0_SID) throw IonException("Can't write a top-level symbol that is the same as the IVM.")
-            if (text == SystemSymbols.ION_1_0) throw IonException("Can't write a top-level symbol that is the same as the IVM.")
+            // TODO: Check to see if the SID refers to a user symbol with text that looks like an IVM
+            if (text == SystemSymbol_1_1.ION_1_0.text && depth == 0) throw IonException("Can't write a top-level symbol that is the same as the IVM.")
             handleSymbolToken(content.sid, content.text, SymbolKind.VALUE, userData)
         }
     }
@@ -780,7 +772,11 @@ internal class IonManagedWriter_1_1(
         //       from Ion 1.0, we will have to adjust any SIDs that we are writing.
 
         reader.typeAnnotationSymbols.forEach {
-            handleSymbolToken(it.sid, it.text, SymbolKind.ANNOTATION, userData, preserveEncoding = true)
+            if (it.text == SystemSymbol_1_1.ION_SYMBOL_TABLE.text) {
+                userData.writeAnnotations(SystemSymbol_1_1.ION_SYMBOL_TABLE)
+            } else {
+                handleSymbolToken(it.sid, it.text, SymbolKind.ANNOTATION, userData, preserveEncoding = true)
+            }
         }
         if (isInStruct) {
             // TODO: Can't use reader.fieldId, reader.fieldName because it will throw UnknownSymbolException.
@@ -866,13 +862,21 @@ internal class IonManagedWriter_1_1(
     }
 
     override fun startMacro(macro: Macro) {
-        val address = getOrAssignMacroAddress(macro)
-        startMacro(null, address, macro)
+        if (macro is SystemMacro) {
+            startSystemMacro(macro)
+        } else {
+            val address = getOrAssignMacroAddress(macro)
+            startMacro(null, address, macro)
+        }
     }
 
     override fun startMacro(name: String, macro: Macro) {
-        val address = getOrAssignMacroAddressAndName(name, macro)
-        startMacro(name, address, macro)
+        if (macro is SystemMacro && macro.macroName == name) {
+            startSystemMacro(macro)
+        } else {
+            val address = getOrAssignMacroAddressAndName(name, macro)
+            startMacro(name, address, macro)
+        }
     }
 
     private fun startMacro(name: String?, address: Int, definition: Macro) {
@@ -883,6 +887,11 @@ internal class IonManagedWriter_1_1(
             val includeLengthPrefix = options.writeLengthPrefix(ContainerType.EEXP, depth + 1)
             userData.stepInEExp(address, includeLengthPrefix, definition)
         }
+    }
+
+    private fun startSystemMacro(macro: SystemMacro) {
+        // TODO: Use a fully qualified name if there's a shadowing macro in the macro table.
+        userData.stepInEExp(macro)
     }
 
     override fun startExpressionGroup() {

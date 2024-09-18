@@ -3290,6 +3290,15 @@ public class IonReaderContinuableTopLevelBinaryTest {
 
     @ParameterizedTest(name = "constructFromBytes={0}")
     @ValueSource(booleans = {true, false})
+    public void systemSymbolAnnotations(boolean constructFromBytes) throws Exception {
+        reader = readerFor(constructFromBytes,0xE0, 0x01, 0x01, 0xEA, 0xE7, 0x01, 0x61, 0x60);
+        assertSequence(
+            next(IonType.INT), annotationSymbols("$ion")
+        );
+    }
+
+    @ParameterizedTest(name = "constructFromBytes={0}")
+    @ValueSource(booleans = {true, false})
     public void symbolTableWithOpenContentImportsListField(boolean constructFromBytes) throws Exception {
         reader = readerFor(
             (writer, out) -> {

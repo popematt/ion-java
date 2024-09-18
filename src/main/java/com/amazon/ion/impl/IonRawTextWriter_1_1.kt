@@ -188,6 +188,8 @@ class IonRawTextWriter_1_1 internal constructor(
         numAnnotations += annotations.size
     }
 
+    override fun writeAnnotations(annotation0: SystemSymbol_1_1) = writeAnnotations(annotation0.text)
+
     override fun writeAnnotations(annotation0: CharSequence) {
         ensureAnnotationSpace(numAnnotations + 1)
         annotationsTextBuffer[numAnnotations++] = annotation0
@@ -236,6 +238,8 @@ class IonRawTextWriter_1_1 internal constructor(
         fieldNameText = text
         hasFieldName = true
     }
+
+    override fun writeFieldName(symbol: SystemSymbol_1_1) = writeFieldName(symbol.text)
 
     override fun writeNull() = writeScalar {
         output.appendAscii("null")
@@ -306,6 +310,8 @@ class IonRawTextWriter_1_1 internal constructor(
         }
     }
 
+    override fun writeSymbol(symbol: SystemSymbol_1_1) = writeSymbol(symbol.text)
+
     override fun writeString(value: CharSequence) = writeScalar { output.printString(value) }
 
     override fun writeBlob(value: ByteArray, start: Int, length: Int) = writeScalar { output.printBlob(options, value, start, length) }
@@ -359,6 +365,8 @@ class IonRawTextWriter_1_1 internal constructor(
         currentContainerHasValues = false
         isPendingSeparator = true // Treat the macro id as if it is a value that needs a separator.
     }
+
+    override fun stepInEExp(systemMacro: SystemMacro) = stepInEExp(systemMacro.name)
 
     override fun stepInExpressionGroup(usingLengthPrefix: Boolean) {
         confirm(numAnnotations == 0) { "Cannot annotate an expression group" }

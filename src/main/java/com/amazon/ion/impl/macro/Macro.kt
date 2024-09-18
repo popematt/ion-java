@@ -115,10 +115,29 @@ data class TemplateMacro(override val signature: List<Macro.Parameter>, val body
 /**
  * Macros that are built in, rather than being defined by a template.
  */
-enum class SystemMacro(val macroName: String, override val signature: List<Macro.Parameter>) : Macro {
-    Values("values", listOf(zeroToManyTagged("values"))),
-    MakeString("make_string", listOf(zeroToManyTagged("text"))),
-    // TODO: Other system macros
+enum class SystemMacro(val id: Int, val macroName: String, override val signature: List<Macro.Parameter>) : Macro {
+    // TODO: Remaining system macros
+    // None O
+    Values(1, "values", listOf(zeroToManyTagged("values"))),
+    // Annotate 2
+    MakeString(3, "make_string", listOf(zeroToManyTagged("text"))),
+    // MAKE_SYMBOL(4, "make_symbol")
+    // MAKE_BLOB(5, "make_blob")
+    // MAKE_DECIMAL(6, "make_decimal")
+    // MAKE_TIMESTAMP(7, "make_timestamp")
+    // MAKE_LIST(8, "make_list")
+    // MAKE_SEXP(9, "make_sexp")
+    // MAKE_STRUCT(10, "make_struct")
+    // PARSE_ION(11, "parse_ion")
+    // REPEAT(12, "repeat")
+    // DELTA(13, "delta")
+    // FLATTEN(14, "flatten")
+    // SUM(15, "sum")
+    // SYMBOL_TABLE(16, "symbol_table")
+    // ADD_SYMBOLS(17, "add_symbols")
+    // MACRO_TABLE(18, "macro_table")
+    // ADD_MACROS(19, "add_macros")
+    // COMMENT(20, "comment")
     ;
 
     override val dependencies: List<Macro>

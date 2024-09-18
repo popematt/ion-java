@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.EnumSource
 
 class IonRawBinaryWriterTest_1_1 {
 
@@ -480,6 +481,8 @@ class IonRawBinaryWriterTest_1_1 {
             6E          | true
             02 01       | FlexSym SID 64
             6E          | true
+            01 6F       | System Symbol symbol_table
+            6E          | true
             01 F0       | End delimited struct
             """
         ) {
@@ -489,6 +492,8 @@ class IonRawBinaryWriterTest_1_1 {
             writeFieldName("foo")
             writeBool(true)
             writeFieldName(64)
+            writeBool(true)
+            writeFieldName(SystemSymbol_1_1.SYMBOL_TABLE)
             writeBool(true)
             stepOut()
         }
@@ -584,7 +589,7 @@ class IonRawBinaryWriterTest_1_1 {
             FD     | Variable length Struct
             09     | Length = 4
             01     | switch to FlexSym encoding
-            01 A0  | FlexSym SID 0
+            01 60  | FlexSym SID 0
             6E     | true
             """
         ) {
@@ -604,11 +609,11 @@ class IonRawBinaryWriterTest_1_1 {
             03      | SID 1
             6E      | true
             01      | switch to FlexSym encoding
-            01 A0   | FlexSym SID 0
+            01 60   | FlexSym SID 0
             6E      | true
             05      | FlexSym SID 2
             6E      | true
-            01 A0   | FlexSym SID 0
+            01 60   | FlexSym SID 0
             6E      | true
             """
         ) {
@@ -624,6 +629,25 @@ class IonRawBinaryWriterTest_1_1 {
             stepOut()
         }
     }
+
+    @Test
+    fun `write prefixed struct with a system symbol as a field name`() {
+        assertWriterOutputEquals(
+            """
+            FD     | Variable length Struct
+            09     | Length = 4
+            01     | switch to FlexSym encoding
+            01 6F  | FlexSym System Symbol 'symbol_table'
+            6E     | true
+            """
+        ) {
+            stepInStruct(usingLengthPrefix = true)
+            writeFieldName(SystemSymbol_1_1.SYMBOL_TABLE)
+            writeBool(true)
+            stepOut()
+        }
+    }
+
 
     @Test
     fun `writing a value in a struct with no field name should throw an exception`() {
@@ -800,7 +824,8 @@ class IonRawBinaryWriterTest_1_1 {
 
     @Test
     fun `write empty text and sid 0 annotations`() {
-        assertWriterOutputEquals("E8 01 A0 01 90 6E") {
+        // Empty text is a system symbol
+        assertWriterOutputEquals("E8 01 60 01 75 6E") {
             writeAnnotations(0)
             writeAnnotations("")
             writeBool(true)
@@ -829,6 +854,52 @@ class IonRawBinaryWriterTest_1_1 {
         assertWriterOutputEquals(expectedBytes) {
             writeAnnotations(10)
             writeAnnotations(arrayOf("foo", "bar"))
+            writeBool(false)
+        }
+    }
+
+    @Test
+    fun `write one system symbol annotation`() {
+        val expectedBytes = "E7 01 64 6E"
+        assertWriterOutputEquals(expectedBytes) {
+            writeAnnotations(SystemSymbol_1_1.NAME)
+            writeBool(true)
+        }
+        assertWriterOutputEquals(expectedBytes) {
+            writeAnnotations(SystemSymbol_1_1.NAME)
+            writeAnnotations(intArrayOf())
+            writeAnnotations(arrayOf<CharSequence>())
+            writeBool(true)
+        }
+    }
+
+    @Test
+    fun `write two mixed sid and system annotations`() {
+        val expectedBytes = "E8 15 01 6A 6F"
+        assertWriterOutputEquals(expectedBytes) {
+            writeAnnotations(10)
+            writeAnnotations(SystemSymbol_1_1.ION_ENCODING)
+            writeBool(false)
+        }
+    }
+
+    @Test
+    fun `write two mixed inline and system annotations`() {
+        val expectedBytes = "E8 FB 66 6F 6F 01 6A 6F"
+        assertWriterOutputEquals(expectedBytes) {
+            writeAnnotations("foo")
+            writeAnnotations(SystemSymbol_1_1.ION_ENCODING)
+            writeBool(false)
+        }
+    }
+
+    @Test
+    fun `write three mixed sid, inline, and system annotations`() {
+        val expectedBytes = "E9 0F 15 FB 66 6F 6F 01 6A 6F"
+        assertWriterOutputEquals(expectedBytes) {
+            writeAnnotations(10)
+            writeAnnotations("foo")
+            writeAnnotations(SystemSymbol_1_1.ION_ENCODING)
             writeBool(false)
         }
     }
@@ -1009,12 +1080,16 @@ class IonRawBinaryWriterTest_1_1 {
             E1 01
             E2 39 2F
             A3 66 6F 6F
+            EE 0B
+            EE 15
             """
         ) {
             writeSymbol(0)
             writeSymbol(1)
             writeSymbol(12345)
             writeSymbol("foo")
+            writeSymbol(SystemSymbol_1_1.ION_LITERAL)
+            writeSymbol(SystemSymbol_1_1.THE_EMPTY_SYMBOL)
         }
     }
 
@@ -1073,8 +1148,8 @@ class IonRawBinaryWriterTest_1_1 {
         "           69695, 50 FF FF",
         "           69696, 51 00 00",
         "         1052735, 5F FF FF",
-        "         1052736, EE 04 82 80",
-        "${Int.MAX_VALUE}, EE F0 FF FF FF 0F"
+        "         1052736, F4 04 82 80",
+        "${Int.MAX_VALUE}, F4 F0 FF FF FF 0F"
     )
     fun `write a delimited e-expression with a multi-byte biased id`(id: Int, expectedBytes: String) {
         assertWriterOutputEquals(expectedBytes) {
@@ -1804,13 +1879,13 @@ class IonRawBinaryWriterTest_1_1 {
     @ParameterizedTest
     @CsvSource(
         // SID
-        "    0, 01 A0",
+        "    0, 01 60",
         "    4, 09",
         "  246, DA 03",
         // Text
         "    a, FF 61",
         "  abc, FB 61 62 63",
-        "   '', 01 90",
+        "   '', 01 75",
     )
     fun `write a tagless symbol`(value: String, expectedBytes: String) {
         val macro = dummyMacro(nArgs = 1, variadicParam(ParameterEncoding.CompactSymbol))

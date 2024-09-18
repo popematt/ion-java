@@ -10,15 +10,21 @@ import com.amazon.ion.TestUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
+import java.util.function.Consumer;
 
 import static com.amazon.ion.BitUtils.bytes;
+import static com.amazon.ion.IonCursor.Event.NEEDS_DATA;
 import static com.amazon.ion.IonCursor.Event.START_SCALAR;
 import static com.amazon.ion.IonCursor.Event.VALUE_READY;
 import static com.amazon.ion.TestUtils.withIvm;
+import static com.amazon.ion.impl.IonCursorTestUtilities.annotations;
+import static com.amazon.ion.impl.IonCursorTestUtilities.fieldName;
+import static com.amazon.ion.impl.IonReaderContinuableTopLevelBinaryTest.next;
 import static com.amazon.ion.impl.TaglessEncoding.FLEX_INT;
 import static com.amazon.ion.impl.TaglessEncoding.FLEX_UINT;
 import static com.amazon.ion.impl.TaglessEncoding.INT16;
@@ -174,6 +180,79 @@ public class IonReaderContinuableCoreBinaryTest {
         );
     }
 
+    @ParameterizedTest(name = "constructFromBytes={0}")
+    @EnumSource(SystemSymbol_1_1.class)
+    public void systemSymbols_1_1(SystemSymbol_1_1 systemSymbol) {
+        systemSymbols_1_1_helper(systemSymbol, true);
+        systemSymbols_1_1_helper(systemSymbol, false);
+    }
+    void systemSymbols_1_1_helper(SystemSymbol_1_1 systemSymbol, boolean constructFromBytes) {
+        String systemSidBytes = Integer.toHexString(systemSymbol.getId());
+        IonReaderContinuableCoreBinary reader = initializeReader(
+            constructFromBytes,
+            TestUtils.hexStringToByteArray("E0 01 01 EA EE " + systemSidBytes + " 60")
+        );
+        assertSequence(
+            reader,
+            scalar(),
+            fillSymbolValue(systemSymbol.getText()),
+            scalar(), fillIntValue(0),
+            endStream()
+        );
+    }
+
+    @ParameterizedTest(name = "constructFromBytes={0}")
+    @EnumSource(SystemSymbol_1_1.class)
+    public void systemSymbols_1_1_fieldNames(SystemSymbol_1_1 systemSymbol) {
+        systemSymbols_1_1_fieldNamesHelper(systemSymbol, true);
+        systemSymbols_1_1_fieldNamesHelper(systemSymbol, false);
+    }
+    void systemSymbols_1_1_fieldNamesHelper(SystemSymbol_1_1 systemSymbol, boolean constructFromBytes) {
+        String systemSidBytes = Integer.toHexString(0x60 + systemSymbol.getId());
+        IonReaderContinuableCoreBinary reader = initializeReader(
+            constructFromBytes,
+            TestUtils.hexStringToByteArray("E0 01 01 EA F3 01 " + systemSidBytes + " 60 01 F0")
+        );
+        assertSequence(
+            reader,
+            fillContainer(IonType.STRUCT,
+                scalar(),
+                fieldName(systemSymbol.getText()),
+                fillIntValue(0)
+            ),
+            endStream()
+        );
+    }
+
+    @ParameterizedTest(name = "constructFromBytes={0}")
+    @EnumSource(SystemSymbol_1_1.class)
+    public void systemSymbols_1_1_annotations(SystemSymbol_1_1 systemSymbol) {
+        systemSymbols_1_1_annotationsHelper(systemSymbol, true);
+        // systemSymbols_1_1_annotationsHelper(systemSymbol, false);
+    }
+    void systemSymbols_1_1_annotationsHelper(SystemSymbol_1_1 systemSymbol, boolean constructFromBytes) {
+        String systemSidBytes = Integer.toHexString(0x60 + systemSymbol.getId());
+        IonReaderContinuableCoreBinary reader = initializeReader(
+            constructFromBytes,
+            TestUtils.hexStringToByteArray("E0 01 01 EA E7 01 " + systemSidBytes + " 60")
+        );
+        // TODO:
+        assertSequence(
+            reader,
+            annotations(systemSymbol.getText()),
+            fillIntValue(0),
+            endStream()
+        );
+    }
+
+    static ExpectationProvider<IonReaderContinuableCoreBinary> next() {
+        return consumer -> consumer.accept(new Expectation<>(
+            String.format("next(%s)", ""),
+            reader -> {
+                assertEquals(NEEDS_DATA, reader.nextValue());
+            })
+        );
+    }
 
     @ParameterizedTest(name = "constructFromBytes={0}")
     @ValueSource(booleans = {true, false})

@@ -211,6 +211,9 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             }
             Marker marker = annotationTokenMarkers.get((int) nextAnnotationPeekIndex++);
             if (marker.startIndex < 0) {
+                if (minorVersion == 1 && marker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+                    return new SymbolTokenImpl(SystemSymbol_1_1.get((int) marker.endIndex), -1);
+                }
                 // This means the endIndex represents the token's symbol ID.
                 return getSymbolToken((int) marker.endIndex);
             }
@@ -488,8 +491,13 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
     private void resetImports() {
         // Note: when support for the next version of Ion is added, conditionals on 'majorVersion' and 'minorVersion'
         // must be added here.
-        imports = ION_1_0_IMPORTS;
+        if (minorVersion == 0) {
+            imports = ION_1_0_IMPORTS;
+        } else {
+            imports = LocalSymbolTableImports.EMPTY;
+        }
         firstLocalSymbolId = imports.getMaxId() + 1;
+        System.out.println(Arrays.toString(symbols));
     }
 
     /**
@@ -674,8 +682,9 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void readSymbolTableStructField() {
-            if (minorVersion > 0 && fieldSid < 0) {
-                fieldSid = mapInlineTextToSystemSid(fieldTextMarker);
+            if (minorVersion > 0) {
+                readSymbolTableStructField_1_1();
+                return;
             }
             if (fieldSid == SYMBOLS_SID) {
                 state = State.ON_SYMBOL_TABLE_SYMBOLS;
@@ -692,22 +701,43 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             }
         }
 
+        private void readSymbolTableStructField_1_1() {
+            if (matchesSystemSymbol_1_1(fieldTextMarker, SystemSymbol_1_1.SYMBOLS)) {
+                state = State.ON_SYMBOL_TABLE_SYMBOLS;
+                if (hasSeenSymbols) {
+                    throw new IonException("Symbol table contained multiple symbols fields.");
+                }
+                hasSeenSymbols = true;
+            } else if (matchesSystemSymbol_1_1(fieldTextMarker, SystemSymbol_1_1.IMPORTS)) {
+                state = State.ON_SYMBOL_TABLE_IMPORTS;
+                if (hasSeenImports) {
+                    throw new IonException("Symbol table contained multiple imports fields.");
+                }
+                hasSeenImports = true;
+            }
+        }
+
+
         private void startReadingImportsList() {
             resetImports();
             resetSymbolTable();
             newImports = new ArrayList<>(3);
-            newImports.add(getSystemSymbolTable());
+            if (minorVersion == 0) {
+                newImports.add(getSystemSymbolTable());
+            }
             state = State.READING_SYMBOL_TABLE_IMPORTS_LIST;
         }
 
         private void preparePossibleAppend() {
-            if (minorVersion > 0 && hasSymbolText()) {
+            if (minorVersion > 0) {
                 prepareScalar();
-                if (!bytesMatch(ION_SYMBOL_TABLE_UTF8, buffer, (int) valueMarker.startIndex, (int) valueMarker.endIndex)) {
+                if (!matchesSystemSymbol_1_1(valueMarker, SystemSymbol_1_1.ION_SYMBOL_TABLE)) {
                     resetSymbolTable();
                 }
-            } else if (symbolValueId() != ION_SYMBOL_TABLE_SID) {
-                resetSymbolTable();
+            } else {
+                if (symbolValueId() != ION_SYMBOL_TABLE_SID) {
+                    resetSymbolTable();
+                }
             }
             state = State.ON_SYMBOL_TABLE_FIELD;
         }
@@ -943,8 +973,8 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             return ION_SYMBOL_TABLE_SID == sid;
         } else if (minorVersion > 0) {
             Marker marker = annotationTokenMarkers.get(0);
-            if (marker.startIndex < 0) {
-                return marker.endIndex == ION_SYMBOL_TABLE_SID;
+            if (marker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+                return marker.endIndex == SystemSymbol_1_1.ION_SYMBOL_TABLE.getId();
             } else {
                 return bytesMatch(ION_SYMBOL_TABLE_UTF8, buffer, (int) marker.startIndex, (int) marker.endIndex);
             }
@@ -974,11 +1004,13 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                     }
                 }
                 event = super.nextValue();
-                if (parent == null && isPositionedOnSymbolTable()) {
-                    cachedReadOnlySymbolTable = null;
-                    symbolTableReader.resetState();
-                    state = State.ON_SYMBOL_TABLE_STRUCT;
-                    continue;
+                if (parent == null) {
+                    if (isPositionedOnSymbolTable()) {
+                        cachedReadOnlySymbolTable = null;
+                        symbolTableReader.resetState();
+                        state = State.ON_SYMBOL_TABLE_STRUCT;
+                        continue;
+                    }
                 }
                 break;
             }

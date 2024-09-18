@@ -3,6 +3,8 @@
 package com.amazon.ion.impl
 
 import com.amazon.ion.impl.macro.Macro
+import com.amazon.ion.util.*
+import com.amazon.ion.util.confirm
 
 /**
  * Allows us to write encoding directives in a more optimized and/or readable way.

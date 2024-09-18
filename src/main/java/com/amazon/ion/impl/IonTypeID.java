@@ -3,6 +3,7 @@
 package com.amazon.ion.impl;
 
 import com.amazon.ion.IonType;
+import com.amazon.ion.impl.bin.OpCodes;
 
 import static com.amazon.ion.impl.bin.OpCodes.*;
 
@@ -86,6 +87,7 @@ final class IonTypeID {
     static final IonTypeID STRUCT_WITH_FLEX_SYMS_ID;
     static final IonTypeID DELIMITED_END_ID;
     static final IonTypeID SYSTEM_SYMBOL_VALUE;
+    static final IonTypeID SYSTEM_MACRO_INVOCATION_ID;
     static {
         TYPE_IDS_NO_IVM = new IonTypeID[NUMBER_OF_BYTES];
         TYPE_IDS_1_0 = new IonTypeID[NUMBER_OF_BYTES];
@@ -135,8 +137,9 @@ final class IonTypeID {
         // This is used as a dummy ID when a delimited container reaches its end. The key here is that the type ID's
         // lower nibble is OpCodes.DELIMITED_END_MARKER.
         DELIMITED_END_ID = TYPE_IDS_1_1[DELIMITED_END_MARKER & 0xFF];
-        // This is used as a dummy ID when a system symbol value is encoded using the 0xEF opcode in Ion 1.1.
-        SYSTEM_SYMBOL_VALUE = TYPE_IDS_1_1[SYMBOL_ADDRESS_1_BYTE & 0xFF];
+
+        SYSTEM_SYMBOL_VALUE = TYPE_IDS_1_1[SYSTEM_SYMBOL & 0xFF];
+        SYSTEM_MACRO_INVOCATION_ID = TYPE_IDS_1_1[OpCodes.SYSTEM_MACRO_INVOCATION & 0xFF];
     }
 
     final IonType type;
@@ -192,7 +195,6 @@ final class IonTypeID {
             id == 0x69
             || id == (byte) 0xD1
             || id == (byte) 0xE0
-            || id == (byte) 0xF4
         );
     }
 
@@ -263,7 +265,7 @@ final class IonTypeID {
             // just to identify this byte.
             lowerNibble = (id == DELIMITED_END_MARKER) ? DELIMITED_END_MARKER : (byte) (id & LOW_NIBBLE_BITMASK);
             isNegativeInt = false; // Not applicable for Ion 1.1; sign is conveyed by the representation.
-            isMacroInvocation = (id >= 0x00 && id <= 0x5F)  || id == E_EXPRESSION_FLEX_UINT
+            isMacroInvocation = (id >= 0x00 && id <= 0x5F)  || id == E_EXPRESSION_WITH_FLEX_UINT_ADDRESS
                     || id == SYSTEM_MACRO_INVOCATION || id == LENGTH_PREFIXED_MACRO_INVOCATION;
             boolean isNopPad = false;
             boolean isNull = false;
@@ -312,7 +314,10 @@ final class IonTypeID {
                     || id == ANNOTATIONS_2_FLEX_SYM
                     || id == ANNOTATIONS_MANY_FLEX_SYM
                        // Symbol values with inline text.
-                    || upperNibble == 0xA;
+                    || upperNibble == 0xA
+                    // We're treating it as inline text because there's no lookup required in the user symbol table,
+                    // and there's no user SymbolID for these symbols.
+                    || id == SYSTEM_SYMBOL;
                 IonType typeFromUpperNibble = BINARY_TOKEN_TYPES_1_1[upperNibble];
                 if (typeFromUpperNibble == null) {
                     if (!isValid) {
@@ -355,6 +360,9 @@ final class IonTypeID {
                             isNopPad = true;
                             type = null;
                             length = variableLength ? -1 : 0;
+                        } else if (id == SYSTEM_SYMBOL) {
+                            length = 1;
+                            type = IonType.SYMBOL;
                         } else { // 0xF
                             // System macro invocation.
                             type = null;
@@ -383,8 +391,8 @@ final class IonTypeID {
                             type = IonType.LIST;
                         } else if  (id == DELIMITED_SEXP || id == VARIABLE_LENGTH_SEXP) {
                             type = IonType.SEXP;
-                        } else { // 0x4
-                            // Variable length macro invocation
+                        } else { // 0x4, 0x5
+                            // E-Expression with FlexUInt Address or E-Expression with FlexUInt Length
                             type = null;
                         }
                     }
