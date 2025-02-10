@@ -15,11 +15,11 @@ package com.amazon.ion.impl.macro
  */
 data class Environment private constructor(
     // Any variables found here have to be looked up in [parentEnvironment]
-    val arguments: List<Expression>,
+    val arguments: List<ExpressionA>,
     val argumentIndices: IntArray,
     val parentEnvironment: Environment?,
 ) {
-    fun createChild(arguments: List<Expression>, argumentIndices: IntArray) = Environment(arguments, argumentIndices, this)
+    fun createChild(arguments: List<ExpressionA>, argumentIndices: IntArray) = Environment(arguments, argumentIndices, this)
 
     override fun toString() = """
         |Environment(
@@ -34,6 +34,6 @@ data class Environment private constructor(
         @JvmStatic
         val EMPTY = Environment(emptyList(), IntArray(0), null)
         @JvmStatic
-        fun create(arguments: List<Expression>, argumentIndices: IntArray) = Environment(arguments, argumentIndices, null)
+        fun create(arguments: List<ExpressionA>, argumentIndices: IntArray) = Environment(arguments, argumentIndices, null)
     }
 }

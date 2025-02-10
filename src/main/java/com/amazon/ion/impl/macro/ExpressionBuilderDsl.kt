@@ -4,7 +4,9 @@ package com.amazon.ion.impl.macro
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
-import com.amazon.ion.impl.macro.Expression.*
+import com.amazon.ion.impl.macro.ExpressionA
+import com.amazon.ion.impl.macro.ExpressionA.*
+import java.math.BigDecimal
 import java.math.BigInteger
 import kotlin.reflect.KFunction1
 
@@ -101,12 +103,12 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
 
     companion object {
         // Entry points to the DSL builders.
-        fun templateBody(block: TemplateDsl.() -> Unit): List<TemplateBodyExpression> = Template().apply(block).build()
-        fun dataModel(block: DataModelDsl.() -> Unit): List<DataModelExpression> = DataModel().apply(block).build()
-        fun eExpBody(block: EExpDsl.() -> Unit): List<EExpressionBodyExpression> = EExp().apply(block).build()
+        fun templateBody(block: TemplateDsl.() -> Unit): List<ExpressionA> = Template().apply(block).build()
+        fun dataModel(block: DataModelDsl.() -> Unit): List<ExpressionA> = DataModel().apply(block).build()
+        fun eExpBody(block: EExpDsl.() -> Unit): List<ExpressionA> = EExp().apply(block).build()
     }
 
-    protected val expressions = mutableListOf<Expression>()
+    protected val expressions = mutableListOf<ExpressionA>()
     private var pendingAnnotations = mutableListOf<SymbolToken>()
 
     override fun <T> annotated(annotations: List<SymbolToken>, valueFn: KFunction1<T, Unit>, value: T) {
@@ -114,80 +116,59 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
         valueFn.invoke(value)
     }
 
-    override fun nullValue(value: IonType) = scalar(::NullValue, value)
-    override fun bool(value: Boolean) = scalar(::BoolValue, value)
-    override fun int(value: Long) = scalar(::LongIntValue, value)
-    override fun int(value: BigInteger) = scalar(::BigIntValue, value)
-    override fun float(value: Double) = scalar(::FloatValue, value)
-    override fun decimal(value: Decimal) = scalar(::DecimalValue, value)
-    override fun timestamp(value: Timestamp) = scalar(::TimestampValue, value)
-    override fun symbol(value: SymbolToken) = scalar(::SymbolValue, value)
-    override fun string(value: String) = scalar(::StringValue, value)
-    override fun clob(value: ByteArray) = scalar(::ClobValue, value)
-    override fun blob(value: ByteArray) = scalar(::BlobValue, value)
+    override fun nullValue(value: IonType) = scalar(ExpressionA::newNull, value)
+    override fun bool(value: Boolean) = scalar(ExpressionA::newBool, value)
+    override fun int(value: Long) = scalar(ExpressionA::newInt, value)
+    override fun int(value: BigInteger) = scalar(ExpressionA::newInt, value)
+    override fun float(value: Double) = scalar(ExpressionA::newFloat, value)
+    override fun decimal(value: Decimal) = scalar(ExpressionA::newDecimal, value)
+    override fun timestamp(value: Timestamp) = scalar(ExpressionA::newTimestamp, value)
+    override fun symbol(value: SymbolToken) = scalar(ExpressionA::newSymbol, value)
+    override fun string(value: String) = scalar(ExpressionA::newString, value)
+    override fun clob(value: ByteArray) = scalar(ExpressionA::newClob, value)
+    override fun blob(value: ByteArray) = scalar(ExpressionA::newBlob, value)
 
-    override fun fieldName(fieldName: SymbolToken) { expressions.add(FieldName(fieldName)) }
+    override fun fieldName(fieldName: SymbolToken) { expressions.add(ExpressionA.newFieldName(fieldName)) }
 
-    protected fun newStruct(annotations: List<SymbolToken>, structStart: Int, structEndExclusive: Int): StructValue {
-        val nestedStructs = expressions
-            .subList(structStart + 1, structEndExclusive)
-            .filterIsInstance<StructValue>()
-        val templateStructIndex = expressions
-            .mapIndexed { i, it -> it to i }
-            // Find all field names that are _not_ part of a nested struct
-            .filter { (expr, i) ->
-                expr is FieldName &&
-                    nestedStructs.none { i > it.selfIndex && i < it.endExclusive } &&
-                    structStart < i &&
-                    i < structEndExclusive
-            }
-            .groupBy({ (expr, _) -> (expr as FieldName).value.text }) { (_, index) -> index + 1 }
-        return StructValue(annotations, structStart, structEndExclusive, templateStructIndex)
-    }
-
-    fun <T : Expression> build(): List<T> = expressions.map { it as T }
+    fun build(): List<ExpressionA> = expressions
 
     // Helpers
     private fun takePendingAnnotations(): List<SymbolToken> = pendingAnnotations.also { pendingAnnotations = mutableListOf() }
 
-    private fun <T> scalar(constructor: (List<SymbolToken>, T) -> Expression, value: T) {
-        expressions.add(constructor(takePendingAnnotations(), value))
+    private fun <T> scalar(constructor: (T) -> ExpressionA, value: T) {
+        expressions.add(constructor(value).withAnnotations(takePendingAnnotations()))
     }
 
-    protected fun <T : ExpressionBuilderDsl> container(content: T.() -> Unit, constructor: (Int, Int) -> Expression) {
-        val selfIndex = expressions.size
-        expressions.add(Placeholder)
-        (this as T).content()
-        expressions[selfIndex] = constructor(selfIndex, /* endExclusive= */ expressions.size)
-    }
-
-    protected fun <T : ExpressionBuilderDsl> containerWithAnnotations(content: T.() -> Unit, constructor: (List<SymbolToken>, Int, Int) -> Expression) {
+    protected fun <T : ExpressionBuilderDsl> container(content: T.() -> Unit, constructor: (Int, Int) -> ExpressionA) {
         val ann = takePendingAnnotations()
-        container(content) { start, end -> constructor(ann, start, end) }
+        val selfIndex = expressions.size
+        expressions.add(ExpressionA())
+        (this as T).content()
+        expressions[selfIndex] = constructor(/* startInclusive= */ selfIndex + 1, /* endExclusive= */ expressions.size).withAnnotations(ann)
     }
 
     // Subclasses for each expression variant so that we don't have conflicting signatures between their list, sexp, etc. implementations.
 
     class DataModel : ExpressionBuilderDsl(), DataModelDsl, DataModelDsl.Fields {
-        override fun list(content: DataModelDsl.() -> Unit) = containerWithAnnotations(content, ::ListValue)
-        override fun sexp(content: DataModelDsl.() -> Unit) = containerWithAnnotations(content, ::SExpValue)
-        override fun struct(content: DataModelDsl.Fields.() -> Unit) = containerWithAnnotations(content, ::newStruct)
+        override fun list(content: DataModelDsl.() -> Unit) = container(content, ExpressionA::newList)
+        override fun sexp(content: DataModelDsl.() -> Unit) = container(content, ExpressionA::newSexp)
+        override fun struct(content: DataModelDsl.Fields.() -> Unit) = container(content, ExpressionA::newStruct)
     }
 
     class EExp : ExpressionBuilderDsl(), EExpDsl, EExpDsl.Fields, EExpDsl.InvocationBody {
-        override fun sexp(content: EExpDsl.() -> Unit) = containerWithAnnotations(content, ::SExpValue)
-        override fun list(content: EExpDsl.() -> Unit) = containerWithAnnotations(content, ::ListValue)
-        override fun struct(content: EExpDsl.Fields.() -> Unit) = containerWithAnnotations(content, ::newStruct)
-        override fun eexp(macro: Macro, arguments: EExpDsl.InvocationBody.() -> Unit) = container(arguments) { start, end -> EExpression(macro, start, end) }
-        override fun expressionGroup(content: EExpDsl.() -> Unit) = container(content, ::ExpressionGroup)
+        override fun sexp(content: EExpDsl.() -> Unit) = container(content, ExpressionA::newSexp)
+        override fun list(content: EExpDsl.() -> Unit) = container(content, ExpressionA::newList)
+        override fun struct(content: EExpDsl.Fields.() -> Unit) = container(content, ExpressionA::newStruct)
+        override fun eexp(macro: Macro, arguments: EExpDsl.InvocationBody.() -> Unit) = container(arguments) { start, end -> ExpressionA.newEExpression(macro, start, end) }
+        override fun expressionGroup(content: EExpDsl.() -> Unit) = container(content, ExpressionA::newExpressionGroup)
     }
 
     class Template : ExpressionBuilderDsl(), TemplateDsl, TemplateDsl.Fields, TemplateDsl.InvocationBody {
-        override fun list(content: TemplateDsl.() -> Unit) = containerWithAnnotations(content, ::ListValue)
-        override fun sexp(content: TemplateDsl.() -> Unit) = containerWithAnnotations(content, ::SExpValue)
-        override fun struct(content: TemplateDsl.Fields.() -> Unit) = containerWithAnnotations(content, ::newStruct)
-        override fun variable(signatureIndex: Int) { expressions.add(VariableRef(signatureIndex)) }
-        override fun macro(macro: Macro, arguments: TemplateDsl.InvocationBody.() -> Unit) = container(arguments) { start, end -> MacroInvocation(macro, start, end) }
-        override fun expressionGroup(content: TemplateDsl.() -> Unit) = container(content, ::ExpressionGroup)
+        override fun list(content: TemplateDsl.() -> Unit) = container(content, ExpressionA::newList)
+        override fun sexp(content: TemplateDsl.() -> Unit) = container(content, ExpressionA::newSexp)
+        override fun struct(content: TemplateDsl.Fields.() -> Unit) = container(content, ExpressionA::newStruct)
+        override fun variable(signatureIndex: Int) { expressions.add(ExpressionA.newVariableRef(signatureIndex)) }
+        override fun macro(macro: Macro, arguments: TemplateDsl.InvocationBody.() -> Unit) = container(arguments) { start, end -> ExpressionA.newMacroInvocation(macro, start, end) }
+        override fun expressionGroup(content: TemplateDsl.() -> Unit) = container(content, ExpressionA::newExpressionGroup)
     }
 }

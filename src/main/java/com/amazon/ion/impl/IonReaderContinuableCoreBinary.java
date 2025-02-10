@@ -21,8 +21,8 @@ import com.amazon.ion.impl.bin.PresenceBitmap;
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoder;
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoderPool;
 import com.amazon.ion.impl.macro.EncodingContext;
-import com.amazon.ion.impl.macro.Expression;
 import com.amazon.ion.impl.macro.EExpressionArgsReader;
+import com.amazon.ion.impl.macro.ExpressionA;
 import com.amazon.ion.impl.macro.IonReaderFromReaderAdapter;
 import com.amazon.ion.impl.macro.Macro;
 import com.amazon.ion.impl.macro.MacroCompiler;
@@ -1630,8 +1630,9 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             if (event == Event.NEEDS_DATA) {
                 throw new UnsupportedOperationException("TODO: support continuable parsing of macro arguments.");
             }
-            int startIndex = expressions.size();
-            expressions.add(Expression.Placeholder.INSTANCE);
+            ExpressionA placeholder = new ExpressionA();
+            expressions.add(placeholder);
+            int startInclusive = expressions.size();
             boolean isSingleton = true;
             while (nextGroupedValue() != Event.NEEDS_INSTRUCTION || isMacroInvocation()) {
                 readValueAsExpression(false);
@@ -1647,15 +1648,17 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             if (exitArgumentGroup() == Event.NEEDS_DATA) {
                 throw new UnsupportedOperationException("TODO: support continuable parsing of macro arguments.");
             }
-            expressions.set(startIndex, new Expression.ExpressionGroup(startIndex, expressions.size()));
+            placeholder.initExpressionGroup$ion_java(startInclusive, expressions.size());
         }
 
         /**
          * Adds an expression that conveys that the parameter was not present (void).
          */
         private void addVoidExpression() {
+            ExpressionA placeholder = new ExpressionA();
+            expressions.add(placeholder);
             int startIndex = expressions.size();
-            expressions.add(new Expression.ExpressionGroup(startIndex, startIndex + 1));
+            placeholder.initExpressionGroup$ion_java(startIndex, startIndex);
         }
 
         @Override

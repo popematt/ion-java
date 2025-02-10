@@ -9,8 +9,15 @@ import com.amazon.ion.impl.TaglessEncoding
  */
 sealed interface Macro {
     val signature: List<Parameter>
-    val body: List<Expression.TemplateBodyExpression>?
+    val body: List<ExpressionA>?
     val dependencies: Iterable<Macro>
+
+    // TODO: Static analysis of macros and rewriting of template macros
+    //   - add `val ionType: IonType?`
+    //   - add `val isSingleValue: Boolean`
+    //   - if it's a constant macro, when it's evaluated, turn the macro body into a literal
+    //   - if a constant macro is called, copy the template body into the call site
+
 
     data class Parameter(val variableName: String, val type: ParameterEncoding, val cardinality: ParameterCardinality) {
         override fun toString() = "$type::$variableName${cardinality.sigil}"

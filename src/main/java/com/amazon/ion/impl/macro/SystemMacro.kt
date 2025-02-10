@@ -17,7 +17,7 @@ enum class SystemMacro(
     val id: Byte,
     private val _systemSymbol: SystemSymbols_1_1?,
     override val signature: List<Macro.Parameter>,
-    override val body: List<Expression.TemplateBodyExpression>? = null
+    override val body: List<ExpressionA>? = null
 ) : Macro {
     // Technically not system macros, but special forms. However, it's easier to model them as if they are macros in TDL.
     // We give them an ID of -1 to distinguish that they are not addressable outside TDL.
@@ -268,8 +268,8 @@ enum class SystemMacro(
 
     override val dependencies: List<Macro>
         get() = body
-            ?.filterIsInstance<Expression.MacroInvocation>()
-            ?.map(Expression.MacroInvocation::macro)
+            ?.filter { it.kind == ExpressionKind.MacroInvocation }
+            ?.map { it.value as Macro }
             ?.distinct()
             ?: emptyList()
 

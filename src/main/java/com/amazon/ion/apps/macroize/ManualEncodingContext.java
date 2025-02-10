@@ -4,8 +4,8 @@ package com.amazon.ion.apps.macroize;
 
 import com.amazon.ion.impl.IonRawWriter_1_1;
 import com.amazon.ion.impl.SystemSymbols_1_1;
-import com.amazon.ion.impl.macro.Expression;
-import com.amazon.ion.impl.macro.Expression.TemplateBodyExpression;
+import com.amazon.ion.impl.macro.ExpressionA;
+import com.amazon.ion.impl.macro.ExpressionKind;
 import com.amazon.ion.impl.macro.Macro;
 import com.amazon.ion.impl.macro.SystemMacro;
 import com.amazon.ion.impl.macro.TemplateMacro;
@@ -46,9 +46,9 @@ class ManualEncodingContext {
         macroNameToMacro.put(macroName, macro);
         // Intern the symbols that will occur in the macro signature and template body.
         internSymbol(macroName);
-        for (Expression.TemplateBodyExpression expression : macro.getBody()) {
-            if (expression instanceof TemplateBodyExpression.FieldName) {
-                internSymbol(((TemplateBodyExpression.FieldName) expression).getValue().getText());
+        for (ExpressionA expression : macro.getBody()) {
+            if (expression.getKind() == ExpressionKind.FieldName) {
+                internSymbol(expression.dataAsString$ion_java());
             }
         }
         for (Macro.Parameter parameter : macro.getSignature()) {
@@ -152,15 +152,15 @@ class ManualEncodingContext {
             }
         }
         writer.stepOut();
-        List<Expression.TemplateBodyExpression> body = macro.getBody();
+        List<ExpressionA> body = macro.getBody();
         int index = 0;
         int[] numberOfTimesToStepOut = new int[body.size() + 1];
         Arrays.fill(numberOfTimesToStepOut, 0);
-        for (Expression.TemplateBodyExpression expression : body) {
+        for (ExpressionA expression : body) {
             for (int i = 0; i < numberOfTimesToStepOut[index]; i++) {
                 writer.stepOut();
             }
-            if (expression instanceof Expression.ExpressionGroup) {
+            if (expression.getKind() == ExpressionKind.ExpressionGroup) {
                 // Note: assumes that template bodies are composed of either structs or system macro invocations. Will
                 // need to be generalized to fit other use cases as necessary.
                 writer.stepInSExp(true);
@@ -169,24 +169,24 @@ class ManualEncodingContext {
                 writer.writeSymbol(SystemSymbols_1_1.MAKE_STRING);
                 writer.stepInSExp(true);
                 symbolWriter.accept("..");
-                numberOfTimesToStepOut[((Expression.ExpressionGroup) expression).getEndExclusive()]++;
-            } else if (expression instanceof TemplateBodyExpression.FieldName) {
-                fieldNameWriter.accept(((TemplateBodyExpression.FieldName) expression).getValue().getText());
-            } else if (expression instanceof TemplateBodyExpression.VariableRef) {
+                numberOfTimesToStepOut[expression.getEndExclusive()]++;
+            } else if (expression.getKind() == ExpressionKind.FieldName) {
+                fieldNameWriter.accept(expression.dataAsString$ion_java());
+            } else if (expression.getKind() == ExpressionKind.VariableRef) {
                 writer.stepInSExp(true);
                 symbolWriter.accept("%");
-                symbolWriter.accept(signature.get(((TemplateBodyExpression.VariableRef) expression).getSignatureIndex()).getVariableName());
+                symbolWriter.accept(signature.get(expression.dataAsInt$ion_java()).getVariableName());
                 writer.stepOut();
-            } else if (expression instanceof Expression.TextValue) {
-                writer.writeString(((Expression.TextValue) expression).getStringValue());
-            } else if (expression instanceof Expression.ListValue) {
+            } else if (expression.getKind().isTextValue()) {
+                writer.writeString(expression.dataAsString$ion_java());
+            } else if (expression.getKind() == ExpressionKind.ListValue) {
                 writer.stepInList(true);
-                numberOfTimesToStepOut[((Expression.ListValue) expression).getEndExclusive()]++;
-            } else if (expression instanceof Expression.StructValue) {
+                numberOfTimesToStepOut[expression.getEndExclusive()]++;
+            } else if (expression.getKind() == ExpressionKind.StructValue) {
                 writer.stepInStruct(true);
-                numberOfTimesToStepOut[((Expression.StructValue) expression).getEndExclusive()]++;
-            } else if (expression instanceof Expression.BoolValue) {
-                writer.writeBool(((Expression.BoolValue) expression).getValue());
+                numberOfTimesToStepOut[expression.getEndExclusive()]++;
+            } else if (expression.getKind() == ExpressionKind.BoolValue) {
+                writer.writeBool((boolean) expression.value);
             } else {
                 throw new UnsupportedOperationException("TODO: unsupported expression type");
             }

@@ -12,13 +12,13 @@ import java.util.List;
 
 /**
  * An {@link EExpressionArgsReader} reads an E-Expression from a {@link ReaderAdapter}, constructs
- * a list of {@link Expression}s representing the E-Expression and its arguments, and prepares a {@link MacroEvaluator}
+ * a list of {@link ExpressionA}s representing the E-Expression and its arguments, and prepares a {@link MacroEvaluator}
  * to evaluate these expressions.
  * <p>
  * There are two sources of expressions. The template macro definitions, and the macro arguments.
  * The {@link MacroEvaluator} merges those.
  * <p>
- * The {@link Expression} model does not (yet) support lazily reading values, so for now, all macro arguments must
+ * The {@link ExpressionA} model does not (yet) support lazily reading values, so for now, all macro arguments must
  * be read eagerly.
  */
 public abstract class EExpressionArgsReader {
@@ -27,11 +27,11 @@ public abstract class EExpressionArgsReader {
 
     // Reusable sink for expressions. The starting size of 64 is chosen so that growth is minimized or avoided for most
     // e-expression invocations.
-    protected final List<Expression.EExpressionBodyExpression> expressions = new ArrayList<>(64);
+    protected final List<ExpressionA> expressions = new ArrayList<>(64);
 
     /**
      * Constructor.
-     * @param reader the {@link ReaderAdapter} from which to read {@link Expression}s.
+     * @param reader the {@link ReaderAdapter} from which to read {@link ExpressionA}s.
      * @see ReaderAdapterIonReader
      * @see ReaderAdapterContinuable
      */
@@ -112,47 +112,47 @@ public abstract class EExpressionArgsReader {
         IonType type,
         List<SymbolToken> annotations
     ) {
-        Expression.EExpressionBodyExpression expression;
+        ExpressionA expression;
         if (reader.isNullValue()) {
-            expression = new Expression.NullValue(annotations, type);
+            expression = ExpressionA.newNull(type).withAnnotations(annotations);
         } else {
             switch (type) {
                 case BOOL:
-                    expression = new Expression.BoolValue(annotations, reader.booleanValue());
+                    expression = ExpressionA.newBool(reader.booleanValue()).withAnnotations(annotations);
                     break;
                 case INT:
                     switch (reader.getIntegerSize()) {
                         case INT:
                         case LONG:
-                            expression = new Expression.LongIntValue(annotations, reader.longValue());
+                            expression = ExpressionA.newInt(reader.longValue()).withAnnotations(annotations);
                             break;
                         case BIG_INTEGER:
-                            expression = new Expression.BigIntValue(annotations, reader.bigIntegerValue());
+                            expression = ExpressionA.newInt(reader.bigIntegerValue()).withAnnotations(annotations);
                             break;
                         default:
                             throw new IllegalStateException();
                     }
                     break;
                 case FLOAT:
-                    expression = new Expression.FloatValue(annotations, reader.doubleValue());
+                    expression = ExpressionA.newFloat(reader.doubleValue()).withAnnotations(annotations);
                     break;
                 case DECIMAL:
-                    expression = new Expression.DecimalValue(annotations, reader.decimalValue());
+                    expression = ExpressionA.newDecimal(reader.decimalValue()).withAnnotations(annotations);
                     break;
                 case TIMESTAMP:
-                    expression = new Expression.TimestampValue(annotations, reader.timestampValue());
+                    expression = ExpressionA.newTimestamp(reader.timestampValue()).withAnnotations(annotations);
                     break;
                 case SYMBOL:
-                    expression = new Expression.SymbolValue(annotations, reader.symbolValue());
+                    expression = ExpressionA.newSymbol(reader.symbolValue()).withAnnotations(annotations);
                     break;
                 case STRING:
-                    expression = new Expression.StringValue(annotations, reader.stringValue());
+                    expression = ExpressionA.newString(reader.stringValue()).withAnnotations(annotations);
                     break;
                 case CLOB:
-                    expression = new Expression.ClobValue(annotations, reader.newBytes());
+                    expression = ExpressionA.newClob(reader.newBytes()).withAnnotations(annotations);
                     break;
                 case BLOB:
-                    expression = new Expression.BlobValue(annotations, reader.newBytes());
+                    expression = ExpressionA.newBlob(reader.newBytes()).withAnnotations(annotations);
                     break;
                 default:
                     throw new IllegalStateException();
@@ -171,52 +171,54 @@ public abstract class EExpressionArgsReader {
         IonType type,
         List<SymbolToken> annotations
     ) {
-        int startIndex = expressions.size();
-        expressions.add(Expression.Placeholder.INSTANCE);
+        ExpressionA placeholder = new ExpressionA();
+        expressions.add(placeholder);
+        int startInclusive = expressions.size();
         boolean isExpressionGroup = isContainerAnExpressionGroup();
         // Eagerly parse the container, "compiling" it into expressions to be evaluated later.
         stepInRaw();
         while (nextRaw()) {
             if (type == IonType.STRUCT) {
-                expressions.add(new Expression.FieldName(reader.getFieldNameSymbol()));
+                expressions.add(ExpressionA.newFieldName(reader.getFieldNameSymbol()));
             }
             readValueAsExpression(false); // TODO avoid recursion
         }
         stepOutRaw();
         // Overwrite the placeholder with an expression representing the actual type of the container and the
         // start and end indices of its expressions.
-        Expression.EExpressionBodyExpression expression;
         if (isExpressionGroup) {
-            expression =  new Expression.ExpressionGroup(startIndex, expressions.size());
+            placeholder.initExpressionGroup$ion_java(startInclusive, expressions.size());
         } else {
             switch (type) {
                 case LIST:
-                    expression = new Expression.ListValue(annotations, startIndex, expressions.size());
+                    placeholder.initList$ion_java(startInclusive, expressions.size());
+                    placeholder.withAnnotations(annotations);
                     break;
                 case SEXP:
-                    expression = new Expression.SExpValue(annotations, startIndex, expressions.size());
+                    placeholder.initSexp$ion_java(startInclusive, expressions.size());
+                    placeholder.withAnnotations(annotations);
                     break;
                 case STRUCT:
-                    // TODO consider whether templateStructIndex could be leveraged or should be removed
-                    expression = new Expression.StructValue(annotations, startIndex, expressions.size(), Collections.emptyMap());
+                    placeholder.initStruct$ion_java(startInclusive, expressions.size());
+                    placeholder.withAnnotations(annotations);
                     break;
                 default:
                     throw new IllegalStateException();
             }
         }
-        expressions.set(startIndex, expression);
     }
 
     /**
      * Reads the rest of the stream into a single expression group.
      */
     private void readStreamAsExpressionGroup() {
-        int startIndex = expressions.size();
-        expressions.add(Expression.Placeholder.INSTANCE);
+        ExpressionA placeholder = new ExpressionA();
+        expressions.add(placeholder);
+        int startInclusive = expressions.size();
         do {
             readValueAsExpression(false); // TODO avoid recursion
         } while (nextRaw());
-        expressions.set(startIndex, new Expression.ExpressionGroup(startIndex, expressions.size()));
+        placeholder.initExpressionGroup$ion_java(startInclusive, expressions.size());
     }
 
     /**
@@ -250,8 +252,9 @@ public abstract class EExpressionArgsReader {
         stepIntoEExpression();
         List<Macro.Parameter> signature = macro.getSignature();
         PresenceBitmap presenceBitmap = loadPresenceBitmapIfNecessary(signature);
-        int invocationStartIndex = expressions.size();
-        expressions.add(Expression.Placeholder.INSTANCE);
+        ExpressionA placeholder = new ExpressionA();
+        expressions.add(placeholder);
+        int startInclusive = expressions.size();
         int numberOfParameters = signature.size();
         for (int i = 0; i < numberOfParameters; i++) {
             readParameter(
@@ -261,7 +264,7 @@ public abstract class EExpressionArgsReader {
             );
         }
         stepOutOfEExpression();
-        expressions.set(invocationStartIndex, new Expression.EExpression(macro, invocationStartIndex, expressions.size()));
+        placeholder.initEExpression$ion_java(macro, startInclusive, expressions.size());
     }
 
     /**
@@ -272,7 +275,7 @@ public abstract class EExpressionArgsReader {
         expressions.clear();
         // TODO performance: avoid fully materializing all expressions up-front.
         if (reader.isInStruct()) {
-            expressions.add(new Expression.FieldName(reader.getFieldNameSymbol()));
+            expressions.add(ExpressionA.newFieldName(reader.getFieldNameSymbol()));
         }
         collectEExpressionArgs();
         macroEvaluator.initExpansion(expressions);

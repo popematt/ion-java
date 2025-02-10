@@ -555,78 +555,81 @@ internal class IonManagedWriter_1_1(
                     repeat(numberOfTimesToStepOut[index]) { stepOut() }
                 }
 
-                when (expression) {
-                    is Expression.DataModelValue -> {
-                        expression.annotations.forEach {
-                            if (it.text != null) {
+                if (expression.kind.isDataModelValue()) {
+                    expression.annotations.forEach {
+                        if (it.text != null) {
+                            // TODO: If it's already in the symbol table we could check the
+                            //       symbol-inline strategy and possibly write a SID.
+                            writeAnnotations(it.text)
+                        } else {
+                            writeAnnotations(it.sid)
+                        }
+                    }
+                }
+
+                when (expression.kind) {
+                    ExpressionKind.NullValue -> writeNull(expression.value as IonType)
+                    ExpressionKind.BoolValue -> writeBool(expression.value as Boolean)
+                    ExpressionKind.LongIntValue -> writeInt(expression.value as Long)
+                    ExpressionKind.BigIntValue -> writeInt(expression.value as BigInteger)
+                    ExpressionKind.FloatValue -> writeFloat(expression.value as Double)
+                    ExpressionKind.DecimalValue -> writeDecimal(expression.value as BigDecimal)
+                    ExpressionKind.TimestampValue -> writeTimestamp(expression.value as Timestamp)
+                    ExpressionKind.StringValue -> writeString(expression.value as String)
+                    ExpressionKind.BlobValue -> writeBlob(expression.value as ByteArray)
+                    ExpressionKind.ClobValue -> writeClob(expression.value as ByteArray)
+
+                    ExpressionKind.ListValue -> {
+                        stepInList(usingLengthPrefix = false)
+                        numberOfTimesToStepOut[expression.endExclusive]++
+                    }
+                    ExpressionKind.SExpValue -> {
+                        stepInSExp(usingLengthPrefix = false)
+                        numberOfTimesToStepOut[expression.endExclusive]++
+                    }
+                    ExpressionKind.StructValue -> {
+                        stepInStruct(usingLengthPrefix = false)
+                        numberOfTimesToStepOut[expression.endExclusive]++
+                    }
+
+                    ExpressionKind.SymbolValue -> {
+                        val symbol = expression.value
+                        if (symbol is String) {
+                            writeSymbol(symbol)
+                        } else {
+                            symbol as SymbolToken
+                            if (symbol.text != null) {
                                 // TODO: If it's already in the symbol table we could check the
                                 //       symbol-inline strategy and possibly write a SID.
-                                writeAnnotations(it.text)
+                                writeSymbol(symbol.text)
                             } else {
-                                writeAnnotations(it.sid)
+                                writeSymbol(symbol.sid)
                             }
-                        }
-
-                        if (expression is Expression.NullValue) {
-                            writeNull(expression.type)
-                        } else when (expression.type) {
-                            IonType.NULL -> error("Unreachable")
-                            IonType.BOOL -> writeBool((expression as Expression.BoolValue).value)
-                            IonType.INT -> {
-                                if (expression is Expression.LongIntValue)
-                                    writeInt(expression.value)
-                                else
-                                    writeInt((expression as Expression.BigIntValue).value)
-                            }
-                            IonType.FLOAT -> writeFloat((expression as Expression.FloatValue).value)
-                            IonType.DECIMAL -> writeDecimal((expression as Expression.DecimalValue).value)
-                            IonType.TIMESTAMP -> writeTimestamp((expression as Expression.TimestampValue).value)
-                            IonType.SYMBOL -> {
-                                val symbolToken = (expression as Expression.SymbolValue).value
-                                if (symbolToken.text != null) {
-                                    // TODO: If it's already in the symbol table we could check the
-                                    //       symbol-inline strategy and possibly write a SID.
-                                    writeSymbol(symbolToken.text)
-                                } else {
-                                    writeSymbol(symbolToken.sid)
-                                }
-                            }
-                            IonType.STRING -> writeString((expression as Expression.StringValue).value)
-                            IonType.CLOB -> writeClob((expression as Expression.ClobValue).value)
-                            IonType.BLOB -> writeBlob((expression as Expression.BlobValue).value)
-                            IonType.LIST -> {
-                                expression as Expression.HasStartAndEnd
-                                stepInList(usingLengthPrefix = false)
-                                numberOfTimesToStepOut[expression.endExclusive]++
-                            }
-                            IonType.SEXP -> {
-                                expression as Expression.HasStartAndEnd
-                                stepInSExp(usingLengthPrefix = false)
-                                numberOfTimesToStepOut[expression.endExclusive]++
-                            }
-                            IonType.STRUCT -> {
-                                expression as Expression.HasStartAndEnd
-                                stepInStruct(usingLengthPrefix = false)
-                                numberOfTimesToStepOut[expression.endExclusive]++
-                            }
-                            IonType.DATAGRAM -> error("Unreachable")
                         }
                     }
-                    is Expression.FieldName -> {
-                        val text = expression.value.text
-                        if (text == null) {
-                            writeFieldName(expression.value.sid)
+                    ExpressionKind.FieldName -> {
+                        val symbol = expression.value
+                        if (symbol is String) {
+                            writeFieldName(symbol)
                         } else {
-                            // TODO: If it's already in the symbol table we could check the symbol-inline strategy and possibly write a SID.
-                            writeFieldName(text)
+                            symbol as SymbolToken
+                            if (symbol.text != null) {
+                                // TODO: If it's already in the symbol table we could check the
+                                //       symbol-inline strategy and possibly write a SID.
+                                writeFieldName(symbol.text)
+                            } else {
+                                writeFieldName(symbol.sid)
+                            }
                         }
                     }
-                    is Expression.ExpressionGroup -> {
+                    ExpressionKind.ExpressionGroup -> {
                         stepInTdlExpressionGroup()
                         numberOfTimesToStepOut[expression.endExclusive]++
                     }
-                    is Expression.MacroInvocation -> {
-                        val invokedMacro = expression.macro
+
+
+                    ExpressionKind.MacroInvocation -> {
+                        val invokedMacro = expression.value as Macro
                         if (invokedMacro is SystemMacro) {
                             stepInTdlSystemMacroInvocation(invokedMacro.systemSymbol)
                         } else {
@@ -642,7 +645,7 @@ internal class IonManagedWriter_1_1(
                         }
                         numberOfTimesToStepOut[expression.endExclusive]++
                     }
-                    is Expression.VariableRef -> writeTdlVariableExpansion(macro.signature[expression.signatureIndex].variableName)
+                    ExpressionKind.VariableRef -> writeTdlVariableExpansion(macro.signature[expression.value as Int].variableName)
                     else -> error("Unreachable")
                 }
             }

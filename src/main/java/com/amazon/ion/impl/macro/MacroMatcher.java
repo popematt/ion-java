@@ -62,9 +62,15 @@ public class MacroMatcher {
         return macro;
     }
 
-    private <T extends Expression> T requireExpressionType(Expression.TemplateBodyExpression expression, Class<T> requiredType) {
-        if (requiredType.isAssignableFrom(expression.getClass())) {
-            return requiredType.cast(expression);
+    private ExpressionA requireExpressionType(ExpressionA expression, ExpressionKind kind0) {
+        if (expression.getKind() == kind0) {
+            return expression;
+        }
+        return null;
+    }
+    private ExpressionA requireExpressionType(ExpressionA expression, ExpressionKind kind0, ExpressionKind kind1) {
+        if (expression.getKind() == kind0 || expression.getKind() == kind1) {
+            return expression;
         }
         return null;
     }
@@ -77,7 +83,7 @@ public class MacroMatcher {
      * @return true if the value matches this matcher's macro.
      */
     public boolean match(IonReader reader) {
-        Iterator<Expression.TemplateBodyExpression> bodyIterator = macro.getBody().iterator();
+        Iterator<ExpressionA> bodyIterator = macro.getBody().iterator();
         int index = 0;
         int[] numberOfContainerEndsAtExpressionIndex = new int[macro.getBody().size() + 1];
         while (true) {
@@ -89,18 +95,18 @@ public class MacroMatcher {
             }
             IonType type = reader.next();
             boolean hasNextExpression = bodyIterator.hasNext();
-            Expression.TemplateBodyExpression expression = null;
+            ExpressionA expression = null;
             if (hasNextExpression) {
                 expression = bodyIterator.next();
             } else if (type != null) {
                 return false;
             }
             if (type == null) {
-                if (expression instanceof  Expression.FieldName) {
+                if (expression != null && expression.getKind() == ExpressionKind.FieldName) {
                     expression = bodyIterator.next();
                 }
-                if (expression instanceof Expression.VariableRef) {
-                    if (macro.getSignature().get(((Expression.VariableRef) expression).getSignatureIndex()).getCardinality().canBeVoid) {
+                if (expression != null && expression.getKind() == ExpressionKind.VariableRef) {
+                    if (macro.getSignature().get((int) expression.value).getCardinality().canBeVoid) {
                         // This is a trailing optional argument that is omitted in the source data, which is still
                         // considered compatible with the signature.
                         continue;
@@ -112,8 +118,8 @@ public class MacroMatcher {
                 break;
             }
             index++;
-            if (expression instanceof Expression.FieldName) {
-                if (!((Expression.FieldName) expression).getValue().assumeText().equals(reader.getFieldName())) {
+            if (expression != null && expression.getKind() == ExpressionKind.FieldName) {
+                if (!expression.dataAsString$ion_java().equals(reader.getFieldName())) {
                     return false;
                 }
                 if (!bodyIterator.hasNext()) {
@@ -122,33 +128,32 @@ public class MacroMatcher {
                 expression = bodyIterator.next();
                 index++;
             }
-            if (expression instanceof Expression.VariableRef) {
+            if (expression != null && expression.getKind() == ExpressionKind.VariableRef) {
                 // For now, a variable matches any value at the current position.
                 // TODO check cardinality and encoding type.
                 continue;
             }
-            if (expression instanceof Expression.ExpressionGroup) {
+            if (expression != null && expression.getKind() == ExpressionKind.ExpressionGroup) {
                 throw new UnsupportedOperationException("TODO: handle expression groups");
             }
-            if (expression instanceof Expression.MacroInvocation) {
+            if (expression != null && expression.getKind() == ExpressionKind.MacroInvocation) {
                 throw new UnsupportedOperationException("TODO: handle nested invocations");
             }
-            if (expression instanceof Expression.DataModelValue) {
-                Expression.DataModelValue dataModelValueExpression = (Expression.DataModelValue) expression;
-                if (!Arrays.asList(reader.getTypeAnnotationSymbols()).equals(dataModelValueExpression.getAnnotations())) {
+            if (expression != null && expression.getKind().isDataModelValue()) {
+                if (!Arrays.asList(reader.getTypeAnnotationSymbols()).equals(expression.annotations)) {
                     return false;
                 }
             }
             switch (type) {
                 case NULL:
-                    Expression.NullValue nullValue = requireExpressionType(expression, Expression.NullValue.class);
+                    ExpressionA nullValue = requireExpressionType(expression, ExpressionKind.NullValue);
                     if (nullValue == null) {
                         return false;
                     }
                     break;
                 case BOOL:
-                    Expression.BoolValue boolValue = requireExpressionType(expression, Expression.BoolValue.class);
-                    if (boolValue == null || (boolValue.getValue() != reader.booleanValue())) {
+                    ExpressionA boolValue = requireExpressionType(expression, ExpressionKind.BoolValue);
+                    if (boolValue == null || ((boolean) boolValue.value != reader.booleanValue())) {
                         return false;
                     }
                     break;
@@ -156,64 +161,64 @@ public class MacroMatcher {
                     switch (reader.getIntegerSize()) {
                         case INT:
                         case LONG:
-                            Expression.LongIntValue intValue = requireExpressionType(expression, Expression.LongIntValue.class);
-                            if (intValue == null || (intValue.getValue() != reader.longValue())) {
+                            expression = requireExpressionType(expression, ExpressionKind.LongIntValue, ExpressionKind.BigIntValue);
+                            if (expression == null || expression.dataAsLong$ion_java() != reader.longValue()) {
                                 return false;
                             }
                             break;
                         case BIG_INTEGER:
-                            Expression.BigIntValue bigIntValue = requireExpressionType(expression, Expression.BigIntValue.class);
-                            if (bigIntValue == null || (!bigIntValue.getBigIntegerValue().equals(reader.bigIntegerValue()))) {
+                            expression = requireExpressionType(expression, ExpressionKind.LongIntValue, ExpressionKind.BigIntValue);
+                            if (expression == null || ! expression.dataAsBigInt$ion_java().equals(reader.bigIntegerValue())) {
                                 return false;
                             }
                             break;
                     }
                     break;
                 case FLOAT:
-                    Expression.FloatValue floatValue = requireExpressionType(expression, Expression.FloatValue.class);
-                    if (floatValue == null || (Double.compare(floatValue.getValue(), reader.doubleValue()) != 0)) {
+                    ExpressionA floatValue = requireExpressionType(expression, ExpressionKind.FloatValue);
+                    if (floatValue == null || (Double.compare((double) floatValue.value, reader.doubleValue()) != 0)) {
                         return false;
                     }
                     break;
                 case DECIMAL:
-                    Expression.DecimalValue decimalValue = requireExpressionType(expression, Expression.DecimalValue.class);
-                    if (decimalValue == null || (!decimalValue.getValue().equals(reader.bigDecimalValue()))) {
+                    ExpressionA decimalValue = requireExpressionType(expression, ExpressionKind.DecimalValue);
+                    if (decimalValue == null || (!decimalValue.value.equals(reader.bigDecimalValue()))) {
                         return false;
                     }
                     break;
                 case TIMESTAMP:
-                    Expression.TimestampValue timestampValue = requireExpressionType(expression, Expression.TimestampValue.class);
-                    if (timestampValue == null || (!timestampValue.getValue().equals(reader.timestampValue()))) {
+                    ExpressionA timestampValue = requireExpressionType(expression, ExpressionKind.TimestampValue);
+                    if (timestampValue == null || (!timestampValue.value.equals(reader.timestampValue()))) {
                         return false;
                     }
                     break;
                 case SYMBOL:
-                    Expression.SymbolValue symbolValue = requireExpressionType(expression, Expression.SymbolValue.class);
-                    if (symbolValue == null || (!symbolValue.getValue().assumeText().equals(reader.symbolValue().assumeText()))) {
+                    ExpressionA symbolValue = requireExpressionType(expression, ExpressionKind.SymbolValue);
+                    if (symbolValue == null || (!symbolValue.dataAsString$ion_java().equals(reader.symbolValue().assumeText()))) {
                         return false;
                     }
                     break;
                 case STRING:
-                    Expression.StringValue stringValue = requireExpressionType(expression, Expression.StringValue.class);
-                    if (stringValue == null || (!stringValue.getValue().equals(reader.stringValue()))) {
+                    ExpressionA stringValue = requireExpressionType(expression, ExpressionKind.StringValue);
+                    if (stringValue == null || (!stringValue.dataAsString$ion_java().equals(reader.stringValue()))) {
                         return false;
                     }
                     break;
                 case CLOB:
-                    Expression.ClobValue clobValue = requireExpressionType(expression, Expression.ClobValue.class);
-                    if (clobValue == null || (!Arrays.equals(clobValue.getValue(), reader.newBytes()))) {
+                    ExpressionA clobValue = requireExpressionType(expression, ExpressionKind.ClobValue);
+                    if (clobValue == null || (!Arrays.equals((byte[]) clobValue.value, reader.newBytes()))) {
                         return false;
                     }
                     break;
                 case BLOB:
-                    Expression.BlobValue blobValue = requireExpressionType(expression, Expression.BlobValue.class);
-                    if (blobValue == null || (!Arrays.equals(blobValue.getValue(), reader.newBytes()))) {
+                    ExpressionA blobValue = requireExpressionType(expression, ExpressionKind.BlobValue);
+                    if (blobValue == null || (!Arrays.equals((byte[]) blobValue.value, reader.newBytes()))) {
                         return false;
                     }
                     break;
                 case LIST:
                     reader.stepIn();
-                    Expression.ListValue listValue = requireExpressionType(expression, Expression.ListValue.class);
+                    ExpressionA listValue = requireExpressionType(expression, ExpressionKind.ListValue);
                     if (listValue == null) {
                         return false;
                     }
@@ -221,7 +226,7 @@ public class MacroMatcher {
                     break;
                 case SEXP:
                     reader.stepIn();
-                    Expression.SExpValue sexpValue = requireExpressionType(expression, Expression.SExpValue.class);
+                    ExpressionA sexpValue = requireExpressionType(expression, ExpressionKind.SExpValue);
                     if (sexpValue == null) {
                         return false;
                     }
@@ -229,7 +234,7 @@ public class MacroMatcher {
                     break;
                 case STRUCT:
                     reader.stepIn();
-                    Expression.StructValue structValue = requireExpressionType(expression, Expression.StructValue.class);
+                    ExpressionA structValue = requireExpressionType(expression, ExpressionKind.StructValue);
                     if (structValue == null) {
                         return false;
                     }

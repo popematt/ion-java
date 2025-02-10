@@ -4,17 +4,18 @@ package com.amazon.ion.impl.macro
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
-import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.impl.macro.Macro.*
 import com.amazon.ion.impl.macro.Macro.ParameterEncoding.*
 import com.amazon.ion.impl.macro.MacroRef.*
 import com.amazon.ion.system.IonReaderBuilder
 import com.amazon.ion.system.IonSystemBuilder
+import java.beans.Expression
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.charset.StandardCharsets
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
@@ -46,31 +47,31 @@ class MacroCompilerTest {
     private fun testCases() = listOf(
         "(macro identity (x) (%x))" shouldCompileTo TemplateMacro(
             listOf(Parameter("x", Tagged, ParameterCardinality.ExactlyOne)),
-            listOf(VariableRef(0)),
+            listOf(ExpressionA.newVariableRef(0)),
         ),
         "(macro identity (any::x) (%x))" shouldCompileTo TemplateMacro(
             listOf(Parameter("x", Tagged, ParameterCardinality.ExactlyOne)),
-            listOf(VariableRef(0)),
+            listOf(ExpressionA.newVariableRef(0)),
         ),
         "(macro pi () 3.141592653589793)" shouldCompileTo TemplateMacro(
             signature = emptyList(),
-            body = listOf(DecimalValue(emptyList(), BigDecimal("3.141592653589793")))
+            body = listOf(ExpressionA.newDecimal(BigDecimal("3.141592653589793")))
         ),
         "(macro cardinality_test (x?) (%x))" shouldCompileTo TemplateMacro(
             signature = listOf(Parameter("x", Tagged, ParameterCardinality.ZeroOrOne)),
-            body = listOf(VariableRef(0))
+            body = listOf(ExpressionA.newVariableRef(0))
         ),
         "(macro cardinality_test (x!) (%x))" shouldCompileTo TemplateMacro(
             signature = listOf(Parameter("x", Tagged, ParameterCardinality.ExactlyOne)),
-            body = listOf(VariableRef(0))
+            body = listOf(ExpressionA.newVariableRef(0))
         ),
         "(macro cardinality_test (x+) (%x))" shouldCompileTo TemplateMacro(
             signature = listOf(Parameter("x", Tagged, ParameterCardinality.OneOrMore)),
-            body = listOf(VariableRef(0))
+            body = listOf(ExpressionA.newVariableRef(0))
         ),
         "(macro cardinality_test (x*) (%x))" shouldCompileTo TemplateMacro(
             signature = listOf(Parameter("x", Tagged, ParameterCardinality.ZeroOrMore)),
-            body = listOf(VariableRef(0))
+            body = listOf(ExpressionA.newVariableRef(0))
         ),
         // Outer '.values' call allows multiple expressions in the body
         // The second `.values` is a macro call that has a single argument: the variable `x`
@@ -78,64 +79,64 @@ class MacroCompilerTest {
         """(macro literal_test (x) (.values (.values (%x)) (values x)))""" shouldCompileTo TemplateMacro(
             signature = listOf(Parameter("x", Tagged, ParameterCardinality.ExactlyOne)),
             body = listOf(
-                MacroInvocation(SystemMacro.Values, selfIndex = 0, endExclusive = 6),
-                MacroInvocation(SystemMacro.Values, selfIndex = 1, endExclusive = 3),
-                VariableRef(0),
-                SExpValue(emptyList(), selfIndex = 3, endExclusive = 6),
-                SymbolValue(emptyList(), FakeSymbolToken("values", -1)),
-                SymbolValue(emptyList(), FakeSymbolToken("x", -1)),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 1, endExclusive = 6),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 2, endExclusive = 3),
+                ExpressionA.newVariableRef(0),
+                ExpressionA.newSexp(startInclusive = 4, endExclusive = 6),
+                ExpressionA.newSymbol(FakeSymbolToken("values", -1)),
+                ExpressionA.newSymbol(FakeSymbolToken("x", -1)),
             ),
         ),
         "(macro each_type () (.values null true 1 ${"9".repeat(50)} 1e0 1d0 2024-01-16T \"foo\" bar [] () {} {{}} {{\"\"}} ))" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(
-                MacroInvocation(SystemMacro.Values, 0, 15),
-                NullValue(emptyList(), IonType.NULL),
-                BoolValue(emptyList(), true),
-                LongIntValue(emptyList(), 1),
-                BigIntValue(emptyList(), BigInteger("9".repeat(50))),
-                FloatValue(emptyList(), 1.0),
-                DecimalValue(emptyList(), Decimal.ONE),
-                TimestampValue(emptyList(), Timestamp.valueOf("2024-01-16T")),
-                StringValue(emptyList(), "foo"),
-                SymbolValue(emptyList(), FakeSymbolToken("bar", -1)),
-                ListValue(emptyList(), selfIndex = 10, endExclusive = 11),
-                SExpValue(emptyList(), selfIndex = 11, endExclusive = 12),
-                StructValue(emptyList(), selfIndex = 12, endExclusive = 13, templateStructIndex = emptyMap()),
-                BlobValue(emptyList(), ByteArray(0)),
-                ClobValue(emptyList(), ByteArray(0))
+                ExpressionA.newMacroInvocation(SystemMacro.Values, 1, 15),
+                ExpressionA.newNull(IonType.NULL),
+                ExpressionA.newBool(true),
+                ExpressionA.newInt(1),
+                ExpressionA.newInt(BigInteger("9".repeat(50))),
+                ExpressionA.newFloat(1.0),
+                ExpressionA.newDecimal(Decimal.ONE),
+                ExpressionA.newTimestamp(Timestamp.valueOf("2024-01-16T")),
+                ExpressionA.newString("foo"),
+                ExpressionA.newSymbol(FakeSymbolToken("bar", -1)),
+                ExpressionA.newList(startInclusive = 11, endExclusive = 11),
+                ExpressionA.newSexp(startInclusive = 12, endExclusive = 12),
+                ExpressionA.newStruct(startInclusive = 13, endExclusive = 13),
+                ExpressionA.newBlob(ByteArray(0)),
+                ExpressionA.newClob(ByteArray(0))
             )
         ),
         """(macro foo () (.values 42 "hello" false))""" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(
-                MacroInvocation(SystemMacro.Values, selfIndex = 0, endExclusive = 4),
-                LongIntValue(emptyList(), 42),
-                StringValue(emptyList(), "hello"),
-                BoolValue(emptyList(), false),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 1, endExclusive = 4),
+                ExpressionA.newInt(42),
+                ExpressionA.newString("hello"),
+                ExpressionA.newBool(false),
             )
         ),
         """(macro using_expr_group () (.values (.. 42 "hello" false)))""" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(
-                MacroInvocation(SystemMacro.Values, selfIndex = 0, endExclusive = 5),
-                ExpressionGroup(selfIndex = 1, endExclusive = 5),
-                LongIntValue(emptyList(), 42),
-                StringValue(emptyList(), "hello"),
-                BoolValue(emptyList(), false),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 1, endExclusive = 5),
+                ExpressionA.newExpressionGroup(startInclusive = 2, endExclusive = 5),
+                ExpressionA.newInt(42),
+                ExpressionA.newString("hello"),
+                ExpressionA.newBool(false),
             )
         ),
         """(macro invoke_by_id () (.12 true false))""" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(
-                MacroInvocation(SystemMacro.Values, selfIndex = 0, endExclusive = 3),
-                BoolValue(emptyList(), true),
-                BoolValue(emptyList(), false),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 1, endExclusive = 3),
+                ExpressionA.newBool(true),
+                ExpressionA.newBool(false),
             )
         ),
         "(macro null () \"abc\")" shouldCompileTo TemplateMacro(
             signature = emptyList(),
-            body = listOf(StringValue(emptyList(), "abc"))
+            body = listOf(ExpressionA.newString("abc"))
         ),
         "(macro foo (x y z) [100, [200, a::b::300], (%x), {y: [true, false, (%z)]}])" shouldCompileTo TemplateMacro(
             signature = listOf(
@@ -144,18 +145,18 @@ class MacroCompilerTest {
                 Parameter("z", Tagged, ParameterCardinality.ExactlyOne)
             ),
             body = listOf(
-                ListValue(emptyList(), selfIndex = 0, endExclusive = 12),
-                LongIntValue(emptyList(), 100),
-                ListValue(emptyList(), selfIndex = 2, endExclusive = 5),
-                LongIntValue(emptyList(), 200),
-                LongIntValue(annotations("a", "b"), 300),
-                VariableRef(0),
-                StructValue(emptyList(), selfIndex = 6, endExclusive = 12, templateStructIndex = mapOf("y" to listOf(8))),
-                FieldName(FakeSymbolToken("y", -1)),
-                ListValue(emptyList(), selfIndex = 8, endExclusive = 12),
-                BoolValue(emptyList(), true),
-                BoolValue(emptyList(), false),
-                VariableRef(2),
+                ExpressionA.newList(startInclusive = 1, endExclusive = 12),
+                ExpressionA.newInt(100),
+                ExpressionA.newList(startInclusive = 3, endExclusive = 5),
+                ExpressionA.newInt(200),
+                ExpressionA.newInt(300).withAnnotations(annotations("a", "b")),
+                ExpressionA.newVariableRef(0),
+                ExpressionA.newStruct(startInclusive = 7, endExclusive = 12),
+                ExpressionA.newFieldName(FakeSymbolToken("y", -1)),
+                ExpressionA.newList(startInclusive = 9, endExclusive = 12),
+                ExpressionA.newBool(true),
+                ExpressionA.newBool(false),
+                ExpressionA.newVariableRef(2),
             )
         )
     )
@@ -180,7 +181,7 @@ class MacroCompilerTest {
         return IonReaderBuilder.standard().build(TestUtils.ensureBinary(ion, source.toByteArray(StandardCharsets.UTF_8)))
     }
 
-    private fun assertMacroCompilation(readerType: ReaderType, source: String, signature: List<Parameter>, body: List<TemplateBodyExpression>) {
+    private fun assertMacroCompilation(readerType: ReaderType, source: String, signature: List<Parameter>, body: List<ExpressionA>) {
         val reader = newReader(source)
         val compiler = readerType.newMacroCompiler(reader, fakeMacroTable)
         reader.next()
@@ -191,13 +192,13 @@ class MacroCompilerTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("testCases")
-    fun assertMacroCompilationContinuable(source: String, signature: List<Parameter>, body: List<TemplateBodyExpression>) {
+    fun assertMacroCompilationContinuable(source: String, signature: List<Parameter>, body: List<ExpressionA>) {
         assertMacroCompilation(ReaderType.CONTINUABLE, source, signature, body)
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("testCases")
-    fun assertMacroCompilationIonReader(source: String, signature: List<Parameter>, body: List<TemplateBodyExpression>) {
+    fun assertMacroCompilationIonReader(source: String, signature: List<Parameter>, body: List<ExpressionA>) {
         assertMacroCompilation(ReaderType.ION_READER, source, signature, body)
     }
 
@@ -221,6 +222,11 @@ class MacroCompilerTest {
         }
         reader.stepOut()
         reader.close()
+    }
+
+    @Test
+    fun foo() {
+        assertEquals(ExpressionA.newBlob(byteArrayOf()), ExpressionA.newBlob(byteArrayOf()))
     }
 
     @ParameterizedTest

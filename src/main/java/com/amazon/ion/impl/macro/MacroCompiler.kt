@@ -4,8 +4,8 @@ package com.amazon.ion.impl.macro
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
+import com.amazon.ion.impl._Private_Utils.*
 import com.amazon.ion.impl.bin.Ion_1_1_Constants.*
-import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.util.*
 
 /**
@@ -22,7 +22,7 @@ internal class MacroCompiler(
         private set // Only mutable internally
 
     private val signature: MutableList<Macro.Parameter> = mutableListOf()
-    private val expressions: MutableList<TemplateBodyExpression> = mutableListOf()
+    private val expressions: MutableList<ExpressionA> = mutableListOf()
 
     /**
      * Compiles a template macro definition from the reader. Caller is responsible for positioning the reader at—but not
@@ -131,23 +131,23 @@ internal class MacroCompiler(
         val annotations: List<SymbolToken> = getTypeAnnotationSymbols()
 
         if (isNullValue()) {
-            expressions.add(NullValue(annotations, encodingType()!!))
+            expressions.add(ExpressionA.newNull(encodingType()!!).withAnnotations(annotations))
         } else when (encodingType()) {
-            IonType.BOOL -> expressions.add(BoolValue(annotations, booleanValue()))
+            IonType.BOOL -> expressions.add(ExpressionA.newBool(booleanValue()).withAnnotations(annotations))
             IonType.INT -> expressions.add(
                 when (integerSize()!!) {
                     IntegerSize.INT,
-                    IntegerSize.LONG -> LongIntValue(annotations, longValue())
-                    IntegerSize.BIG_INTEGER -> BigIntValue(annotations, bigIntegerValue())
+                    IntegerSize.LONG -> ExpressionA.newInt(longValue()).withAnnotations(annotations)
+                    IntegerSize.BIG_INTEGER -> ExpressionA.newInt(bigIntegerValue()).withAnnotations(annotations)
                 }
             )
-            IonType.FLOAT -> expressions.add(FloatValue(annotations, doubleValue()))
-            IonType.DECIMAL -> expressions.add(DecimalValue(annotations, decimalValue()))
-            IonType.TIMESTAMP -> expressions.add(TimestampValue(annotations, timestampValue()))
-            IonType.STRING -> expressions.add(StringValue(annotations, stringValue()))
-            IonType.BLOB -> expressions.add(BlobValue(annotations, newBytes()))
-            IonType.CLOB -> expressions.add(ClobValue(annotations, newBytes()))
-            IonType.SYMBOL -> expressions.add(SymbolValue(annotations, symbolValue()))
+            IonType.FLOAT -> expressions.add(ExpressionA.newFloat(doubleValue()).withAnnotations(annotations))
+            IonType.DECIMAL -> expressions.add(ExpressionA.newDecimal(decimalValue()).withAnnotations(annotations))
+            IonType.TIMESTAMP -> expressions.add(ExpressionA.newTimestamp(timestampValue()).withAnnotations(annotations))
+            IonType.STRING -> expressions.add(ExpressionA.newString(stringValue()).withAnnotations(annotations))
+            IonType.BLOB -> expressions.add(ExpressionA.newBlob(newBytes()).withAnnotations(annotations))
+            IonType.CLOB -> expressions.add(ExpressionA.newClob(newBytes()).withAnnotations(annotations))
+            IonType.SYMBOL -> expressions.add(ExpressionA.newSymbol(newSymbolToken(symbolValue().assumeText())).withAnnotations(annotations))
             IonType.LIST -> compileList(annotations)
             IonType.SEXP -> compileSExpression(annotations)
             IonType.STRUCT -> compileStruct(annotations)
@@ -163,21 +163,17 @@ internal class MacroCompiler(
      * Caller will need to call [IonReader.next] to get the next value.
      */
     private fun ReaderAdapter.compileStruct(annotations: List<SymbolToken>) {
-        val start = expressions.size
-        expressions.add(Placeholder)
-        val templateStructIndex = mutableMapOf<String, ArrayList<Int>>()
+        val placeholderExpression = ExpressionA()
+        expressions.add(placeholderExpression)
+        val startInclusive = expressions.size
         forEachInContainer {
             val fieldName: SymbolToken = fieldNameSymbol()
-            expressions.add(FieldName(fieldName))
-            fieldName.text?.let {
-                val valueIndex = expressions.size
-                // Default is an array list with capacity of 1, since the most common case is that a field name occurs once.
-                templateStructIndex.getOrPut(it) { ArrayList(1) } += valueIndex
-            }
+            expressions.add(ExpressionA.newFieldName(fieldName))
             compileTemplateBodyExpression()
         }
-        val end = expressions.size
-        expressions[start] = StructValue(annotations, start, end, templateStructIndex)
+        val endExclusive = expressions.size
+        placeholderExpression.initStruct(startInclusive, endExclusive)
+        placeholderExpression.withAnnotations(annotations)
     }
 
     /**
@@ -187,10 +183,14 @@ internal class MacroCompiler(
      * Caller will need to call [IonReader.next] to get the next value.
      */
     private fun ReaderAdapter.compileList(annotations: List<SymbolToken>) {
-        val start = expressions.size
         stepIntoContainer()
-        expressions.add(Placeholder)
-        compileExpressionTail(start) { end -> ListValue(annotations, start, end) }
+        val placeholderExpression = ExpressionA()
+        expressions.add(placeholderExpression)
+        val startInclusive = expressions.size
+        compileExpressionTail()
+        val endExclusive = expressions.size
+        placeholderExpression.initList(startInclusive, endExclusive)
+        placeholderExpression.withAnnotations(annotations)
     }
 
     /**
@@ -200,23 +200,26 @@ internal class MacroCompiler(
      * Caller will need to call [IonReader.next] to get the next value.
      */
     private fun ReaderAdapter.compileSExpression(sexpAnnotations: List<SymbolToken>) {
-        val start = expressions.size
         stepIntoContainer()
-        expressions.add(Placeholder)
+        val placeholderExpression = ExpressionA()
+        expressions.add(placeholderExpression)
+        val startInclusive = expressions.size
         if (nextValue()) {
             if (encodingType() == IonType.SYMBOL) {
                 when (stringValue()) {
                     TDL_VARIABLE_EXPANSION_SIGIL -> {
                         confirm(sexpAnnotations.isEmpty()) { "Variable expansion may not be annotated" }
                         confirmNoAnnotations("Variable expansion operator")
-                        compileVariableExpansion(start)
+                        compileVariableExpansion(placeholderExpression)
                         return
                     }
 
                     TDL_EXPRESSION_GROUP_SIGIL -> {
                         confirm(sexpAnnotations.isEmpty()) { "Expression group may not be annotated" }
                         confirmNoAnnotations("Expression group operator")
-                        compileExpressionTail(start) { end -> ExpressionGroup(start, end) }
+                        compileExpressionTail()
+                        val endExclusive = expressions.size
+                        placeholderExpression.initExpressionGroup(startInclusive, endExclusive)
                         return
                     }
 
@@ -225,7 +228,9 @@ internal class MacroCompiler(
                         confirmNoAnnotations("Macro invocation operator")
                         nextValue()
                         val macro = readMacroReference()
-                        compileExpressionTail(start) { end -> MacroInvocation(macro, start, end) }
+                        compileExpressionTail()
+                        val endExclusive = expressions.size
+                        placeholderExpression.initMacroInvocation(macro, startInclusive, endExclusive)
                         return
                     }
                 }
@@ -233,7 +238,10 @@ internal class MacroCompiler(
             // Compile the value we're already positioned on before compiling the rest of the s-expression
             compileTemplateBodyExpression()
         }
-        compileExpressionTail(start) { end -> SExpValue(sexpAnnotations, start, end) }
+        compileExpressionTail()
+        val endExclusive = expressions.size
+        placeholderExpression.initSexp(startInclusive, endExclusive)
+        placeholderExpression.withAnnotations(sexpAnnotations)
     }
 
     /**
@@ -262,22 +270,20 @@ internal class MacroCompiler(
         return m ?: throw IonException("Unrecognized macro: $macroRef")
     }
 
-    private fun ReaderAdapter.compileVariableExpansion(placeholderIndex: Int) {
+    private fun ReaderAdapter.compileVariableExpansion(placeholderExpression: ExpressionA) {
         nextValue()
         confirm(encodingType() == IonType.SYMBOL) { "Variable names must be symbols" }
         val name = stringValue()
         confirmNoAnnotations("on variable reference '$name'")
         val index = signature.indexOfFirst { it.variableName == name }
         confirm(index >= 0) { "variable '$name' is not recognized" }
-        expressions[placeholderIndex] = VariableRef(index)
+        placeholderExpression.initVariableRef(index)
         confirm(!nextValue()) { "Variable expansion should contain only the variable name." }
         stepOutOfContainer()
     }
 
-    private inline fun ReaderAdapter.compileExpressionTail(seqStart: Int, constructor: (Int) -> TemplateBodyExpression) {
+    private fun ReaderAdapter.compileExpressionTail() {
         forEachRemaining { compileTemplateBodyExpression() }
-        val seqEnd = expressions.size
-        expressions[seqStart] = constructor(seqEnd)
         stepOutOfContainer()
     }
 

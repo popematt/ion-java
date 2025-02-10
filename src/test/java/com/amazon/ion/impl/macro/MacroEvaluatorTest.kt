@@ -7,7 +7,6 @@ import com.amazon.ion.impl.*
 import com.amazon.ion.impl.SystemSymbols_1_1.*
 import com.amazon.ion.impl._Private_Utils.newSymbolToken
 import com.amazon.ion.impl.bin.IonManagedWriter_1_1_Test.Companion.ion
-import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.impl.macro.ExpressionBuilderDsl.Companion.eExpBody
 import com.amazon.ion.impl.macro.ExpressionBuilderDsl.Companion.templateBody
 import com.amazon.ion.impl.macro.SystemMacro.*
@@ -29,6 +28,18 @@ import org.junit.jupiter.params.provider.Arguments.arguments
 import org.junit.jupiter.params.provider.MethodSource
 
 class MacroEvaluatorTest {
+
+    fun FloatValue(annotations: List<Any> = emptyList(), value: Double) = ExpressionA.newFloat(value)
+    fun StringValue(annotations: List<Any> = emptyList(), value: String) = ExpressionA.newString(value)
+    fun LongIntValue(annotations: List<Any> = emptyList(), value: Long) = ExpressionA.newInt(value)
+    fun BigIntValue(annotations: List<Any> = emptyList(), value: BigInteger) = ExpressionA.newInt(value)
+    fun BoolValue(annotations: List<Any> = emptyList(), value: Boolean) = ExpressionA.newBool(value)
+    fun FieldName(value: SymbolToken) = ExpressionA.newFieldName(value)
+
+
+    val ExpressionA.value: Any?
+        get() = this.value
+
 
     val IDENTITY_MACRO = template("x!") {
         variable(0)
@@ -193,7 +204,7 @@ class MacroEvaluatorTest {
             eexp(fooMacro) {}
         }
 
-        assertIsInstance<ListValue>(evaluator.expandNext())
+        assertIsInstance(IonType.LIST, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(null, evaluator.expandNext())
         evaluator.stepOut()
@@ -219,7 +230,7 @@ class MacroEvaluatorTest {
             eexp(fooMacro) {}
         }
 
-        assertIsInstance<ListValue>(evaluator.expandNext())
+        assertIsInstance(IonType.LIST, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(StringValue(value = "a"), evaluator.expandNext())
         assertEquals(null, evaluator.expandNext())
@@ -240,7 +251,7 @@ class MacroEvaluatorTest {
             eexp(ABCs_LIST_MACRO) {}
         }
 
-        assertIsInstance<ListValue>(evaluator.expandNext())
+        assertIsInstance(IonType.LIST, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(StringValue(value = "a"), evaluator.expandNext())
         assertEquals(StringValue(value = "b"), evaluator.expandNext())
@@ -263,7 +274,7 @@ class MacroEvaluatorTest {
             eexp(ABCs_LIST_MACRO) {}
         }
 
-        assertIsInstance<ListValue>(evaluator.expandNext())
+        assertIsInstance(IonType.LIST, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(StringValue(value = "a"), evaluator.expandNext())
         evaluator.stepOut()
@@ -304,7 +315,7 @@ class MacroEvaluatorTest {
             }
         }
 
-        assertIsInstance<ListValue>(evaluator.expandNext())
+        assertIsInstance(IonType.LIST, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(null, evaluator.expandNext())
         evaluator.stepOut()
@@ -328,7 +339,7 @@ class MacroEvaluatorTest {
             }
         }
 
-        assertIsInstance<ListValue>(evaluator.expandNext())
+        assertIsInstance(IonType.LIST, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(StringValue(value = "a"), evaluator.expandNext())
         assertEquals(null, evaluator.expandNext())
@@ -356,7 +367,7 @@ class MacroEvaluatorTest {
             eexp(doubleIdentity) { string("a") }
         }
 
-        assertIsInstance<ListValue>(evaluator.expandNext())
+        assertIsInstance(IonType.LIST, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(StringValue(value = "a"), evaluator.expandNext())
         assertEquals(StringValue(value = "a"), evaluator.expandNext())
@@ -501,8 +512,8 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<SymbolValue>(expr)
-        assertEquals("abc", expr.value.text)
+        assertIsInstance(IonType.SYMBOL, expr)
+        assertEquals("abc", expr.value)
         assertEquals(null, evaluator.expandNext())
     }
 
@@ -524,8 +535,9 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<BlobValue>(expr)
-        assertArrayEquals(Base64.getDecoder().decode("YWJj4AEB6g=="), expr.value)
+        assertIsInstance(IonType.BLOB, expr)
+        val value = assertIsInstance<ByteArray>(expr.value)
+        assertArrayEquals(Base64.getDecoder().decode("YWJj4AEB6g=="), value)
         assertEquals(null, evaluator.expandNext())
     }
 
@@ -545,10 +557,11 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<DecimalValue>(expr)
-        assertTrue(BigDecimal.valueOf(20000).compareTo(expr.value) == 0)
-        assertEquals(BigInteger.valueOf(2), expr.value.unscaledValue())
-        assertEquals(-4, expr.value.scale())
+        assertIsInstance(IonType.DECIMAL, expr)
+        val value = assertIsInstance<BigDecimal>(expr.value)
+        assertTrue(BigDecimal.valueOf(20000).compareTo(value) == 0)
+        assertEquals(BigInteger.valueOf(2), value.unscaledValue())
+        assertEquals(-4, value.scale())
         assertEquals(null, evaluator.expandNext())
     }
 
@@ -581,7 +594,7 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<DecimalValue>(expr)
+        assertIsInstance(IonType.DECIMAL, expr)
         assertEquals(BigDecimal.valueOf(123, 2), expr.value)
         assertEquals(null, evaluator.expandNext())
     }
@@ -601,7 +614,7 @@ class MacroEvaluatorTest {
             }
         }
 
-        assertIsInstance<StructValue>(evaluator.expandNext())
+        assertIsInstance(IonType.STRUCT, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(FieldName(value = newSymbolToken("foo")), evaluator.expandNext())
         assertEquals(LongIntValue(value = 1), evaluator.expandNext())
@@ -630,9 +643,9 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<LongIntValue>(expr)
+        assertIsInstance(IonType.INT, expr)
         assertEquals(listOf("a", "b", "c"), expr.annotations.map { it.text })
-        assertEquals(1, expr.value)
+        assertEquals(1L, expr.value)
         assertEquals(null, evaluator.expandNext())
     }
 
@@ -655,9 +668,9 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<LongIntValue>(expr)
+        assertIsInstance(IonType.INT, expr)
         assertEquals(listOf("a", "b", "c"), expr.annotations.map { it.text })
-        assertEquals(1, expr.value)
+        assertEquals(1L, expr.value)
         assertEquals(null, evaluator.expandNext())
     }
 
@@ -683,7 +696,7 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<ListValue>(expr)
+        assertIsInstance(IonType.LIST, expr)
         assertEquals(listOf("a", "b", "c"), expr.annotations.map { it.text })
         evaluator.stepIn()
         assertEquals(LongIntValue(emptyList(), 1), evaluator.expandNext())
@@ -713,10 +726,12 @@ class MacroEvaluatorTest {
             }
         }
 
-        val expr = evaluator.expandNext()
-        assertIsInstance<LongIntValue>(expr)
+        var expr = evaluator.expandNext()
+        assertIsInstance(IonType.INT, expr)
         assertEquals(listOf("abc"), expr.annotations.map { it.text })
-        assertEquals(1, expr.value)
+
+        val value = assertIsInstance<Long>(expr.value)
+        assertEquals(1, value)
         assertEquals(null, evaluator.expandNext())
     }
 
@@ -747,9 +762,10 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<StringValue>(expr)
+        assertIsInstance(IonType.STRING, expr)
         assertEquals(listOf("a", "b", "c"), expr.annotations.map { it.text })
-        assertEquals("def", expr.value)
+        val value = assertIsInstance<String>(expr.value)
+        assertEquals("def", value)
         assertEquals(null, evaluator.expandNext())
     }
 
@@ -779,7 +795,7 @@ class MacroEvaluatorTest {
         }
 
         val expr = evaluator.expandNext()
-        assertIsInstance<FloatValue>(expr)
+        assertIsInstance(IonType.FLOAT, expr)
         assertEquals(listOf("foo"), expr.annotations.map { it.text })
         assertEquals(3.14159, expr.value)
         assertEquals(null, evaluator.expandNext())
@@ -800,7 +816,7 @@ class MacroEvaluatorTest {
             }
         }
 
-        assertIsInstance<StructValue>(evaluator.expandNext())
+        assertIsInstance(IonType.STRUCT, evaluator.expandNext())
         evaluator.stepIn()
         assertEquals(FieldName(FakeSymbolToken("foo", -1)), evaluator.expandNext())
         assertEquals(StringValue(value = "bar"), evaluator.expandNext())
@@ -827,7 +843,7 @@ class MacroEvaluatorTest {
             }
         }
 
-        assertIsInstance<StructValue>(evaluator.expandNext())
+        assertIsInstance(IonType.STRUCT, evaluator.expandNext())
         evaluator.stepIn()
         // Yes, the field name should be here only once. The Ion reader that wraps the evaluator
         // is responsible for carrying the field name over to any values that follow.
@@ -854,7 +870,7 @@ class MacroEvaluatorTest {
             }
         }
 
-        assertEquals(IonType.STRUCT, (evaluator.expandNext() as? DataModelValue)?.type)
+        assertEquals(IonType.STRUCT, (evaluator.expandNext())?.ionType)
         evaluator.stepIn()
         // Yes, the field name should be here. The Ion reader that wraps the evaluator
         // is responsible for discarding the field name if no values follow.
@@ -969,15 +985,31 @@ class MacroEvaluatorTest {
         internal fun MacroEvaluator.initExpansion(eExpression: EExpDsl.() -> Unit) = initExpansion(eExpBody(eExpression))
 
         @OptIn(ExperimentalContracts::class)
-        private inline fun <reified T> assertIsInstance(value: Any?) {
+        private inline fun <reified T> assertIsInstance(value: Any?): T {
             contract { returns() implies (value is T) }
-            if (value !is T) {
+            if (value is T) {
+                return value
+            }
+
+            val message = if (value == null) {
+                "Expected instance of ${T::class.qualifiedName}; was null"
+            } else if (null is T) {
+                "Expected instance of ${T::class.qualifiedName}?; was instance of ${value::class.qualifiedName}"
+            } else {
+                "Expected instance of ${T::class.qualifiedName}; was instance of ${value::class.qualifiedName}"
+            }
+            Assertions.fail<Nothing>(message)
+            TODO("Unreachable")
+        }
+
+        @OptIn(ExperimentalContracts::class)
+        private fun assertIsInstance(type: IonType, value: ExpressionA?) {
+            contract { returns() implies (value != null) }
+            if (value?.ionType != type) {
                 val message = if (value == null) {
-                    "Expected instance of ${T::class.qualifiedName}; was null"
-                } else if (null is T) {
-                    "Expected instance of ${T::class.qualifiedName}?; was instance of ${value::class.qualifiedName}"
+                    "Expected instance of ${type}; was null"
                 } else {
-                    "Expected instance of ${T::class.qualifiedName}; was instance of ${value::class.qualifiedName}"
+                    "Expected instance of $type; was instance of ${value.ionType}"
                 }
                 Assertions.fail<Nothing>(message)
             }

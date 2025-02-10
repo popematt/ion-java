@@ -34,7 +34,7 @@ import com.amazon.ion.impl._Private_ScalarConversions.CantConvertException;
 import com.amazon.ion.impl.bin.PresenceBitmap;
 import com.amazon.ion.impl.macro.EExpressionArgsReader;
 import com.amazon.ion.impl.macro.EncodingContext;
-import com.amazon.ion.impl.macro.Expression;
+import com.amazon.ion.impl.macro.ExpressionA;
 import com.amazon.ion.impl.macro.Macro;
 import com.amazon.ion.impl.macro.MacroEvaluator;
 import com.amazon.ion.impl.macro.MacroEvaluatorAsIonReader;
@@ -1255,7 +1255,7 @@ class IonReaderTextSystemX
             if (IonReaderTextSystemX.this.nextRaw() == null) {
                 // Add an empty expression group if nothing present.
                 int index = expressions.size() + 1;
-                expressions.add(new Expression.ExpressionGroup(index, index));
+                expressions.add(ExpressionA.newExpressionGroup(index, index));
                 return;
             }
             readValueAsExpression(isTrailing && parameter.getCardinality().canBeMulti);

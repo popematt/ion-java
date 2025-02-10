@@ -3,8 +3,372 @@
 package com.amazon.ion.impl.macro
 
 import com.amazon.ion.*
+import com.amazon.ion.impl._Private_Utils.*
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.util.*
+
+enum class ExpressionKind {
+    // Instructions
+    /* 00 */ Nop,
+    /* 01 */ Placeholder,
+    /* 02 */ ContinueExpansion,
+    /* 03 */ EndOfExpansion,
+    // Data model expressions
+    /* 04 */ AnnotationsUnused,
+    /* 05 */ FieldName,
+    // Still data model expressions, but more specifically also data model values
+    /* 06 */ NullValue,
+    /* 07 */ BoolValue,
+    // TODO: Should we merge these two?
+    /* 08 */ LongIntValue,
+    /* 09 */ BigIntValue,
+    /* 10 */ FloatValue,
+    /* 11 */ DecimalValue,
+    /* 12 */ TimestampValue,
+    /* 13 */ StringValue,
+    /* 14 */ SymbolValue,
+    /* 15 */ BlobValue,
+    /* 16 */ ClobValue,
+    // Still data model expressions, but also HasStartAndEnd
+    /* 17 */ ListValue,
+    /* 18 */ SExpValue,
+    /* 19 */ StructValue,
+    // Things to evaluate
+    /* 20 */ EExpression,
+    /* 21 */ MacroInvocation,
+    /* 22 */ ExpressionGroup,
+    // Not HasStartAndEnd
+    /* 23 */ VariableRef,
+    ;
+
+    fun hasStartAndEnd(): Boolean = this.ordinal in 17..22
+    fun isDataModelExpression(): Boolean = this.ordinal in 4..19
+    fun isDataModelValue(): Boolean = this.ordinal in 6..19
+
+    // TODO: Micro optimization: see which one of these is most efficient
+    fun isTextValue() = this == StringValue || this == SymbolValue
+    fun isIntValue() = this === LongIntValue || this === BigIntValue
+    fun isLobValue() = ordinal == 15 || ordinal == 16
+
+    fun isDataModelContainer(): Boolean = this == ListValue || this == StructValue || this == SExpValue
+    fun isInvokableExpression(): Boolean = this.ordinal in 20..21
+    fun isTemplateBodyExpression(): Boolean = this.ordinal.let { it in 4..19 || it in 21..23  }
+    fun isEExpressionBody(): Boolean = this.ordinal.let { it in 4..20 || it == 22  }
+    fun isExpansionOutput(): Boolean = this.ordinal in 3..19
+    fun isExpansionOutputOrContinue(): Boolean = this.ordinal in 2..19
+
+    fun toIonType(): IonType? {
+        return when (this) {
+            BoolValue -> IonType.BOOL
+            LongIntValue,
+            BigIntValue -> IonType.INT
+            FloatValue -> IonType.FLOAT
+            DecimalValue -> IonType.DECIMAL
+            TimestampValue -> IonType.TIMESTAMP
+            StringValue -> IonType.STRING
+            SymbolValue -> IonType.SYMBOL
+            BlobValue -> IonType.BLOB
+            ClobValue -> IonType.CLOB
+            ListValue -> IonType.LIST
+            SExpValue -> IonType.SEXP
+            StructValue -> IonType.STRUCT
+            else -> null
+        }
+    }
+}
+
+/**
+ * There should be
+ *   - public factory methods that protect the invariants
+ *   - internal-only `init` methods
+ *   - internal-only default constructor
+ *   - private setters (although I am less certain about this. There might be a use case to make them internal.)
+ */
+class ExpressionA internal constructor() {
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as ExpressionA
+        return kind == other.kind &&
+                startInclusive == other.startInclusive &&
+                endExclusive == other.endExclusive &&
+                annotations == other.annotations &&
+                if (value is ByteArray && other.value is ByteArray) {
+                    (value as ByteArray).contentEquals(other.value as ByteArray)
+                } else {
+                    value == other.value
+                }
+    }
+
+    override fun hashCode(): Int {
+        return Objects.hash(kind, startInclusive, endExclusive, annotations, if (value is ByteArray) (value as ByteArray).contentHashCode() else value)
+    }
+
+    override fun toString(): String = "$kind($startInclusive, $endExclusive, annotations=$annotations, data=${if (value is ByteArray) (value as ByteArray).contentToString() else value})"
+
+    var kind: ExpressionKind = ExpressionKind.Placeholder
+        private set
+
+    /**
+     * Only set if `kind.hasStartAndEnd()` is `true`.
+     */
+    var startInclusive: Int = -1
+        private set
+
+    /**
+     * Only set if `kind.hasStartAndEnd()` is `true`.
+     */
+    var endExclusive: Int = -1
+        private set
+
+    /**
+     * Placeholder, Continue, End, ExpressionGroup, List, Struct, Sexp -- null
+     * VariableRef -- Int (signature index)
+     * FieldName -- SymbolToken (or String?)
+     * Annotations -- Array<String/SymbolToken>
+     * EExpression, MacroInvocation -- Macro
+     *
+     * The only type that is unnecessarily boxed because of this is Double.
+     * The integer values can be smuggled in the start/end fields if necessary.
+     */
+    @JvmField
+    var value: Any? = null
+
+    @JvmField
+    var annotations: List<SymbolToken> = emptyList()
+
+    // TODO: For lazy expressions, add something like a marker or checkpoint field.
+    //       If the marker field is set, then the data field is filled lazily (for scalars),
+    //       or the start and end fields are unset (for containers).
+
+    val ionType: IonType?
+        get() {
+            return when (kind) {
+                ExpressionKind.NullValue -> value as IonType
+                else -> kind.toIonType()
+            }
+        }
+
+    internal fun dataAsInt() = value.let {
+        when (it) {
+            is Int -> it
+            is Long -> it.toInt()
+            is BigInteger -> it.intValueExact()
+            else -> throw IonException("Expected an integer value; found $kind")
+        }
+    }
+
+    internal fun dataAsLong() = value.let {
+        when (it) {
+            is Int -> it.toLong()
+            is Long -> it
+            is BigInteger -> it.longValueExact()
+            else -> throw IonException("Expected an integer value; found $kind")
+        }
+    }
+
+    internal fun dataAsBigInt() = value.let {
+        when (it) {
+            is Int -> it.toBigInteger()
+            is Long -> it.toBigInteger()
+            is BigInteger -> it
+            else -> throw IonException("Expected an integer value; found $kind")
+        }
+    }
+
+    internal fun dataAsSymbolToken() = value.let {
+        when (it) {
+            is String -> newSymbolToken(it)
+            is SymbolToken -> it
+            else -> throw IonException("Expected an text value; found $kind")
+        }
+    }
+
+    internal fun dataAsString() = value.let {
+        when (it) {
+            is String -> it
+            is SymbolToken -> it.assumeText()
+            else -> throw IonException("Expected an text value; found $kind")
+        }
+    }
+
+    internal fun dataAsSymbolTokenList() = value.let {
+        it as MutableList<*>
+        it.map { text ->
+            if (text is String) {
+                newSymbolToken(text)
+            } else {
+                text as SymbolToken
+            }
+        }
+    }
+
+    internal fun dataAsStringList() = value.let {
+        it as MutableList<*>
+        it.map { text ->
+            if (text is SymbolToken) {
+                text.assumeText()
+            } else {
+                text as String
+            }
+        }
+    }
+
+    internal fun initFieldName(name: String) {
+        kind = ExpressionKind.FieldName
+        value = name
+    }
+
+    internal fun initFieldName(name: SymbolToken) {
+        kind = ExpressionKind.FieldName
+        value = name
+    }
+
+    /** Should be List<String> or List<SymbolToken> or List<String|SymbolToken> */
+    fun withAnnotations(annotations: List<SymbolToken>): ExpressionA = apply {
+        // if (annotations.isEmpty()) { throw IllegalStateException("Don't add an empty annotations expression") }
+        // kind = if (annotations.isNotEmpty()) ExpressionKind.Annotations else ExpressionKind.ContinueExpansion
+        this.annotations = annotations
+    }
+
+    internal fun initNull(type: IonType) {
+        kind = ExpressionKind.NullValue
+        value = type
+    }
+
+    internal fun initBool(value: Boolean) {
+        kind = ExpressionKind.BoolValue
+        this.value = value
+    }
+
+    internal fun initInt(value: Long) {
+        kind = ExpressionKind.LongIntValue
+        // TODO: Can we get a perf improvement by co-opting startInclusive so that we don't need to box the Long value?
+        this.value = value
+    }
+
+    internal fun initInt(value: BigInteger) {
+        kind = ExpressionKind.BigIntValue
+        this.value = value
+    }
+
+    internal fun initFloat(value: Double) {
+        kind = ExpressionKind.FloatValue
+        this.value = value
+    }
+
+    internal fun initDecimal(value: BigDecimal) {
+        kind = ExpressionKind.DecimalValue
+        this.value = value
+    }
+
+    internal fun initTimestamp(value: Timestamp) {
+        kind = ExpressionKind.TimestampValue
+        this.value = value
+    }
+
+    internal fun initString(value: String) {
+        kind = ExpressionKind.StringValue
+        this.value = value
+    }
+
+    internal fun initSymbol(value: SymbolToken) {
+        kind = ExpressionKind.SymbolValue
+        this.value = value
+    }
+
+    internal fun initSymbol(value: String) {
+        kind = ExpressionKind.SymbolValue
+        this.value = value
+    }
+
+    internal fun initBlob(value: ByteArray) {
+        kind = ExpressionKind.BlobValue
+        this.value = value
+    }
+
+    internal fun initClob(value: ByteArray) {
+        kind = ExpressionKind.ClobValue
+        this.value = value
+    }
+
+    internal fun initList(startInclusive: Int, endExclusive: Int) {
+        kind = ExpressionKind.ListValue
+        this.startInclusive = startInclusive
+        this.endExclusive = endExclusive
+    }
+
+    internal fun initSexp(startInclusive: Int, endExclusive: Int) {
+        kind = ExpressionKind.SExpValue
+        this.startInclusive = startInclusive
+        this.endExclusive = endExclusive
+    }
+
+    internal fun initStruct(startInclusive: Int, endExclusive: Int) {
+        kind = ExpressionKind.StructValue
+        this.startInclusive = startInclusive
+        this.endExclusive = endExclusive
+    }
+
+    internal fun initEExpression(macro: Macro, startInclusive: Int, endExclusive: Int) {
+        kind = ExpressionKind.EExpression
+        this.startInclusive = startInclusive
+        this.endExclusive = endExclusive
+        value = macro
+    }
+
+    internal fun initMacroInvocation(macro: Macro, startInclusive: Int, endExclusive: Int) {
+        kind = ExpressionKind.MacroInvocation
+        this.startInclusive = startInclusive
+        this.endExclusive = endExclusive
+        value = macro
+    }
+
+    internal fun initVariableRef(signatureIndex: Int) {
+        kind = ExpressionKind.VariableRef
+        // TODO: Can we get a perf improvement by co-opting startInclusive so that we don't need to box the Int value?
+        value = signatureIndex
+    }
+
+    internal fun initExpressionGroup(startInclusive: Int, endExclusive: Int) {
+        kind = ExpressionKind.ExpressionGroup
+        this.startInclusive = startInclusive
+        this.endExclusive = endExclusive
+    }
+
+    companion object {
+        @JvmStatic
+        internal val END_OF_EXPANSION = ExpressionA().also { it.kind = ExpressionKind.EndOfExpansion }
+        @JvmStatic
+        internal val CONTINUE_EXPANSION = ExpressionA().also { it.kind = ExpressionKind.ContinueExpansion }
+
+        @JvmStatic fun newFieldName(name: String) = ExpressionA().also { it.initFieldName(name) }
+        @JvmStatic fun newFieldName(name: SymbolToken) = ExpressionA().also { it.initFieldName(name) }
+        /** Should be List<String> or List<SymbolToken> or List<String|SymbolToken> */
+        // @JvmStatic fun newAnnotations(annotations: List<Any>) = ExpressionA().also { it.initAnnotations(annotations) }
+        @JvmStatic fun newNull(ionType: IonType) = ExpressionA().also { it.initNull(ionType) }
+        @JvmStatic fun newBool(value: Boolean) = ExpressionA().also { it.initBool(value) }
+        @JvmStatic fun newInt(value: Long) = ExpressionA().also { it.initInt(value) }
+        @JvmStatic fun newInt(value: BigInteger) = ExpressionA().also { it.initInt(value) }
+        @JvmStatic fun newFloat(value: Double) = ExpressionA().also { it.initFloat(value) }
+        @JvmStatic fun newDecimal(value: BigDecimal) = ExpressionA().also { it.initDecimal(value) }
+        @JvmStatic fun newTimestamp(value: Timestamp) = ExpressionA().also { it.initTimestamp(value) }
+        @JvmStatic fun newSymbol(value: SymbolToken) = ExpressionA().also { it.initSymbol(value) }
+        @JvmStatic fun newSymbol(value: String) = ExpressionA().also { it.initSymbol(value) }
+        @JvmStatic fun newString(value: String) = ExpressionA().also { it.initString(value) }
+        @JvmStatic fun newBlob(value: ByteArray) = ExpressionA().also { it.initBlob(value) }
+        @JvmStatic fun newClob(value: ByteArray) = ExpressionA().also { it.initClob(value) }
+        @JvmStatic fun newList(startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initList(startInclusive, endExclusive) }
+        @JvmStatic fun newSexp(startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initSexp(startInclusive, endExclusive) }
+        @JvmStatic fun newStruct(startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initStruct(startInclusive, endExclusive) }
+        @JvmStatic internal fun newEExpression(macro: Macro, startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initEExpression(macro, startInclusive, endExclusive) }
+        @JvmStatic fun newMacroInvocation(macro: Macro, startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initMacroInvocation(macro, startInclusive, endExclusive) }
+        @JvmStatic fun newExpressionGroup(startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initExpressionGroup(startInclusive, endExclusive) }
+        @JvmStatic fun newVariableRef(signatureIndex: Int) = ExpressionA().also { it.initVariableRef(signatureIndex) }
+    }
+}
 
 /**
  * In-memory expression model.
@@ -20,10 +384,10 @@ import java.math.BigInteger
  *
  * TODO: Consider creating an enum or integer-based expression type id so that we can `switch` efficiently on it.
  */
-sealed interface Expression {
+sealed interface ExpressionB {
 
     /** Interface for expressions that "contain" other expressions */
-    sealed interface HasStartAndEnd : Expression {
+    sealed interface HasStartAndEnd : ExpressionB {
         /**
          * The position of this expression in its containing list.
          * Child expressions (if any) start at `selfIndex + 1`.
@@ -42,17 +406,17 @@ sealed interface Expression {
     }
 
     /** Marker interface representing expressions that can be present in E-Expressions. */
-    sealed interface EExpressionBodyExpression : Expression
+    sealed interface EExpressionBodyExpression : ExpressionB
 
     /** Marker interface representing expressions in the body of a template. */
-    sealed interface TemplateBodyExpression : Expression
+    sealed interface TemplateBodyExpression : ExpressionB
 
     /**
      * Marker interface for things that are part of the Ion data model.
      * These expressions are the only ones that may be the output from the macro evaluator.
      * All [DataModelExpression]s are also valid to use as [TemplateBodyExpression]s and [EExpressionBodyExpression]s.
      */
-    sealed interface DataModelExpression : Expression, EExpressionBodyExpression, TemplateBodyExpression, ExpansionOutputExpression
+    sealed interface DataModelExpression : ExpressionB, EExpressionBodyExpression, TemplateBodyExpression, ExpansionOutputExpression
 
     /** Output of a macro expansion (internal to the macro evaluator) */
     sealed interface ExpansionOutputExpressionOrContinue
@@ -237,7 +601,7 @@ sealed interface Expression {
      */
     data class VariableRef(val signatureIndex: Int) : TemplateBodyExpression
 
-    sealed interface InvokableExpression : HasStartAndEnd, Expression {
+    sealed interface InvokableExpression : HasStartAndEnd, ExpressionB {
         val macro: Macro
     }
 

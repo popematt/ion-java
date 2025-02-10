@@ -4,6 +4,7 @@ package com.amazon.ion.impl.macro
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
+import com.amazon.ion.impl._Private_Utils.*
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.util.*
@@ -21,27 +22,30 @@ class MacroEvaluatorAsIonReader(
 ) : IonReader {
 
     private class ContainerInfo {
-        @JvmField var currentFieldName: Expression.FieldName? = null
-        @JvmField var container: Expression.DataModelContainer? = null
+        @JvmField var currentFieldName: ExpressionA? = null
+        @JvmField var container: ExpressionA? = null
     }
     private val containerStack = _Private_RecyclingStack(8) { ContainerInfo() }
 
-    private var currentFieldName: Expression.FieldName? = null
-    private var currentValueExpression: Expression.DataModelValue? = null
+    private var currentFieldName: ExpressionA? = null
+    private var currentValueExpression: ExpressionA? = null
 
-    private var queuedFieldName: Expression.FieldName? = null
-    private var queuedValueExpression: Expression.DataModelValue? = null
+    private var queuedFieldName: ExpressionA? = null
+    private var queuedValueExpression: ExpressionA? = null
 
     private fun queueNext() {
         queuedValueExpression = null
         while (queuedValueExpression == null) {
-            when (val nextCandidate = evaluator.expandNext()) {
+            val nextCandidate = evaluator.expandNext()
+            when (nextCandidate?.kind) {
                 null -> {
+                    // Field name is cleared when reaching the end of the struct (or when being replaced with a new field name)
                     queuedFieldName = null
                     return
                 }
-                is Expression.FieldName -> queuedFieldName = nextCandidate
-                is Expression.DataModelValue -> queuedValueExpression = nextCandidate
+                // TODO: Should we assert that there are no queued annotations when we encounter a field name?
+                ExpressionKind.FieldName -> queuedFieldName = nextCandidate
+                else -> queuedValueExpression = nextCandidate
             }
         }
     }
@@ -70,7 +74,7 @@ class MacroEvaluatorAsIonReader(
      */
     fun transcodeArgumentsTo(writer: MacroAwareIonWriter) {
         var index = 0
-        val arguments: List<Expression> = evaluator.getArguments()
+        val arguments: List<ExpressionA> = evaluator.getArguments()
         val numberOfContainerEndsAtExpressionIndex = IntArray(arguments.size + 1)
 
         currentFieldName = null // Field names are written only via FieldName expressions
@@ -79,30 +83,34 @@ class MacroEvaluatorAsIonReader(
             for (i in 0 until numberOfContainerEndsAtExpressionIndex[index]) {
                 writer.stepOut()
             }
-            when (val argument = arguments[index]) {
-                is Expression.DataModelContainer -> {
-                    if (hasAnnotations()) {
-                        writer.setTypeAnnotationSymbols(*typeAnnotationSymbols!!)
-                    }
-                    writer.stepIn(argument.type)
+            val argument = arguments[index]
+            when (argument.kind) {
+                ExpressionKind.FieldName -> writer.setFieldNameSymbol(argument.dataAsSymbolToken())
+                ExpressionKind.EExpression -> {
+                    writer.startMacro(argument.value as Macro)
                     numberOfContainerEndsAtExpressionIndex[argument.endExclusive]++
                 }
-                is Expression.DataModelValue -> {
-                    currentValueExpression = argument
-                    writer.writeValue(this)
-                }
-                is Expression.FieldName -> {
-                    writer.setFieldNameSymbol(argument.value)
-                }
-                is Expression.EExpression -> {
-                    writer.startMacro(argument.macro)
-                    numberOfContainerEndsAtExpressionIndex[argument.endExclusive]++
-                }
-                is Expression.ExpressionGroup -> {
+                ExpressionKind.ExpressionGroup -> {
                     writer.startExpressionGroup()
                     numberOfContainerEndsAtExpressionIndex[argument.endExclusive]++
                 }
-                else -> throw IllegalStateException("Unexpected branch")
+                else -> {
+                    if (argument.kind.isDataModelContainer()) {
+                        if (hasAnnotations()) {
+                            writer.setTypeAnnotationSymbols(*typeAnnotationSymbols!!)
+                        }
+                        writer.stepIn(argument.ionType)
+                        numberOfContainerEndsAtExpressionIndex[argument.endExclusive]++
+                    } else if (argument.kind.isDataModelValue()) {
+                        if (hasAnnotations()) {
+                            writer.setTypeAnnotationSymbols(*typeAnnotationSymbols!!)
+                        }
+                        currentValueExpression = argument
+                        writer.writeValue(this)
+                    } else {
+                        throw IllegalStateException("Unexpected branch")
+                    }
+                }
             }
             index++
         }
@@ -118,7 +126,7 @@ class MacroEvaluatorAsIonReader(
         val containerToStepInto = currentValueExpression
         evaluator.stepIn()
         containerStack.push {
-            it.container = containerToStepInto as Expression.DataModelContainer
+            it.container = containerToStepInto
             it.currentFieldName = null
         }
         currentFieldName = null
@@ -142,7 +150,7 @@ class MacroEvaluatorAsIonReader(
     override fun getDepth(): Int = containerStack.size()
     override fun getSymbolTable(): SymbolTable? = null
 
-    override fun getType(): IonType? = currentValueExpression?.type
+    override fun getType(): IonType? = currentValueExpression?.ionType
 
     fun hasAnnotations(): Boolean = currentValueExpression != null && currentValueExpression!!.annotations.isNotEmpty()
 
@@ -177,49 +185,83 @@ class MacroEvaluatorAsIonReader(
         }
     }
 
-    override fun isInStruct(): Boolean = containerStack.peek()?.container?.type == IonType.STRUCT
+    override fun isInStruct(): Boolean = containerStack.peek()?.container?.ionType == IonType.STRUCT
 
-    override fun getFieldId(): Int = currentFieldName?.value?.sid ?: 0
-    override fun getFieldName(): String? = currentFieldName?.value?.text
-    override fun getFieldNameSymbol(): SymbolToken? = currentFieldName?.value
-
-    override fun isNullValue(): Boolean = currentValueExpression is Expression.NullValue
-    override fun booleanValue(): Boolean = (currentValueExpression as Expression.BoolValue).value
+    override fun getFieldId(): Int = currentFieldName?.value?.let { it as? SymbolToken }?.sid ?: 0
+    override fun getFieldName(): String? = currentFieldName?.value?.let {
+        when (it) {
+            is SymbolToken -> it.text
+            else -> it as String?
+        }
+    }
+    override fun getFieldNameSymbol(): SymbolToken? = currentFieldName?.value?.let {
+        when (it) {
+            is String -> newSymbolToken(it)
+            else -> it as SymbolToken?
+        }
+    }
+    override fun isNullValue(): Boolean = currentValueExpression!!.kind == ExpressionKind.NullValue
+    override fun booleanValue(): Boolean = currentValueExpression!!.value as Boolean
 
     override fun getIntegerSize(): IntegerSize {
         // TODO: Make this more efficient, more precise
-        return when (val intExpression = currentValueExpression as Expression.IntValue) {
-            is Expression.LongIntValue -> if (intExpression.value.toInt().toLong() == intExpression.value) {
+        val intData = currentValueExpression?.value
+        return when (intData) {
+            is Long -> if (intData.toInt().toLong() == intData) {
                 IntegerSize.INT
             } else {
                 IntegerSize.LONG
             }
-            is Expression.BigIntValue -> IntegerSize.BIG_INTEGER
+            is BigInteger -> IntegerSize.BIG_INTEGER
+            else -> throw IonException("Expected a non-null int value; found ${currentValueExpression?.ionType}")
         }
     }
 
     /** TODO: Throw on data loss */
     override fun intValue(): Int = longValue().toInt()
 
-    override fun longValue(): Long = when (val intExpression = currentValueExpression as Expression.IntValue) {
-        is Expression.LongIntValue -> intExpression.value
-        is Expression.BigIntValue -> intExpression.value.longValueExact()
+    override fun longValue(): Long {
+        val intData = currentValueExpression?.value
+        return when (intData) {
+            is Long -> intData
+            is BigInteger -> intData.longValueExact()
+            else -> throw IonException("Expected a non-null int value; found ${currentValueExpression?.ionType}")
+        }
     }
 
-    override fun bigIntegerValue(): BigInteger = when (val intExpression = currentValueExpression as Expression.IntValue) {
-        is Expression.LongIntValue -> intExpression.value.toBigInteger()
-        is Expression.BigIntValue -> intExpression.value
+    override fun bigIntegerValue(): BigInteger {
+        val intData = currentValueExpression?.value
+        return when (intData) {
+            is Long -> intData.toBigInteger()
+            is BigInteger -> intData
+            else -> throw IonException("Expected a non-null int value; found ${currentValueExpression?.ionType}")
+        }
     }
 
-    override fun doubleValue(): Double = (currentValueExpression as Expression.FloatValue).value
-    override fun bigDecimalValue(): BigDecimal = (currentValueExpression as Expression.DecimalValue).value
+    override fun doubleValue(): Double = currentValueExpression?.value as Double
+    override fun bigDecimalValue(): BigDecimal = currentValueExpression?.value as BigDecimal
     override fun decimalValue(): Decimal = Decimal.valueOf(bigDecimalValue())
-    override fun timestampValue(): Timestamp = (currentValueExpression as Expression.TimestampValue).value
+    override fun timestampValue(): Timestamp = currentValueExpression?.value as Timestamp
     override fun dateValue(): Date = timestampValue().dateValue()
-    override fun stringValue(): String = (currentValueExpression as Expression.TextValue).stringValue
-    override fun symbolValue(): SymbolToken = (currentValueExpression as Expression.SymbolValue).value
-    override fun byteSize(): Int = (currentValueExpression as Expression.LobValue).value.size
-    override fun newBytes(): ByteArray = (currentValueExpression as Expression.LobValue).value.copyOf()
+    override fun stringValue(): String = currentValueExpression?.value.let {
+        when (it) {
+            is String -> it
+            is SymbolToken -> it.assumeText()
+            null -> it!!
+            else -> throw IonException("Expected a text value; found ${currentValueExpression?.ionType}")
+        }
+    }
+    override fun symbolValue(): SymbolToken {
+        if (currentValueExpression?.kind != ExpressionKind.SymbolValue) {
+            throw IonException("Expected a symbol value; found ${currentValueExpression?.ionType}")
+        }
+        return when (val symbol = currentValueExpression?.value) {
+            is String -> newSymbolToken(symbol)
+            else -> symbol as SymbolToken
+        }
+    }
+    override fun byteSize(): Int = (currentValueExpression?.value as ByteArray).size
+    override fun newBytes(): ByteArray = (currentValueExpression?.value as ByteArray).copyOf()
 
     override fun getBytes(buffer: ByteArray?, offset: Int, len: Int): Int {
         TODO("Not yet implemented")
