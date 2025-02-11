@@ -257,11 +257,10 @@ public abstract class EExpressionArgsReader {
         int startInclusive = expressions.size();
         int numberOfParameters = signature.size();
         for (int i = 0; i < numberOfParameters; i++) {
-            readParameter(
-                signature.get(i),
-                presenceBitmap == null ? PresenceBitmap.EXPRESSION : presenceBitmap.get(i),
-                i == (numberOfParameters - 1)
-            );
+            Macro.Parameter parameter = signature.get(i);
+            long presence = presenceBitmap == null ? PresenceBitmap.EXPRESSION : presenceBitmap.get(i);
+            boolean isTrailing = i == (numberOfParameters - 1);
+            readParameter(parameter, presence, isTrailing);
         }
         stepOutOfEExpression();
         placeholder.initEExpression$ion_java(macro, startInclusive, expressions.size());

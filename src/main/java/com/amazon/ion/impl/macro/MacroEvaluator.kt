@@ -612,13 +612,9 @@ class MacroEvaluator {
                 return session.getExpander(Empty, emptyList(), 0, 0, Environment.EMPTY)
             }
             val firstArgExpression = environment.arguments[argIndex]
-            return session.getExpander(
-                expansionKind = Variable,
-                expressions = environment.arguments,
-                startInclusive = if (firstArgExpression.kind == ExpressionKind.ExpressionGroup) firstArgExpression.startInclusive else argIndex,
-                endExclusive = if (firstArgExpression.kind.hasStartAndEnd()) firstArgExpression.endExclusive else argIndex + 1,
-                environment = environment.parentEnvironment!!
-            )
+            val startInclusive = if (firstArgExpression.kind == ExpressionKind.ExpressionGroup) firstArgExpression.startInclusive else argIndex
+            val endExclusive = if (firstArgExpression.kind.hasStartAndEnd()) firstArgExpression.endExclusive else argIndex + 1
+            return session.getExpander(Variable, environment.arguments, startInclusive, endExclusive, environment.parentEnvironment!!)
         }
 
         /**
