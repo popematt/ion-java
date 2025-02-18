@@ -79,10 +79,11 @@ class MacroCompilerTest {
         """(macro literal_test (x) (.values (.values (%x)) (values x)))""" shouldCompileTo TemplateMacro(
             signature = listOf(Parameter("x", Tagged, ParameterCardinality.ExactlyOne)),
             body = listOf(
-                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 1, endExclusive = 6),
-                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 2, endExclusive = 3),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, intArrayOf(1), startInclusive = 1, endExclusive = 7),
+                ExpressionA.newExpressionGroup(2, 7),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, intArrayOf(2), startInclusive = 2, endExclusive = 3),
                 ExpressionA.newVariableRef(0),
-                ExpressionA.newSexp(startInclusive = 4, endExclusive = 6),
+                ExpressionA.newSexp(startInclusive = 4, endExclusive = 7),
                 ExpressionA.newSymbol(FakeSymbolToken("values", -1)),
                 ExpressionA.newSymbol(FakeSymbolToken("x", -1)),
             ),
@@ -90,7 +91,8 @@ class MacroCompilerTest {
         "(macro each_type () (.values null true 1 ${"9".repeat(50)} 1e0 1d0 2024-01-16T \"foo\" bar [] () {} {{}} {{\"\"}} ))" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(
-                ExpressionA.newMacroInvocation(SystemMacro.Values, 1, 15),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, intArrayOf(1), 1, 16),
+                ExpressionA.newExpressionGroup(2, 16),
                 ExpressionA.newNull(IonType.NULL),
                 ExpressionA.newBool(true),
                 ExpressionA.newInt(1),
@@ -100,9 +102,9 @@ class MacroCompilerTest {
                 ExpressionA.newTimestamp(Timestamp.valueOf("2024-01-16T")),
                 ExpressionA.newString("foo"),
                 ExpressionA.newSymbol(FakeSymbolToken("bar", -1)),
-                ExpressionA.newList(startInclusive = 11, endExclusive = 11),
-                ExpressionA.newSexp(startInclusive = 12, endExclusive = 12),
-                ExpressionA.newStruct(startInclusive = 13, endExclusive = 13),
+                ExpressionA.newList(startInclusive = 12, endExclusive = 12),
+                ExpressionA.newSexp(startInclusive = 13, endExclusive = 13),
+                ExpressionA.newStruct(startInclusive = 14, endExclusive = 14),
                 ExpressionA.newBlob(ByteArray(0)),
                 ExpressionA.newClob(ByteArray(0))
             )
@@ -110,7 +112,8 @@ class MacroCompilerTest {
         """(macro foo () (.values 42 "hello" false))""" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(
-                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 1, endExclusive = 4),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, intArrayOf(1), startInclusive = 1, endExclusive = 5),
+                ExpressionA.newExpressionGroup(2, 5),
                 ExpressionA.newInt(42),
                 ExpressionA.newString("hello"),
                 ExpressionA.newBool(false),
@@ -119,7 +122,7 @@ class MacroCompilerTest {
         """(macro using_expr_group () (.values (.. 42 "hello" false)))""" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(
-                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 1, endExclusive = 5),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, intArrayOf(1), startInclusive = 1, endExclusive = 5),
                 ExpressionA.newExpressionGroup(startInclusive = 2, endExclusive = 5),
                 ExpressionA.newInt(42),
                 ExpressionA.newString("hello"),
@@ -129,7 +132,8 @@ class MacroCompilerTest {
         """(macro invoke_by_id () (.12 true false))""" shouldCompileTo TemplateMacro(
             signature = emptyList(),
             body = listOf(
-                ExpressionA.newMacroInvocation(SystemMacro.Values, startInclusive = 1, endExclusive = 3),
+                ExpressionA.newMacroInvocation(SystemMacro.Values, intArrayOf(1), startInclusive = 1, endExclusive = 4),
+                ExpressionA.newExpressionGroup(2, 4),
                 ExpressionA.newBool(true),
                 ExpressionA.newBool(false),
             )

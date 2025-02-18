@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.amazon.ion.impl.macro
 
+import com.amazon.ion.*
 import com.amazon.ion.impl.TaglessEncoding
 
 /**
@@ -80,4 +81,53 @@ sealed interface Macro {
             }
         }
     }
+}
+
+/**
+ * Given a [Macro] (or more specifically, its signature), calculates the position of each of its arguments
+ * in [encodingExpressions]. The result is a list that can be used to map from a parameter's
+ * signature index to the encoding expression index. Any trailing, optional arguments that are
+ * elided have a value of -1.
+ *
+ * This function also validates that the correct number of parameters are present. If there are
+ * too many parameters or too few parameters, this will throw [IonException].
+ */
+internal fun Macro.calculateArgumentIndices(
+    encodingExpressions: List<ExpressionA>,
+    argsStartInclusive: Int,
+    argsEndExclusive: Int
+): IntArray {
+    // TODO: For TDL macro invocations, see if we can calculate this during the "compile" step.
+    var numArgs = 0
+    val argsIndices = IntArray(signature.size) // TODO performance: pool these
+    var currentArgIndex = argsStartInclusive
+
+    for (p in signature) {
+        if (currentArgIndex >= argsEndExclusive) {
+            if (!p.cardinality.canBeVoid) throw IonException("No value provided for parameter ${p.variableName}")
+            // Elided rest parameter.
+            argsIndices[numArgs] = -1
+        } else {
+            argsIndices[numArgs] = currentArgIndex
+            val expr = encodingExpressions[currentArgIndex]
+            currentArgIndex = when {
+                expr.kind.hasStartAndEnd() -> expr.endExclusive
+                else -> currentArgIndex + 1
+            }
+        }
+        numArgs++
+    }
+    while (currentArgIndex < argsEndExclusive) {
+        val expr = encodingExpressions[currentArgIndex]
+        currentArgIndex = if (expr.kind.hasStartAndEnd()) {
+            expr.endExclusive
+        } else {
+            currentArgIndex + 1
+        }
+        numArgs++
+    }
+    if (numArgs > signature.size) {
+        throw IonException("Too many arguments. Expected ${signature.size}, but found $numArgs")
+    }
+    return argsIndices
 }

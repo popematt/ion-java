@@ -168,7 +168,10 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
         override fun sexp(content: TemplateDsl.() -> Unit) = container(content, ExpressionA::newSexp)
         override fun struct(content: TemplateDsl.Fields.() -> Unit) = container(content, ExpressionA::newStruct)
         override fun variable(signatureIndex: Int) { expressions.add(ExpressionA.newVariableRef(signatureIndex)) }
-        override fun macro(macro: Macro, arguments: TemplateDsl.InvocationBody.() -> Unit) = container(arguments) { start, end -> ExpressionA.newMacroInvocation(macro, start, end) }
+        override fun macro(macro: Macro, arguments: TemplateDsl.InvocationBody.() -> Unit) = container(arguments) { start, end ->
+            val argIndices = macro.calculateArgumentIndices(expressions, start, end)
+            ExpressionA.newMacroInvocation(macro, argIndices, start, end)
+        }
         override fun expressionGroup(content: TemplateDsl.() -> Unit) = container(content, ExpressionA::newExpressionGroup)
     }
 }

@@ -27,7 +27,7 @@ class TemplateMacro(override val signature: List<Macro.Parameter>, override val 
     }
 
     override fun toString(): String {
-        return "TemplateMacro(signature=$signature, body=$body)"
+        return "TemplateMacro(signature=$signature, body=${body.joinToString { "\n  $it" }})"
     }
 
     override val dependencies: List<Macro> by lazy {

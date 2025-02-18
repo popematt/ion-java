@@ -137,6 +137,9 @@ class ExpressionA internal constructor() {
     var value: Any? = null
 
     @JvmField
+    var value2: Any? = null
+
+    @JvmField
     var annotations: List<SymbolToken> = emptyList()
 
     // TODO: For lazy expressions, add something like a marker or checkpoint field.
@@ -319,11 +322,12 @@ class ExpressionA internal constructor() {
         value = macro
     }
 
-    internal fun initMacroInvocation(macro: Macro, startInclusive: Int, endExclusive: Int) {
+    internal fun initMacroInvocation(macro: Macro, argIndices: IntArray, startInclusive: Int, endExclusive: Int) {
         kind = ExpressionKind.MacroInvocation
         this.startInclusive = startInclusive
         this.endExclusive = endExclusive
         value = macro
+        value2 = argIndices
     }
 
     internal fun initVariableRef(signatureIndex: Int) {
@@ -364,7 +368,7 @@ class ExpressionA internal constructor() {
         @JvmStatic fun newSexp(startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initSexp(startInclusive, endExclusive) }
         @JvmStatic fun newStruct(startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initStruct(startInclusive, endExclusive) }
         @JvmStatic internal fun newEExpression(macro: Macro, startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initEExpression(macro, startInclusive, endExclusive) }
-        @JvmStatic fun newMacroInvocation(macro: Macro, startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initMacroInvocation(macro, startInclusive, endExclusive) }
+        @JvmStatic fun newMacroInvocation(macro: Macro, argIndices: IntArray, startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initMacroInvocation(macro, argIndices, startInclusive, endExclusive) }
         @JvmStatic fun newExpressionGroup(startInclusive: Int, endExclusive: Int) = ExpressionA().also { it.initExpressionGroup(startInclusive, endExclusive) }
         @JvmStatic fun newVariableRef(signatureIndex: Int) = ExpressionA().also { it.initVariableRef(signatureIndex) }
     }

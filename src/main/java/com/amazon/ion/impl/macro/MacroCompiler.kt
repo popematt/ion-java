@@ -228,9 +228,9 @@ internal class MacroCompiler(
                         confirmNoAnnotations("Macro invocation operator")
                         nextValue()
                         val macro = readMacroReference()
-                        compileExpressionTail()
+                        val argIndices = readMacroArgs(macro)
                         val endExclusive = expressions.size
-                        placeholderExpression.initMacroInvocation(macro, startInclusive, endExclusive)
+                        placeholderExpression.initMacroInvocation(macro, argIndices, startInclusive, endExclusive)
                         return
                     }
                 }
@@ -268,6 +268,60 @@ internal class MacroCompiler(
         }
         val m = if (isQualifiedSystemMacro) SystemMacro.getMacroOrSpecialForm(macroRef) else getMacro(macroRef)
         return m ?: throw IonException("Unrecognized macro: $macroRef")
+    }
+
+    private fun ReaderAdapter.readMacroArgs(macro: Macro): IntArray {
+        if (macro.signature.isEmpty()) {
+            if (nextValue()) {
+                throw IonException("Too many arguments. Expected 0, but found at least one.")
+            }
+            return intArrayOf()
+        }
+
+        var numArgs = 0
+        val argsIndices = IntArray(macro.signature.size)
+        var lastArgPosition = 0
+
+        // TODO: i and numArgs are the same in this loop
+        for (i in 0 until macro.signature.size) {
+            val p = macro.signature[i]
+            if (nextValue()) {
+                lastArgPosition = expressions.size
+                compileTemplateBodyExpression()
+                argsIndices[numArgs] = lastArgPosition
+
+                // TODO: Check cardinality?
+
+            } else {
+                if (!p.cardinality.canBeVoid) throw IonException("No value provided for parameter ${p.variableName}")
+                // Elided rest parameter.
+                argsIndices[numArgs] = -1
+            }
+            numArgs++
+        }
+
+        if (nextValue()) {
+            val lastParameter = macro.signature.last()
+            if (!lastParameter.cardinality.canBeMulti) {
+                numArgs++
+                while (nextValue()) numArgs++
+                throw IonException("Too many arguments. Expected ${macro.signature.size}, but found $numArgs")
+            }
+
+            if (expressions[lastArgPosition].kind == ExpressionKind.ExpressionGroup) {
+                throw IonException("Macro invocation must use rest args or and expression group, but not both.")
+            }
+            // Convert rest args to expression group
+            val expressionGroupPlaceholder = ExpressionA()
+            val startInclusive = lastArgPosition + 1
+            expressions.add(lastArgPosition, expressionGroupPlaceholder)
+            compileTemplateBodyExpression()
+            compileExpressionTail()
+            val endExclusive = expressions.size
+            expressionGroupPlaceholder.initExpressionGroup(startInclusive, endExclusive)
+        }
+
+        return argsIndices
     }
 
     private fun ReaderAdapter.compileVariableExpansion(placeholderExpression: ExpressionA) {
