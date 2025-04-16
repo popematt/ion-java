@@ -4,22 +4,40 @@ package com.amazon.ion.impl.macro
 
 /**
  * A reference to a particular macro, either by name or by template id.
+ *
+ * INVARIANT: Only one of `name` and `id` should be set, otherwise the equality semantics are unclear.
+ *
+ * TODO: Since system macros have an independent address space, do we need to have a `SystemById` variant,
+ *       or is it enough to add the system module name?
  */
-sealed interface MacroRef {
-    // TODO: See if these could be inline value classes
-    @JvmInline value class ByName(val name: String) : MacroRef
-    // Ion is not limited to Int.MAX_VALUE macro addresses, but Java collection sizes are limited by Int.MAX_VALUE
-    @JvmInline value class ById(val id: Int) : MacroRef
-    // TODO: Since system macros have an independent address space, do we need to have a `SystemById` variant?
+data class MacroRef private constructor(
+    // Null indicates no module qualifier
+    val module: String?,
+    // Must be null if unknown
+    val name: String?,
+    // Must be -1 if unknown
+    val id: Int
+) {
+    fun isQualified() = module != null
+    fun isUnqualified() = module == null
+    fun isSystemMacro() = module == "\$ion"
+    fun hasName() = name != null
+    fun hasId() = id >= 0
 
     companion object {
 
-        private val LOW_IDS = Array(128) { i -> ById(i) }
+        private val LOW_IDS = Array(128) { i -> byId(i) }
 
         @JvmStatic
-        fun byId(id: Int): MacroRef = if (id < 128) LOW_IDS[id] else ById(id)
+        fun byId(id: Int): MacroRef = if (id < 128) LOW_IDS[id] else MacroRef(null, null, id)
 
         @JvmStatic
-        fun byName(name: String): MacroRef = ByName(name)
+        fun byId(module: String?, id: Int): MacroRef = MacroRef(module, null, id)
+
+        @JvmStatic
+        fun byName(name: String): MacroRef = MacroRef(null, name, -1)
+
+        @JvmStatic
+        fun byName(module: String?, name: String): MacroRef = MacroRef(module, name, -1)
     }
 }
