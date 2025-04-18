@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.amazon.ion.impl.macro
 
-import com.amazon.ion.SystemSymbols
+import com.amazon.ion.SystemSymbols.DEFAULT_MODULE
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.SystemSymbols_1_1.*
 import com.amazon.ion.impl.macro.ExpressionBuilderDsl.Companion.templateBody
@@ -113,8 +113,8 @@ enum class SystemMacro(
      * ```ion
      * (macro set_symbols (symbols*)
      *        $ion::(module _
-     *          (symbol_table [(%symbols)])
-     *          (macro_table _)
+     *          (macros _)
+     *          (symbols [(%symbols)])
      *        ))
      * ```
      */
@@ -123,14 +123,14 @@ enum class SystemMacro(
         templateBody {
             annotated(ION, ::sexp) {
                 symbol(MODULE)
-                symbol(SystemSymbols.DEFAULT_MODULE)
+                symbol(DEFAULT_MODULE)
                 sexp {
-                    symbol(SYMBOL_TABLE)
-                    list { variable(0) }
+                    symbol(MACROS)
+                    symbol(DEFAULT_MODULE)
                 }
                 sexp {
-                    symbol(MACRO_TABLE)
-                    symbol(SystemSymbols.DEFAULT_MODULE)
+                    symbol(SYMBOLS)
+                    list { variable(0) }
                 }
             }
         }
@@ -140,8 +140,8 @@ enum class SystemMacro(
      * ```ion
      * (macro add_symbols (symbols*)
      *        $ion::(module _
-     *          (symbol_table _ [(%symbols)])
-     *          (macro_table _)
+     *          (macros _)
+     *          (symbols _ [(%symbols)])
      *        ))
      * ```
      */
@@ -150,15 +150,15 @@ enum class SystemMacro(
         templateBody {
             annotated(ION, ::sexp) {
                 symbol(MODULE)
-                symbol(com.amazon.ion.SystemSymbols.DEFAULT_MODULE)
+                symbol(DEFAULT_MODULE)
                 sexp {
-                    symbol(SYMBOL_TABLE)
-                    symbol(com.amazon.ion.SystemSymbols.DEFAULT_MODULE)
-                    list { variable(0) }
+                    symbol(MACROS)
+                    symbol(DEFAULT_MODULE)
                 }
                 sexp {
-                    symbol(MACRO_TABLE)
-                    symbol(SystemSymbols.DEFAULT_MODULE)
+                    symbol(SYMBOLS)
+                    symbol(DEFAULT_MODULE)
+                    list { variable(0) }
                 }
             }
         }
@@ -168,8 +168,8 @@ enum class SystemMacro(
      * ```ion
      * (macro set_macros (macros*)
      *        $ion::(module _
-     *          (symbol_table _)
-     *          (macro_table (%macros))
+     *          (macros (%macros))
+     *          (symbols _)
      *        ))
      * ```
      */
@@ -178,14 +178,14 @@ enum class SystemMacro(
         templateBody {
             annotated(ION, ::sexp) {
                 symbol(MODULE)
-                symbol(SystemSymbols.DEFAULT_MODULE)
+                symbol(DEFAULT_MODULE)
                 sexp {
-                    symbol(SYMBOL_TABLE)
-                    symbol(SystemSymbols.DEFAULT_MODULE)
+                    symbol(MACROS)
+                    variable(0)
                 }
                 sexp {
-                    symbol(MACRO_TABLE)
-                    variable(0)
+                    symbol(SYMBOLS)
+                    symbol(DEFAULT_MODULE)
                 }
             }
         }
@@ -195,8 +195,8 @@ enum class SystemMacro(
      * ```ion
      * (macro add_macros (macros*)
      *        $ion::(module _
-     *          (symbol_table _)
-     *          (macro_table _ (%macros))
+     *          (macros _ (%macros))
+     *          (symbols _)
      *        ))
      * ```
      */
@@ -205,15 +205,15 @@ enum class SystemMacro(
         templateBody {
             annotated(ION, ::sexp) {
                 symbol(MODULE)
-                symbol(SystemSymbols.DEFAULT_MODULE)
+                symbol(DEFAULT_MODULE)
                 sexp {
-                    symbol(SYMBOL_TABLE)
-                    symbol(SystemSymbols.DEFAULT_MODULE)
+                    symbol(MACROS)
+                    symbol(DEFAULT_MODULE)
+                    variable(0)
                 }
                 sexp {
-                    symbol(MACRO_TABLE)
-                    symbol(SystemSymbols.DEFAULT_MODULE)
-                    variable(0)
+                    symbol(SYMBOLS)
+                    symbol(DEFAULT_MODULE)
                 }
             }
         }
@@ -223,9 +223,9 @@ enum class SystemMacro(
      * ```ion
      * (macro use (catalog_key version?)
      *        $ion::(module _
-     *          (import the_module catalog_key (.default (%version) 1))
-     *          (symbol_table _ the_module)
-     *          (macro_table _ the_module)
+     *          (import the_module catalog_key (%version))
+     *          (macros _ the_module)
+     *          (symbols _ the_module)
      *        ))
      * ```
      */
@@ -235,26 +235,22 @@ enum class SystemMacro(
             val theModule = _Private_Utils.newSymbolToken("the_module")
             annotated(ION, ::sexp) {
                 symbol(MODULE)
-                symbol(SystemSymbols.DEFAULT_MODULE)
+                symbol(DEFAULT_MODULE)
                 sexp {
                     symbol(IMPORT)
                     symbol(theModule)
                     variable(0)
-                    // This is equivalent to `(.default (%version) 1)`, but eliminates a layer of indirection.
-                    macro(IfNone) {
-                        variable(1)
-                        int(1)
-                        variable(1)
-                    }
+                    // The version is optional in the import clause so we don't need to specify the default.
+                    variable(1)
                 }
                 sexp {
-                    symbol(SYMBOL_TABLE)
-                    symbol(SystemSymbols.DEFAULT_MODULE)
+                    symbol(MACROS)
+                    symbol(DEFAULT_MODULE)
                     symbol(theModule)
                 }
                 sexp {
-                    symbol(MACRO_TABLE)
-                    symbol(SystemSymbols.DEFAULT_MODULE)
+                    symbol(SYMBOLS)
+                    symbol(DEFAULT_MODULE)
                     symbol(theModule)
                 }
             }
