@@ -934,6 +934,9 @@ class IonCursorBinary implements IonCursor {
      * @return the value.
      */
     private long uncheckedReadVarUInt_1_0(byte currentByte) {
+//        byte[] buffer = this.buffer;
+//        long limit = this.limit;
+//        long peekIndex = this.peekIndex;
         long result = currentByte & LOWER_SEVEN_BITS_BITMASK;
         do {
             if (peekIndex >= limit) {
@@ -945,6 +948,7 @@ class IonCursorBinary implements IonCursor {
         if (result < 0) {
             throw new IonException("Found a VarUInt that was too large to fit in a `long`");
         }
+//        this.peekIndex = peekIndex;
         return result;
     }
 
@@ -1011,6 +1015,10 @@ class IonCursorBinary implements IonCursor {
         annotationSequenceMarker.startIndex = peekIndex;
         annotationSequenceMarker.endIndex = annotationSequenceMarker.startIndex + annotationsLength;
         peekIndex = annotationSequenceMarker.endIndex;
+//        long annotationsStartIndex = peekIndex;
+//        annotationSequenceMarker.startIndex = annotationsStartIndex;
+//        annotationSequenceMarker.endIndex = annotationsStartIndex + annotationsLength;
+//        peekIndex = annotationsStartIndex + annotationsLength;
         if (peekIndex >= endIndex) {
             throw new IonException("Annotation wrapper must wrap a value.");
         }
@@ -2340,12 +2348,19 @@ class IonCursorBinary implements IonCursor {
      * @param endIndex the value's end index.
      * @param markerToSet the marker to set.
      */
-    private void setMarker(long endIndex, Marker markerToSet) {
+    private void setMarker(long endIndex, IonTypeID typeId, Marker markerToSet) {
         if (parent != null && endIndex > parent.endIndex && parent.endIndex > DELIMITED_MARKER) {
             throw new IonException(String.format("Value [%d:%d] exceeds the length of its parent container [%d:%d].", peekIndex, endIndex, parent.startIndex, parent.endIndex));
         }
         markerToSet.startIndex = peekIndex;
         markerToSet.endIndex = endIndex;
+        if (typeId != null) {
+            markerToSet.typeId = typeId;
+        }
+    }
+
+    private void setMarker(long endIndex, Marker markerToSet) {
+        setMarker(endIndex, null, markerToSet);
     }
 
     /**
@@ -2385,10 +2400,14 @@ class IonCursorBinary implements IonCursor {
         valueMarker.startIndex = -1;
         valueMarker.endIndex = -1;
         fieldSid = -1;
+        hasAnnotations = false;
+        if (minorVersion != 0) reset_1_1();
+    }
+
+    private void reset_1_1() {
         fieldTextMarker.typeId = null;
         fieldTextMarker.startIndex = -1;
         fieldTextMarker.endIndex = -1;
-        hasAnnotations = false;
         annotationSequenceMarker.typeId = null;
         annotationSequenceMarker.startIndex = -1;
         annotationSequenceMarker.endIndex = -1;
