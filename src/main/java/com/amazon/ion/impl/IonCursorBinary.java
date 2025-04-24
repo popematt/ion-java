@@ -934,9 +934,6 @@ class IonCursorBinary implements IonCursor {
      * @return the value.
      */
     private long uncheckedReadVarUInt_1_0(byte currentByte) {
-//        byte[] buffer = this.buffer;
-//        long limit = this.limit;
-//        long peekIndex = this.peekIndex;
         long result = currentByte & LOWER_SEVEN_BITS_BITMASK;
         do {
             if (peekIndex >= limit) {
@@ -948,7 +945,6 @@ class IonCursorBinary implements IonCursor {
         if (result < 0) {
             throw new IonException("Found a VarUInt that was too large to fit in a `long`");
         }
-//        this.peekIndex = peekIndex;
         return result;
     }
 
@@ -1015,10 +1011,6 @@ class IonCursorBinary implements IonCursor {
         annotationSequenceMarker.startIndex = peekIndex;
         annotationSequenceMarker.endIndex = annotationSequenceMarker.startIndex + annotationsLength;
         peekIndex = annotationSequenceMarker.endIndex;
-//        long annotationsStartIndex = peekIndex;
-//        annotationSequenceMarker.startIndex = annotationsStartIndex;
-//        annotationSequenceMarker.endIndex = annotationsStartIndex + annotationsLength;
-//        peekIndex = annotationsStartIndex + annotationsLength;
         if (peekIndex >= endIndex) {
             throw new IonException("Annotation wrapper must wrap a value.");
         }
@@ -2618,11 +2610,12 @@ class IonCursorBinary implements IonCursor {
      * representing the value.
      * @param  typeIdByte the type ID byte. This may be an annotation wrapper's type ID.
      * @param isAnnotated true if this type ID is on a value within an annotation wrapper; false if it is not.
-     * @param markerToSet the Marker to set with information parsed from the type ID and/or annotation wrapper header.
+     * // @param markerToSet the Marker to set with information parsed from the type ID and/or annotation wrapper header.
      * @return false if the header belonged to NOP pad; otherwise, true. When false, the caller should call the method
      *  again to read the header for the value that follows.
      */
-    private boolean uncheckedReadHeader(final int typeIdByte, final boolean isAnnotated, final Marker markerToSet) {
+    private boolean uncheckedReadHeader(final int typeIdByte, final boolean isAnnotated) {
+        final Marker markerToSet = valueMarker;
         IonTypeID valueTid = typeIds[typeIdByte];
         if (!valueTid.isValid) {
             throw new IonException("Invalid type ID: " + valueTid.theByte);
@@ -2634,7 +2627,7 @@ class IonCursorBinary implements IonCursor {
                 return true;
             }
             hasAnnotations = true;
-            return uncheckedReadHeader(buffer[(int) (peekIndex++)] & SINGLE_BYTE_MASK, true, valueMarker);
+            return uncheckedReadHeader(buffer[(int) (peekIndex++)] & SINGLE_BYTE_MASK, true);
         } else if (minorVersion == 1 && valueTid.isMacroInvocation) {
             uncheckedReadMacroInvocationHeader(valueTid, markerToSet);
             return true;
@@ -3188,7 +3181,7 @@ class IonCursorBinary implements IonCursor {
         if (parent.endIndex == peekIndex) {
             event = Event.END_CONTAINER;
             return true;
-        } else if (parent.endIndex == DELIMITED_MARKER || parent.typeId.isDelimited) {
+        } else if (minorVersion != 0 && parent.endIndex == DELIMITED_MARKER || parent.typeId.isDelimited) {
             return uncheckedIsDelimitedEnd_1_1();
         } else if (parent.endIndex < peekIndex) {
             throw new IonException("Contained values overflowed the parent container length.");
@@ -3233,14 +3226,17 @@ class IonCursorBinary implements IonCursor {
      *  should be called again to advance to the following value.
      */
     private boolean uncheckedNextToken() {
+        int minorVersion = this.minorVersion;
         if (peekIndex < valueMarker.endIndex) {
             // TODO length-prefixed macro invocations currently follow this path. However, such invocations may
             //  expand to system values and need to be checked before being skipped over.
             peekIndex = valueMarker.endIndex;
-        } else if (macroInvocationId >= 0) {
-            skipMacroInvocation();
-        } else if (valueTid != null && valueTid.isDelimited) {
-            seekPastDelimitedContainer_1_1();
+        } else if (minorVersion != 0) {
+            if (macroInvocationId >= 0) {
+                skipMacroInvocation();
+            } else if (valueTid != null && valueTid.isDelimited) {
+                seekPastDelimitedContainer_1_1();
+            }
         }
         valueTid = null;
         if (dataHandler != null) {
@@ -3263,7 +3259,7 @@ class IonCursorBinary implements IonCursor {
                 return true;
             }
         } else {
-            if (parent.typeId.isMacroInvocation) {
+            if (minorVersion != 0 && parent.typeId.isMacroInvocation) {
                 // When traversing a macro invocation, the cursor must visit each parameter; after visiting each one,
                 // peekIndex will point to the first byte in the next parameter or value.
                 valuePreHeaderIndex = peekIndex;
@@ -3275,7 +3271,7 @@ class IonCursorBinary implements IonCursor {
             }
             b = buffer[(int)(peekIndex++)] & SINGLE_BYTE_MASK;
         }
-        if (uncheckedReadHeader(b, false, valueMarker)) {
+        if (uncheckedReadHeader(b, false)) {
             valueTid = valueMarker.typeId;
             return false;
         }
@@ -3777,7 +3773,7 @@ class IonCursorBinary implements IonCursor {
                     event = Event.NEEDS_INSTRUCTION;
                     return event;
                 }
-                isUserValue = uncheckedReadHeader(b, false, valueMarker);
+                isUserValue = uncheckedReadHeader(b, false);
                 setCheckpointAfterValueHeader();
             }
         } else {
@@ -3789,7 +3785,7 @@ class IonCursorBinary implements IonCursor {
             if (group.pageEndIndex > limit && fillArgumentGroupPage(group)) {
                 return event;
             }
-            isUserValue = uncheckedReadHeader(buffer[(int)(peekIndex++)] & SINGLE_BYTE_MASK, false, valueMarker);
+            isUserValue = uncheckedReadHeader(buffer[(int)(peekIndex++)] & SINGLE_BYTE_MASK, false);
             setCheckpointAfterValueHeader();
         }
         valueTid = valueMarker.typeId;

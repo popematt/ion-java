@@ -1995,7 +1995,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             } else {
                 event = super.nextValue();
             }
-            if (valueTid != null && valueTid.isMacroInvocation) {
+            if (minorVersion != 0 && valueTid != null && valueTid.isMacroInvocation) {
                 if (evaluateUserMacroInvocations() || isSystemInvocation()) {
                     expressionArgsReader.beginEvaluatingMacroInvocation(macroEvaluatorIonReader);
                     isEvaluatingEExpression = true;
@@ -2077,11 +2077,21 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      */
     private long readUInt(long startIndex, long endIndex) {
         byte[] buffer = this.buffer;
-        if (startIndex + 1 == endIndex) {
-            return buffer[(int) startIndex] & SINGLE_BYTE_MASK;
-        } else {
-            return readMultiByteUInt(buffer, startIndex, endIndex);
+        switch ((int) (endIndex - startIndex)) {
+            case 0:
+                return 0;
+            case 1:
+                return buffer[(int) startIndex] & SINGLE_BYTE_MASK;
+            case 2:
+                return ((buffer[(int) startIndex] & SINGLE_BYTE_MASK) << VALUE_BITS_PER_UINT_BYTE) | (buffer[(int) startIndex + 1] & SINGLE_BYTE_MASK);
+            default:
+                return readMultiByteUInt(buffer, startIndex, endIndex);
         }
+//        if (startIndex + 1 == endIndex) {
+//            return buffer[(int) startIndex] & SINGLE_BYTE_MASK;
+//        } else {
+//            return readMultiByteUInt(buffer, startIndex, endIndex);
+//        }
     }
 
     private long readMultiByteUInt(byte[] buffer, long startIndex, long endIndex) {
@@ -2097,6 +2107,14 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return the value.
      */
     private long readFixedUInt_1_1(long startInclusive, long endExclusive) {
+        if (endExclusive - startInclusive == 1) {
+            return buffer[(int) startInclusive] & SINGLE_BYTE_MASK;
+        } else {
+            return readMultiByteFixedUInt_1_1(startInclusive, endExclusive);
+        }
+    }
+
+    private long readMultiByteFixedUInt_1_1(long startInclusive, long endExclusive) {
         long result = 0;
         for (int i = (int) startInclusive; i < endExclusive; i++) {
             result |= ((long) (buffer[i] & SINGLE_BYTE_MASK) << ((i - startInclusive) * VALUE_BITS_PER_UINT_BYTE));
@@ -2621,9 +2639,10 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (type == IonType.STRING || isEvaluatingEExpression) {
             value = readString();
         } else if (type == IonType.SYMBOL) {
-            if (valueTid.isInlineable) {
+            int minorVersion = this.minorVersion;
+            if (minorVersion != 0 && valueTid.isInlineable) {
                 value = readString();
-            } else if (valueTid == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+            } else if (minorVersion != 0 && valueTid == IonTypeID.SYSTEM_SYMBOL_VALUE) {
                 value = getSymbolText();
             } else {
                 int sid = symbolValueId();
@@ -2658,7 +2677,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.symbolValue().assumeText();
         }
-        if (valueMarker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+        if (minorVersion != 0 && valueMarker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
             return getSystemSymbolToken(valueMarker).getText();
         }
         return readString();
@@ -2765,7 +2784,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     @Override
     public void consumeAnnotationTokens(Consumer<SymbolToken> consumer) {
         if (annotationSequenceMarker.startIndex >= 0) {
-            if (annotationSequenceMarker.typeId != null && annotationSequenceMarker.typeId.isInlineable) {
+            if (minorVersion != 0 && annotationSequenceMarker.typeId != null && annotationSequenceMarker.typeId.isInlineable) {
                 getAnnotationMarkerList();
             } else {
                 getAnnotationSidList();
@@ -2823,6 +2842,9 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
     @Override
     public boolean hasFieldText() {
+        if (minorVersion == 0) {
+            return false;
+        }
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.getFieldName() != null;
         }
@@ -2843,14 +2865,16 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
     @Override
     public SymbolToken getFieldNameSymbol() {
-        if (isEvaluatingEExpression) {
-            return macroEvaluatorIonReader.getFieldNameSymbol();
+        if (minorVersion != 0) {
+            if (isEvaluatingEExpression) {
+                return macroEvaluatorIonReader.getFieldNameSymbol();
+            }
+            if (fieldTextMarker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+                return getSystemSymbolToken(fieldTextMarker);
+            }
         }
         if (fieldTextMarker.startIndex > -1) {
             return new SymbolTokenImpl(getFieldText(), SymbolTable.UNKNOWN_SYMBOL_ID);
-        }
-        if (fieldTextMarker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
-            return getSystemSymbolToken(fieldTextMarker);
         }
         if (fieldSid < 0) {
             return null;
@@ -2860,14 +2884,16 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
     @Override
     public SymbolToken symbolValue() {
-        if (isEvaluatingEExpression) {
-            return macroEvaluatorIonReader.symbolValue();
-        }
-        if (valueTid == SYSTEM_SYMBOL_VALUE) {
-            return getSystemSymbolToken(valueMarker);
-        }
-        if (valueTid.isInlineable) {
-            return new SymbolTokenImpl(getSymbolText(), SymbolTable.UNKNOWN_SYMBOL_ID);
+        if (minorVersion != 0) {
+            if (isEvaluatingEExpression) {
+                return macroEvaluatorIonReader.symbolValue();
+            }
+            if (valueTid == SYSTEM_SYMBOL_VALUE) {
+                return getSystemSymbolToken(valueMarker);
+            }
+            if (valueTid.isInlineable) {
+                return new SymbolTokenImpl(getSymbolText(), SymbolTable.UNKNOWN_SYMBOL_ID);
+            }
         }
 
         int sid = symbolValueId();
