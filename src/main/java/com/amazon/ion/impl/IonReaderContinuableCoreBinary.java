@@ -2076,6 +2076,15 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return the value.
      */
     private long readUInt(long startIndex, long endIndex) {
+        byte[] buffer = this.buffer;
+        if (startIndex + 1 == endIndex) {
+            return buffer[(int) startIndex] & SINGLE_BYTE_MASK;
+        } else {
+            return readMultiByteUInt(buffer, startIndex, endIndex);
+        }
+    }
+
+    private long readMultiByteUInt(byte[] buffer, long startIndex, long endIndex) {
         long result = 0;
         for (long i = startIndex; i < endIndex; i++) {
             result = (result << VALUE_BITS_PER_UINT_BYTE) | buffer[(int) i] & SINGLE_BYTE_MASK;
