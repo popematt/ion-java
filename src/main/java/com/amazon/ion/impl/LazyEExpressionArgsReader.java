@@ -121,7 +121,7 @@ abstract class LazyEExpressionArgsReader {
      * Reads a scalar value from the stream into an expression.
      */
     private void readScalarValueAsExpression() {
-        expressionTape.add(reader.valueTid, ExpressionType.DATA_MODEL_SCALAR, (int) reader.valueMarker.startIndex, (int) reader.valueMarker.endIndex);
+        expressionTape.add(reader.valueMarker.typeId, ExpressionType.DATA_MODEL_SCALAR, (int) reader.valueMarker.startIndex, (int) reader.valueMarker.endIndex);
     }
 
     /**
@@ -136,7 +136,7 @@ abstract class LazyEExpressionArgsReader {
         if (isExpressionGroup) {
             expressionTape.add(null, ExpressionType.EXPRESSION_GROUP, -1, -1);
         } else {
-            expressionTape.add(reader.valueTid, ExpressionType.DATA_MODEL_CONTAINER, -1, -1);
+            expressionTape.add(reader.valueMarker.typeId, ExpressionType.DATA_MODEL_CONTAINER, -1, -1);
         }
         // TODO if the container is prefixed, don't recursively step through it
         stepInRaw();
