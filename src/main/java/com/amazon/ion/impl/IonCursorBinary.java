@@ -2340,19 +2340,12 @@ class IonCursorBinary implements IonCursor {
      * @param endIndex the value's end index.
      * @param markerToSet the marker to set.
      */
-    private void setMarker(long endIndex, IonTypeID typeId, Marker markerToSet) {
+    private void setMarker(long endIndex, Marker markerToSet) {
         if (parent != null && endIndex > parent.endIndex && parent.endIndex > DELIMITED_MARKER) {
             throw new IonException(String.format("Value [%d:%d] exceeds the length of its parent container [%d:%d].", peekIndex, endIndex, parent.startIndex, parent.endIndex));
         }
         markerToSet.startIndex = peekIndex;
         markerToSet.endIndex = endIndex;
-        if (typeId != null) {
-            markerToSet.typeId = typeId;
-        }
-    }
-
-    private void setMarker(long endIndex, Marker markerToSet) {
-        setMarker(endIndex, null, markerToSet);
     }
 
     /**
@@ -2610,7 +2603,6 @@ class IonCursorBinary implements IonCursor {
      * representing the value.
      * @param  typeIdByte the type ID byte. This may be an annotation wrapper's type ID.
      * @param isAnnotated true if this type ID is on a value within an annotation wrapper; false if it is not.
-     * // @param markerToSet the Marker to set with information parsed from the type ID and/or annotation wrapper header.
      * @return false if the header belonged to NOP pad; otherwise, true. When false, the caller should call the method
      *  again to read the header for the value that follows.
      */
@@ -3181,7 +3173,7 @@ class IonCursorBinary implements IonCursor {
         if (parent.endIndex == peekIndex) {
             event = Event.END_CONTAINER;
             return true;
-        } else if (minorVersion != 0 && parent.endIndex == DELIMITED_MARKER || parent.typeId.isDelimited) {
+        } else if (minorVersion != 0 && (parent.endIndex == DELIMITED_MARKER || parent.typeId.isDelimited)) {
             return uncheckedIsDelimitedEnd_1_1();
         } else if (parent.endIndex < peekIndex) {
             throw new IonException("Contained values overflowed the parent container length.");
@@ -3226,7 +3218,6 @@ class IonCursorBinary implements IonCursor {
      *  should be called again to advance to the following value.
      */
     private boolean uncheckedNextToken() {
-        int minorVersion = this.minorVersion;
         if (peekIndex < valueMarker.endIndex) {
             // TODO length-prefixed macro invocations currently follow this path. However, such invocations may
             //  expand to system values and need to be checked before being skipped over.
