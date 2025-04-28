@@ -115,7 +115,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                 boolean mightBeSymbolTable = true;
                 if (state == State.READING_VALUE) {
                     // The reader is not currently processing a symbol table.
-                    if (parent != null || !hasAnnotations) {
+                    if (!isTopLevel() || !hasAnnotations) {
                         // Only top-level annotated values can be symbol tables.
                         mightBeSymbolTable = false;
                     } else if (annotationSequenceMarker.startIndex >= 0 && annotationSequenceMarker.endIndex <= limit) {
@@ -946,7 +946,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
     @Override
     public Event nextValue() {
         Event event;
-        if (parent == null || state != State.READING_VALUE) {
+        if (isTopLevel() || state != State.READING_VALUE) {
             while (true) {
                 if (state != State.READING_VALUE) {
                     symbolTableReader.readSymbolTable();
@@ -956,7 +956,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                     }
                 }
                 event = super.nextValue();
-                if (parent == null && isPositionedOnSymbolTable()) {
+                if (isTopLevel() && isPositionedOnSymbolTable()) {
                     cachedReadOnlySymbolTable = null;
                     symbolTableReader.resetState();
                     state = State.ON_SYMBOL_TABLE_STRUCT;

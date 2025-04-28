@@ -1143,8 +1143,8 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     private boolean isPositionedOnEncodingDirective() {
         return event == Event.START_CONTAINER
             && hasAnnotations
+            && isTopLevel()
             && valueMarker.typeId.type == IonType.SEXP
-            && parent == null
             && startsWithIonAnnotation();
     }
 
@@ -1773,7 +1773,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
         @Override
         protected void stepOutOfEExpression() {
-            validateValueEndIndex(parent.endIndex);
+            validateValueEndIndex(parentMarker().endIndex);
             IonReaderContinuableCoreBinary.super.stepOutOfEExpression();
         }
     }
@@ -1857,7 +1857,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         // is not considered critical.
         lobBytesRead = 0;
         while (true) {
-            if (parent == null || state != State.READING_VALUE) {
+            if (isTopLevel() || state != State.READING_VALUE) {
                 boolean isEncodingDirective = false;
                 if (state != State.READING_VALUE && state != State.COMPILING_MACRO) {
                     boolean isEncodingDirectiveFromEExpression = isEvaluatingEExpression;
@@ -1888,7 +1888,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 } else {
                     event = super.nextValue();
                 }
-                if (minorVersion == 1 && parent == null && isPositionedOnEncodingDirective()) {
+                if (minorVersion == 1 && isTopLevel() && isPositionedOnEncodingDirective()) {
                     encodingDirectiveReader.resetState();
                     state = State.ON_DIRECTIVE_SEXP;
                     continue;
@@ -1909,7 +1909,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                     // This macro invocation expands to nothing; continue iterating until a user value is found.
                     continue;
                 }
-                if (parent == null && isPositionedOnEvaluatedEncodingDirective()) {
+                if (isTopLevel() && isPositionedOnEvaluatedEncodingDirective()) {
                     encodingDirectiveReader.resetState();
                     state = State.ON_DIRECTIVE_SEXP;
                     continue;
@@ -1935,7 +1935,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @throws IOException if thrown by the writer during transcoding.
      */
     private void transcodeValueLiteral() throws IOException {
-        if (parent == null && isPositionedOnSymbolTable()) {
+        if (isTopLevel() && isPositionedOnSymbolTable()) {
             if (minorVersion > 0) {
                 // TODO finalize handling of Ion 1.0-style symbol tables in Ion 1.1: https://github.com/amazon-ion/ion-java/issues/1002
                 throw new IonException("Macro-aware transcoding of Ion 1.1 data containing Ion 1.0-style symbol tables not yet supported.");
@@ -1974,7 +1974,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     public Event nextValue() {
         lobBytesRead = 0;
         while (true) {
-            if (parent == null || state != State.READING_VALUE) {
+            if (isTopLevel() || state != State.READING_VALUE) {
                 if (state != State.READING_VALUE && state != State.COMPILING_MACRO) {
                     encodingDirectiveReader.readEncodingDirective();
                     if (state != State.READING_VALUE) {
@@ -1989,7 +1989,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 } else {
                     event = super.nextValue();
                 }
-                if (minorVersion == 1 && parent == null && isPositionedOnEncodingDirective()) {
+                if (minorVersion == 1 && isTopLevel() && isPositionedOnEncodingDirective()) {
                     encodingDirectiveReader.resetState();
                     state = State.ON_DIRECTIVE_SEXP;
                     continue;
@@ -2008,7 +2008,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                     if (evaluateNext()) {
                         continue;
                     }
-                    if (parent == null && isPositionedOnEvaluatedEncodingDirective()) {
+                    if (isTopLevel() && isPositionedOnEvaluatedEncodingDirective()) {
                         encodingDirectiveReader.resetState();
                         state = State.ON_DIRECTIVE_SEXP;
                         continue;
@@ -2879,6 +2879,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.isInStruct();
         }
+        Marker parent = parentMarker();
         return parent != null && parent.typeId.type == IonType.STRUCT;
     }
 

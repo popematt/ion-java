@@ -163,7 +163,7 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
         type = null;
         if (isValueIncomplete) {
             handleIncompleteValue();
-        } else if (!isSlowMode || isNonContinuable || parent != null) {
+        } else if (!isSlowMode || isNonContinuable || !isTopLevel()) {
             if (nextValue() == IonCursor.Event.NEEDS_DATA) {
                 if (isNonContinuable) {
                     endStream();
