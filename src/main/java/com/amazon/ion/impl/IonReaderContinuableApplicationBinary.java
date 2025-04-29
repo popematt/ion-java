@@ -115,7 +115,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                 boolean mightBeSymbolTable = true;
                 if (state == State.READING_VALUE) {
                     // The reader is not currently processing a symbol table.
-                    if (!isTopLevel() || !hasAnnotations) {
+                    if (!isPositionedAtTopLevelOfStream() || !hasAnnotations()) {
                         // Only top-level annotated values can be symbol tables.
                         mightBeSymbolTable = false;
                     } else if (annotationSequenceMarker.startIndex >= 0 && annotationSequenceMarker.endIndex <= limit) {
@@ -161,11 +161,11 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         @Override
         public String next() {
             if (isSids) {
-                long savedPeekIndex = peekIndex;
-                peekIndex = nextAnnotationPeekIndex;
+                long savedPeekIndex = corePeekIndex;
+                corePeekIndex = nextAnnotationPeekIndex;
                 int sid;
-                if (minorVersion == 0) {
-                    byte b = buffer[(int) peekIndex++];
+                if (getMinorVersion() == 0) {
+                    byte b = buffer[(int) corePeekIndex++];
                     if (b < 0) {
                         sid = b & 0x7F;
                     } else {
@@ -174,8 +174,8 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                 } else {
                     sid = (int) readFlexInt_1_1();
                 }
-                nextAnnotationPeekIndex = peekIndex;
-                peekIndex = savedPeekIndex;
+                nextAnnotationPeekIndex = corePeekIndex;
+                corePeekIndex = savedPeekIndex;
                 return convertToString(sid);
             }
             Marker marker = annotationTokenMarkers.get((int) nextAnnotationPeekIndex++);
@@ -194,11 +194,11 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
         SymbolToken nextSymbolToken() {
             if (isSids) {
-                long savedPeekIndex = peekIndex;
-                peekIndex = nextAnnotationPeekIndex;
-                int sid = minorVersion == 0 ? readVarUInt_1_0() : (int) readFlexInt_1_1();
-                nextAnnotationPeekIndex = peekIndex;
-                peekIndex = savedPeekIndex;
+                long savedPeekIndex = corePeekIndex;
+                corePeekIndex = nextAnnotationPeekIndex;
+                int sid = getMinorVersion() == 0 ? readVarUInt_1_0() : (int) readFlexInt_1_1();
+                nextAnnotationPeekIndex = corePeekIndex;
+                corePeekIndex = savedPeekIndex;
                 return getSymbolToken(sid);
             }
             Marker marker = annotationTokenMarkers.get((int) nextAnnotationPeekIndex++);
@@ -666,7 +666,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void readSymbolTableStructField() {
-            if (minorVersion > 0) {
+            if (getMinorVersion() > 0) {
                 readSymbolTableStructField_1_1();
                 return;
             }
@@ -705,14 +705,14 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             resetImports(getIonMajorVersion(), getIonMinorVersion());
             resetSymbolTable();
             newImports = new ArrayList<>(3);
-            if (minorVersion == 0) {
+            if (getMinorVersion() == 0) {
                 newImports.add(getSystemSymbolTable());
             }
             state = State.READING_SYMBOL_TABLE_IMPORTS_LIST;
         }
 
         private void preparePossibleAppend() {
-            if (minorVersion > 0) {
+            if (getMinorVersion() > 0) {
                 prepareScalar();
                 if (!matchesSystemSymbol_1_1(valueMarker, SystemSymbols_1_1.ION_SYMBOL_TABLE)) {
                     resetSymbolTable();
@@ -777,7 +777,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
         private void startReadingImportStructField() {
             int fieldId = getFieldId();
-            if (minorVersion > 0 && fieldId < 0) {
+            if (getMinorVersion() > 0 && fieldId < 0) {
                 fieldId = mapInlineTextToSystemSid(fieldTextMarker);
             }
             if (fieldId == NAME_SID) {
@@ -814,13 +814,13 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             Event event;
             while (true) {
                 switch (state) {
-                    case ON_SYMBOL_TABLE_STRUCT:
+                    case State.ON_SYMBOL_TABLE_STRUCT:
                         if (Event.NEEDS_DATA == stepIntoContainer()) {
                             return;
                         }
                         state = State.ON_SYMBOL_TABLE_FIELD;
                         break;
-                    case ON_SYMBOL_TABLE_FIELD:
+                    case State.ON_SYMBOL_TABLE_FIELD:
                         event = IonReaderContinuableApplicationBinary.super.nextValue();
                         if (Event.NEEDS_DATA == event) {
                             return;
@@ -831,7 +831,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         }
                         readSymbolTableStructField();
                         break;
-                    case ON_SYMBOL_TABLE_SYMBOLS:
+                    case State.ON_SYMBOL_TABLE_SYMBOLS:
                         if (IonReaderContinuableApplicationBinary.super.getType() == IonType.LIST) {
                             if (Event.NEEDS_DATA == stepIntoContainer()) {
                                 return;
@@ -841,7 +841,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                             state = State.ON_SYMBOL_TABLE_FIELD;
                         }
                         break;
-                    case ON_SYMBOL_TABLE_IMPORTS:
+                    case State.ON_SYMBOL_TABLE_IMPORTS:
                         if (IonReaderContinuableApplicationBinary.super.getType() == IonType.LIST) {
                             if (Event.NEEDS_DATA == stepIntoContainer()) {
                                 return;
@@ -856,7 +856,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                             state = State.ON_SYMBOL_TABLE_FIELD;
                         }
                         break;
-                    case READING_SYMBOL_TABLE_SYMBOLS_LIST:
+                    case State.READING_SYMBOL_TABLE_SYMBOLS_LIST:
                         event = IonReaderContinuableApplicationBinary.super.nextValue();
                         if (event == Event.NEEDS_DATA) {
                             return;
@@ -867,13 +867,13 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         }
                         startReadingSymbol();
                         break;
-                    case READING_SYMBOL_TABLE_SYMBOL:
+                    case State.READING_SYMBOL_TABLE_SYMBOL:
                         if (valueUnavailable()) {
                             return;
                         }
                         finishReadingSymbol();
                         break;
-                    case READING_SYMBOL_TABLE_IMPORTS_LIST:
+                    case State.READING_SYMBOL_TABLE_IMPORTS_LIST:
                         event = IonReaderContinuableApplicationBinary.super.nextValue();
                         if (event == Event.NEEDS_DATA) {
                             return;
@@ -884,7 +884,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         }
                         startReadingImportStruct();
                         break;
-                    case READING_SYMBOL_TABLE_IMPORT_STRUCT:
+                    case State.READING_SYMBOL_TABLE_IMPORT_STRUCT:
                         event = IonReaderContinuableApplicationBinary.super.nextValue();
                         if (event == Event.NEEDS_DATA) {
                             return;
@@ -897,25 +897,25 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                         }
                         startReadingImportStructField();
                         break;
-                    case READING_SYMBOL_TABLE_IMPORT_NAME:
+                    case State.READING_SYMBOL_TABLE_IMPORT_NAME:
                         if (valueUnavailable()) {
                             return;
                         }
                         readImportName();
                         break;
-                    case READING_SYMBOL_TABLE_IMPORT_VERSION:
+                    case State.READING_SYMBOL_TABLE_IMPORT_VERSION:
                         if (valueUnavailable()) {
                             return;
                         }
                         readImportVersion();
                         break;
-                    case READING_SYMBOL_TABLE_IMPORT_MAX_ID:
+                    case State.READING_SYMBOL_TABLE_IMPORT_MAX_ID:
                         if (valueUnavailable()) {
                             return;
                         }
                         readImportMaxId();
                         break;
-                    default: throw new IllegalStateException(state.toString());
+                    default: throw new IllegalStateException("Illegal State: " + state);
                 }
             }
         }
@@ -925,28 +925,28 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
      * The reader's state. `READING_VALUE` indicates that the reader is reading a user-level value; all other states
      * indicate that the reader is in the middle of reading a symbol table.
      */
-    private enum State {
-        ON_SYMBOL_TABLE_STRUCT,
-        ON_SYMBOL_TABLE_FIELD,
-        ON_SYMBOL_TABLE_SYMBOLS,
-        READING_SYMBOL_TABLE_SYMBOLS_LIST,
-        READING_SYMBOL_TABLE_SYMBOL,
-        ON_SYMBOL_TABLE_IMPORTS,
-        READING_SYMBOL_TABLE_IMPORTS_LIST,
-        READING_SYMBOL_TABLE_IMPORT_STRUCT,
-        READING_SYMBOL_TABLE_IMPORT_NAME,
-        READING_SYMBOL_TABLE_IMPORT_VERSION,
-        READING_SYMBOL_TABLE_IMPORT_MAX_ID,
-        READING_VALUE
+    private static class State {
+        static final byte ON_SYMBOL_TABLE_STRUCT = 0;
+        static final byte ON_SYMBOL_TABLE_FIELD = 1;
+        static final byte ON_SYMBOL_TABLE_SYMBOLS = 2;
+        static final byte READING_SYMBOL_TABLE_SYMBOLS_LIST = 3;
+        static final byte READING_SYMBOL_TABLE_SYMBOL = 4;
+        static final byte ON_SYMBOL_TABLE_IMPORTS = 5;
+        static final byte READING_SYMBOL_TABLE_IMPORTS_LIST = 6;
+        static final byte READING_SYMBOL_TABLE_IMPORT_STRUCT = 7;
+        static final byte READING_SYMBOL_TABLE_IMPORT_NAME = 8;
+        static final byte READING_SYMBOL_TABLE_IMPORT_VERSION = 9;
+        static final byte READING_SYMBOL_TABLE_IMPORT_MAX_ID = 10;
+        static final byte READING_VALUE = 11;
     }
 
     // The current state.
-    private State state = State.READING_VALUE;
+    private byte state = State.READING_VALUE;
 
     @Override
     public Event nextValue() {
         Event event;
-        if (isTopLevel() || state != State.READING_VALUE) {
+        if (isPositionedAtTopLevelOfStream() || state != State.READING_VALUE) {
             while (true) {
                 if (state != State.READING_VALUE) {
                     symbolTableReader.readSymbolTable();
@@ -956,7 +956,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                     }
                 }
                 event = super.nextValue();
-                if (isTopLevel() && isPositionedOnSymbolTable()) {
+                if (isPositionedAtTopLevelOfStream() && isPositionedOnSymbolTable()) {
                     cachedReadOnlySymbolTable = null;
                     symbolTableReader.resetState();
                     state = State.ON_SYMBOL_TABLE_STRUCT;
@@ -992,7 +992,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.getTypeAnnotations();
         }
-        if (!hasAnnotations) {
+        if (!hasAnnotations()) {
             return _Private_Utils.EMPTY_STRING_ARRAY;
         }
         if (annotationSequenceMarker.startIndex >= 0) {
@@ -1026,7 +1026,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.getTypeAnnotationSymbols();
         }
-        if (!hasAnnotations) {
+        if (!hasAnnotations()) {
             return SymbolToken.EMPTY_ARRAY;
         }
         if (annotationSequenceMarker.startIndex >= 0) {
@@ -1074,7 +1074,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.iterateTypeAnnotations();
         }
-        if (!hasAnnotations) {
+        if (!hasAnnotations()) {
             return EMPTY_ITERATOR;
         }
         if (annotationSequenceMarker.startIndex >= 0) {
