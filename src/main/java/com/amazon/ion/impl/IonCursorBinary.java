@@ -260,7 +260,7 @@ class IonCursorBinary implements IonCursor {
     /**
      * The index at which the next byte received will be written. Always greater than or equal to `offset`.
      */
-    long limit;
+    int limit;
 
     /**
      * A slice of the current buffer. May be used to create ByteBuffer views over value representation bytes for
@@ -383,12 +383,12 @@ class IonCursorBinary implements IonCursor {
     private static final byte IS_VALUE_INCOMPLETE_MASK  = 0b00100000;
     private static final byte IS_SYSTEM_INVOCATION_MASK = 0b01000000;
 
-//    private void setHasAnnotations() {
-//        packedFields |= HAS_ANNOTATIONS_MASK;
-//    }
-//    private void resetHasAnnotations() {
-//        packedFields &= ~HAS_ANNOTATIONS_MASK;
-//    }
+    private void setHasAnnotations() {
+        packedFields |= HAS_ANNOTATIONS_MASK;
+    }
+    private void clearHasAnnotations() {
+        packedFields &= ~HAS_ANNOTATIONS_MASK;
+    }
 
     /**
      * Describes the byte at the `checkpoint` index.
@@ -772,7 +772,7 @@ class IonCursorBinary implements IonCursor {
         if (refillableState.pinOffset > 0) {
             refillableState.pinOffset = 0;
         }
-        limit = size;
+        limit = (int) size;
     }
 
     /**
@@ -4014,7 +4014,7 @@ class IonCursorBinary implements IonCursor {
      */
     void slice(long offset, long limit, String ionVersionId) {
         peekIndex = (int) offset;
-        this.limit = limit;
+        this.limit = (int) limit;
         setCheckpointBeforeUnannotatedTypeId();
         valueMarker.endIndex = -1;
         event = Event.NEEDS_DATA;

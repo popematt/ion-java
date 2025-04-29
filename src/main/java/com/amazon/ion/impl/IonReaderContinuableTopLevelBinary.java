@@ -45,7 +45,6 @@ import java.io.InputStream;
  */
 final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableApplicationBinary implements IonReader, _Private_ReaderWriter {
 
-    private byte packedFields = 0;
     private static final byte ION_TYPE_MASK      = 0b00001111;
     // True if continuable reading is disabled.
     private static final byte IS_NON_CONTINUABLE = 0b00010000;
@@ -56,65 +55,65 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
     private static final byte IS_FILLING_VALUE   = 0b01000000;
 
     private boolean isNonContinuable() {
-        return (packedFields & IS_NON_CONTINUABLE) != 0;
+        return (topLevelReaderPackedFields & IS_NON_CONTINUABLE) != 0;
     }
     private void setIsNonContinuable(boolean value) {
         if (value) {
-            packedFields |= IS_NON_CONTINUABLE;
+            topLevelReaderPackedFields |= IS_NON_CONTINUABLE;
         } else {
-            packedFields &= ~IS_NON_CONTINUABLE;
+            topLevelReaderPackedFields &= ~IS_NON_CONTINUABLE;
         }
     }
 
     private boolean isFillRequired() {
-        return (packedFields & IS_FILL_REQUIRED) != 0;
+        return (topLevelReaderPackedFields & IS_FILL_REQUIRED) != 0;
     }
 
     private void setIsFillRequired(boolean value) {
         if (value) {
-            packedFields |= IS_FILL_REQUIRED;
+            topLevelReaderPackedFields |= IS_FILL_REQUIRED;
         } else {
-            packedFields &= ~IS_FILL_REQUIRED;
+            topLevelReaderPackedFields &= ~IS_FILL_REQUIRED;
         }
     }
 
     private boolean isFillingValue() {
-        return (packedFields & IS_FILLING_VALUE) != 0;
+        return (topLevelReaderPackedFields & IS_FILLING_VALUE) != 0;
     }
 
     private void setIsFillingValue(boolean isFillingValue) {
         if (isFillingValue) {
-            packedFields |= IS_FILLING_VALUE;
+            topLevelReaderPackedFields |= IS_FILLING_VALUE;
         } else {
-            packedFields &= ~IS_FILLING_VALUE;
+            topLevelReaderPackedFields &= ~IS_FILLING_VALUE;
         }
     }
 
     private void setIonType(IonType ionType) {
-        packedFields &= ~ION_TYPE_MASK;
+        topLevelReaderPackedFields &= ~ION_TYPE_MASK;
         if (ionType == null) {
             return;
         }
         switch (ionType) {
-            case NULL:      packedFields |= 0x1; return;
-            case BOOL:      packedFields |= 0x2; return;
-            case INT:       packedFields |= 0x3; return;
-            case FLOAT:     packedFields |= 0x4; return;
-            case DECIMAL:   packedFields |= 0x5; return;
-            case TIMESTAMP: packedFields |= 0x6; return;
-            case SYMBOL:    packedFields |= 0x7; return;
-            case STRING:    packedFields |= 0x8; return;
-            case CLOB:      packedFields |= 0x9; return;
-            case BLOB:      packedFields |= 0xA; return;
-            case LIST:      packedFields |= 0xB; return;
-            case SEXP:      packedFields |= 0xC; return;
-            case STRUCT:    packedFields |= 0xD; return;
-            case DATAGRAM:  packedFields |= 0xE;
+            case NULL:      topLevelReaderPackedFields |= 0x1; return;
+            case BOOL:      topLevelReaderPackedFields |= 0x2; return;
+            case INT:       topLevelReaderPackedFields |= 0x3; return;
+            case FLOAT:     topLevelReaderPackedFields |= 0x4; return;
+            case DECIMAL:   topLevelReaderPackedFields |= 0x5; return;
+            case TIMESTAMP: topLevelReaderPackedFields |= 0x6; return;
+            case SYMBOL:    topLevelReaderPackedFields |= 0x7; return;
+            case STRING:    topLevelReaderPackedFields |= 0x8; return;
+            case CLOB:      topLevelReaderPackedFields |= 0x9; return;
+            case BLOB:      topLevelReaderPackedFields |= 0xA; return;
+            case LIST:      topLevelReaderPackedFields |= 0xB; return;
+            case SEXP:      topLevelReaderPackedFields |= 0xC; return;
+            case STRUCT:    topLevelReaderPackedFields |= 0xD; return;
+            case DATAGRAM:  topLevelReaderPackedFields |= 0xE;
         }
     }
 
     private IonType getIonType() {
-        switch (packedFields & ION_TYPE_MASK) {
+        switch (topLevelReaderPackedFields & ION_TYPE_MASK) {
             case 0x0: return null;
             case 0x1: return IonType.NULL;
             case 0x2: return IonType.BOOL;
@@ -131,16 +130,16 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
             case 0xD: return IonType.STRUCT;
             case 0xE: return IonType.DATAGRAM;
             default:
-                throw new IllegalStateException("Cannot get IonType from packed fields: " + packedFields);
+                throw new IllegalStateException("Cannot get IonType from packed fields: " + topLevelReaderPackedFields);
         }
     }
 
     private void clearIonType() {
-        packedFields &= ~ION_TYPE_MASK;
+        topLevelReaderPackedFields &= ~ION_TYPE_MASK;
     }
 
     private boolean hasIonType() {
-        return (packedFields & ION_TYPE_MASK) != 0;
+        return (topLevelReaderPackedFields & ION_TYPE_MASK) != 0;
     }
 
     // The SymbolTable that was transferred via the last call to pop_passed_symbol_table.

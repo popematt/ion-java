@@ -106,11 +106,15 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     // Initial capacity of the ArrayList used to hold the symbol IDs of the annotations on the current value.
     private static final int ANNOTATIONS_LIST_INITIAL_CAPACITY = 8;
 
+    // The current state.
+    protected byte applicationReaderState = 11; // IonReaderContinuableApplicationBinary.State.READING_VALUE;
 
-    final Utf8StringDecoder utf8Decoder = Utf8StringDecoderPool.getInstance().getOrCreate();
-
+    protected byte topLevelReaderPackedFields = 0;
 
     static class Helpers {
+
+        private final Utf8StringDecoder utf8Decoder = Utf8StringDecoderPool.getInstance().getOrCreate();
+
         // Converter between scalar types, allowing, for example, for a value encoded as an Ion float to be returned as a
         // Java `long` via `IonReader.longValue()`.
         final _Private_ScalarConversions.ValueVariant scalarConverter = new _Private_ScalarConversions.ValueVariant();
@@ -2647,7 +2651,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         }
         prepareScalar();
         ByteBuffer utf8InputBuffer = prepareByteBuffer(valueMarker.startIndex, valueMarker.endIndex);
-        return utf8Decoder.decode(utf8InputBuffer, (int) (valueMarker.endIndex - valueMarker.startIndex));
+        return helpers.utf8Decoder.decode(utf8InputBuffer, (int) (valueMarker.endIndex - valueMarker.startIndex));
     }
 
     @Override
@@ -2822,7 +2826,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             } else {
                 // The token is inline UTF-8 text.
                 ByteBuffer utf8InputBuffer = prepareByteBuffer(marker.startIndex, marker.endIndex);
-                consumer.accept(new SymbolTokenImpl(utf8Decoder.decode(utf8InputBuffer, (int) (marker.endIndex - marker.startIndex)), -1));
+                consumer.accept(new SymbolTokenImpl(helpers.utf8Decoder.decode(utf8InputBuffer, (int) (marker.endIndex - marker.startIndex)), -1));
             }
         }
     }
@@ -2874,7 +2878,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             return getSystemSymbolToken(fieldTextMarker).getText();
         }
         ByteBuffer utf8InputBuffer = prepareByteBuffer(fieldTextMarker.startIndex, fieldTextMarker.endIndex);
-        return utf8Decoder.decode(utf8InputBuffer, (int) (fieldTextMarker.endIndex - fieldTextMarker.startIndex));
+        return helpers.utf8Decoder.decode(utf8InputBuffer, (int) (fieldTextMarker.endIndex - fieldTextMarker.startIndex));
     }
 
     @Override
@@ -2952,7 +2956,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (macroEvaluatorIonReader != null) {
             macroEvaluatorIonReader.close();
         }
-        utf8Decoder.close();
+        helpers.utf8Decoder.close();
         super.close();
     }
 }
