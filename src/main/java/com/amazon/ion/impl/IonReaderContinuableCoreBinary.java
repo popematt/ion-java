@@ -1228,7 +1228,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         return encodingContext;
     }
 
-    private Event superNextValue() {
+    private byte superNextValue() {
         return IonReaderContinuableCoreBinary.super.nextValue();
     }
 
@@ -1265,7 +1265,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             if (coreReader.isEvaluatingEExpression) {
                 return false;
             }
-            Event event = coreReader.fillValue();
+            byte event = coreReader.fillValue();
             return event == Event.NEEDS_DATA || event == Event.NEEDS_INSTRUCTION;
         }
 
@@ -1390,7 +1390,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
          * Navigate to the next value at the core level (without interpretation by subclasses).
          * @return the event that conveys the result of the operation.
          */
-        private Event coreNextValue() {
+        private byte coreNextValue() {
             if (coreReader.isEvaluatingEExpression) {
                 coreReader.evaluateNext();
                 return coreReader.event;
@@ -1415,7 +1415,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
          * `NEEDS_DATA` and this method can be called again when more data is available.
          */
         void readEncodingDirective() {
-            Event event;
+            byte event;
             while (true) {
                 switch (coreReader.state) {
                     case State.ON_DIRECTIVE_SEXP:
@@ -2000,7 +2000,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event nextValue() {
+    public byte nextValue() {
         helpers.lobBytesRead = 0;
         while (true) {
             if (isPositionedAtTopLevelOfStream() || state != State.READING_VALUE) {
@@ -2050,7 +2050,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event fillValue() {
+    public byte fillValue() {
         if (isEvaluatingEExpression) {
             event = Event.VALUE_READY;
             return event;
@@ -2059,7 +2059,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event stepIntoContainer() {
+    public byte stepIntoContainer() {
         if (isEvaluatingEExpression) {
             macroEvaluatorIonReader.stepIn();
             event = Event.NEEDS_INSTRUCTION;
@@ -2069,7 +2069,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event stepOutOfContainer() {
+    public byte stepOutOfContainer() {
         if (isEvaluatingEExpression) {
             if (macroEvaluatorIonReader.getDepth() > 0) {
                 // The user has stepped into a container produced by the evaluator. Therefore, this stepOut() call
