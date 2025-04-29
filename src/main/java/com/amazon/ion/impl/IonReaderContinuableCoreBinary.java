@@ -163,7 +163,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
     private final Helpers helpers;
 
-    long corePeekIndex = -1;
+    int corePeekIndex = -1;
 
     // The symbol IDs for the annotations on the current value.
     private final IntList annotationSids;
@@ -652,7 +652,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         } else if (result < 0) {
             markerToSet.startIndex = corePeekIndex;
             markerToSet.endIndex = corePeekIndex - result;
-            corePeekIndex = markerToSet.endIndex;
+            corePeekIndex = (int) markerToSet.endIndex;
             return -1;
         } else {
             markerToSet.endIndex = result;
@@ -670,13 +670,13 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             return 0;
         }
         long startIndex = corePeekIndex;
-        corePeekIndex = valueMarker.endIndex;
+        corePeekIndex = (int) valueMarker.endIndex;
         // Note: the following line performs sign extension via the cast to long without masking with 0xFF.
         long value = buffer[(int) --corePeekIndex];
         while (corePeekIndex > startIndex) {
             value = (value << 8) | (buffer[(int) --corePeekIndex] & SINGLE_BYTE_MASK);
         }
-        corePeekIndex = valueMarker.endIndex;
+        corePeekIndex = (int) valueMarker.endIndex;
         return value;
     }
 
@@ -698,7 +698,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         for (long i = corePeekIndex; i < valueMarker.endIndex; i++) {
             bytes[--copyIndex] = buffer[(int) i];
         }
-        corePeekIndex = valueMarker.endIndex;
+        corePeekIndex = (int) valueMarker.endIndex;
         return new BigInteger(bytes);
     }
 
@@ -749,7 +749,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 bytes[copyIndex] = (byte) (b >>> bitShift);
             }
         }
-        corePeekIndex = valueMarker.endIndex;
+        corePeekIndex = (int) valueMarker.endIndex;
         return new BigInteger(bytes);
     }
 
@@ -853,7 +853,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return the value.
      */
     private long readLong_1_1() {
-        corePeekIndex = valueMarker.startIndex;
+        corePeekIndex = (int) valueMarker.startIndex;
         if (taglessType != null) {
             return readTaglessInt_1_1();
         }
@@ -865,7 +865,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return the value.
      */
     private BigInteger readBigInteger_1_1() {
-        corePeekIndex = valueMarker.startIndex;
+        corePeekIndex = (int) valueMarker.startIndex;
         if (taglessType != null) {
             return readTaglessIntAsBigInteger_1_1();
         }
@@ -884,7 +884,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         // encoding of fractional seconds less than 0.0. The scale is encoded as a FlexUInt (instead of FlexInt)
         // to discourage the encoding of decimal numbers greater than 1.0.
         BigDecimal value;
-        corePeekIndex = valueMarker.startIndex + L_TIMESTAMP_SECOND_BYTE_LENGTH;
+        corePeekIndex = (int)  valueMarker.startIndex + L_TIMESTAMP_SECOND_BYTE_LENGTH;
         int scale = (int) readFlexUInt_1_1();
         int length = (int) (valueMarker.endIndex - corePeekIndex);
         if (length >= LONG_SIZE_IN_BYTES) {
@@ -1812,8 +1812,8 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      */
     protected boolean startsWithIonSymbolTable() {
         if (getMinorVersion() == 0 && annotationSequenceMarker.startIndex >= 0) {
-            long savedPeekIndex = corePeekIndex;
-            corePeekIndex = annotationSequenceMarker.startIndex;
+            int savedPeekIndex = corePeekIndex;
+            corePeekIndex = (int) annotationSequenceMarker.startIndex;
             int sid = readVarUInt_1_0();
             corePeekIndex = savedPeekIndex;
             return ION_SYMBOL_TABLE_SID == sid;
@@ -2364,7 +2364,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 return null;
             }
             prepareScalar();
-            corePeekIndex = valueMarker.startIndex;
+            corePeekIndex = (int) valueMarker.startIndex;
             if (corePeekIndex >= valueMarker.endIndex) {
                 value = BigDecimal.ZERO;
             } else {
@@ -2403,7 +2403,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 return null;
             }
             prepareScalar();
-            corePeekIndex = valueMarker.startIndex;
+            corePeekIndex = (int) valueMarker.startIndex;
             if (corePeekIndex >= valueMarker.endIndex) {
                 value = Decimal.ZERO;
             } else {
@@ -2606,7 +2606,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             return null;
         }
         prepareScalar();
-        corePeekIndex = valueMarker.startIndex;
+        corePeekIndex = (int)  valueMarker.startIndex;
         if (corePeekIndex >= valueMarker.endIndex) {
             throw new IonException("Timestamp value cannot have length 0.");
         }
@@ -2721,7 +2721,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             if (taglessType != null) {
                 // It is the caller's responsibility to call 'symbolValueId()' only when 'hasSymbolText()' is false,
                 // meaning that the tagless FlexSym is encoded as a FlexInt representing a symbol ID.
-                corePeekIndex = valueMarker.startIndex;
+                corePeekIndex = (int) valueMarker.startIndex;
                 return (int) readFlexInt_1_1();
             }
             if (valueMarker.typeId.length == 1){
@@ -2729,7 +2729,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             } else if (valueMarker.typeId.length == 2){
                 return (int) readFixedUInt_1_1(valueMarker.startIndex, valueMarker.endIndex) + 256;
             } else if (valueMarker.typeId.length == -1) {
-                corePeekIndex = valueMarker.startIndex;
+                corePeekIndex = (int) valueMarker.startIndex;
                 return (int) readFlexUInt_1_1() + 65792;
             } else {
                 throw new IllegalStateException("Illegal length " + valueMarker.typeId.length + " for " + valueMarker);
@@ -2744,7 +2744,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     IntList getAnnotationSidList() {
         annotationSids.clear();
         long savedPeekIndex = corePeekIndex;
-        corePeekIndex = annotationSequenceMarker.startIndex;
+        corePeekIndex = (int) annotationSequenceMarker.startIndex;
         if (getMinorVersion() == 0) {
             while (corePeekIndex < annotationSequenceMarker.endIndex) {
                 annotationSids.add(readVarUInt_1_0());
@@ -2754,7 +2754,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 annotationSids.add((int) readFlexUInt_1_1());
             }
         }
-        corePeekIndex = savedPeekIndex;
+        corePeekIndex = (int) savedPeekIndex;
         return annotationSids;
     }
 
@@ -2833,8 +2833,8 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      */
     MarkerList getAnnotationMarkerList() {
         annotationTokenMarkers.clear();
-        long savedPeekIndex = corePeekIndex;
-        corePeekIndex = annotationSequenceMarker.startIndex;
+        int savedPeekIndex = corePeekIndex;
+        corePeekIndex = (int) annotationSequenceMarker.startIndex;
         while (corePeekIndex < annotationSequenceMarker.endIndex) {
             Marker provisionalMarker = annotationTokenMarkers.provisionalElement();
             int annotationSid = (int) readFlexSym_1_1(provisionalMarker);

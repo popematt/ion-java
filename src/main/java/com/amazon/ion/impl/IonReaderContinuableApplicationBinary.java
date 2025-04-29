@@ -162,7 +162,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         public String next() {
             if (isSids) {
                 long savedPeekIndex = corePeekIndex;
-                corePeekIndex = nextAnnotationPeekIndex;
+                corePeekIndex = (int) nextAnnotationPeekIndex;
                 int sid;
                 if (getMinorVersion() == 0) {
                     byte b = buffer[(int) corePeekIndex++];
@@ -175,7 +175,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                     sid = (int) readFlexInt_1_1();
                 }
                 nextAnnotationPeekIndex = corePeekIndex;
-                corePeekIndex = savedPeekIndex;
+                corePeekIndex = (int) savedPeekIndex;
                 return convertToString(sid);
             }
             Marker marker = annotationTokenMarkers.get((int) nextAnnotationPeekIndex++);
@@ -195,10 +195,10 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         SymbolToken nextSymbolToken() {
             if (isSids) {
                 long savedPeekIndex = corePeekIndex;
-                corePeekIndex = nextAnnotationPeekIndex;
+                corePeekIndex = (int) nextAnnotationPeekIndex;
                 int sid = getMinorVersion() == 0 ? readVarUInt_1_0() : (int) readFlexInt_1_1();
                 nextAnnotationPeekIndex = corePeekIndex;
-                corePeekIndex = savedPeekIndex;
+                corePeekIndex = (int) savedPeekIndex;
                 return getSymbolToken(sid);
             }
             Marker marker = annotationTokenMarkers.get((int) nextAnnotationPeekIndex++);
