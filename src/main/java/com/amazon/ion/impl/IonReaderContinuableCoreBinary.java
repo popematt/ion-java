@@ -1397,7 +1397,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         private byte coreNextValue() {
             if (coreReader.isEvaluatingEExpression) {
                 coreReader.evaluateNext();
-                return coreReader.event;
+                return (byte) coreReader.event;
             } else {
                 return coreReader.superNextValue();
             }
@@ -2050,14 +2050,14 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             }
             break;
         }
-        return event;
+        return (byte) event;
     }
 
     @Override
     public byte fillValue() {
         if (isEvaluatingEExpression) {
             event = Event.VALUE_READY;
-            return event;
+            return (byte) event;
         }
         return super.fillValue();
     }
@@ -2067,7 +2067,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (isEvaluatingEExpression) {
             macroEvaluatorIonReader.stepIn();
             event = Event.NEEDS_INSTRUCTION;
-            return event;
+            return (byte) event;
         }
         return super.stepIntoContainer();
     }
@@ -2080,7 +2080,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 // must step out of that evaluated container.
                 macroEvaluatorIonReader.stepOut();
                 event = Event.NEEDS_INSTRUCTION;
-                return event;
+                return (byte) event;
             } else {
                 // The evaluator is not producing a container value. Therefore, the user intends for this stepOut() call
                 // to step out of the parent container of the e-expression being evaluated. This terminates e-expression
@@ -2946,9 +2946,9 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     @Override
     public int getDepth() {
         if (isEvaluatingEExpression) {
-            return containerIndex + 1 + macroEvaluatorIonReader.getDepth();
+            return containerIndex + macroEvaluatorIonReader.getDepth();
         }
-        return containerIndex + 1;
+        return containerIndex;
     }
 
     @Override
