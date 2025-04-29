@@ -142,6 +142,40 @@ final class IonTypeID {
         SYSTEM_MACRO_INVOCATION_ID = TYPE_IDS_1_1[OpCodes.SYSTEM_MACRO_INVOCATION & 0xFF];
     }
 
+    /*
+    Conditions:
+
+    [[[[
+    0x00 - is null
+    0x01 - is Boolean
+    0x02 - is Int
+    0x03 - is Float
+    0x04 - is Decimal
+    0x05 - is String
+    0x06 - is Symbol
+    0x07 - is Blob
+    0x08 - is Clob
+    0x09 - is Timestamp
+    0x0A - is List
+    0x0B - is Sexp
+    0x0C - is Struct
+    0x0D - is Annotations
+    0x0E - is Macro
+    0x0F - is NOP
+
+    - is Container
+
+    [- is VariableLength (Length prefix not in header)
+
+    [- is Delimited (No length prefix)
+    [- is System (Symbol, Macro)
+
+    Share a bit:
+    [- is Inlineable (For structs, denotes whether field names are FlexSyms. For symbols, denotes whether the text is inline. For annotation wrappers, denotes whether tokens are FlexSyms.)
+    [- is Ion 1.0 NegativeInt
+
+     */
+
     final IonType type;
     final int length;
     final boolean variableLength;
