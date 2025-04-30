@@ -115,7 +115,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                 boolean mightBeSymbolTable = true;
                 if (state == State.READING_VALUE) {
                     // The reader is not currently processing a symbol table.
-                    if (parent != null || !hasAnnotations) {
+                    if (parentMarker() != null || !hasAnnotations()) {
                         // Only top-level annotated values can be symbol tables.
                         mightBeSymbolTable = false;
                     } else if (annotationSequenceMarker.startIndex >= 0 && annotationSequenceMarker.endIndex <= limit) {
@@ -164,7 +164,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                 long savedPeekIndex = peekIndex;
                 peekIndex = nextAnnotationPeekIndex;
                 int sid;
-                if (minorVersion == 0) {
+                if (getMinorVersion() == 0) {
                     byte b = buffer[(int) peekIndex++];
                     if (b < 0) {
                         sid = b & 0x7F;
@@ -196,7 +196,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             if (isSids) {
                 long savedPeekIndex = peekIndex;
                 peekIndex = nextAnnotationPeekIndex;
-                int sid = minorVersion == 0 ? readVarUInt_1_0() : (int) readFlexInt_1_1();
+                int sid = getMinorVersion() == 0 ? readVarUInt_1_0() : (int) readFlexInt_1_1();
                 nextAnnotationPeekIndex = peekIndex;
                 peekIndex = savedPeekIndex;
                 return getSymbolToken(sid);
@@ -622,7 +622,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private boolean valueUnavailable() {
-            Event event = fillValue();
+            byte event = fillValue();
             return event == Event.NEEDS_DATA || event == Event.NEEDS_INSTRUCTION;
         }
 
@@ -666,7 +666,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         private void readSymbolTableStructField() {
-            if (minorVersion > 0) {
+            if (getMinorVersion() > 0) {
                 readSymbolTableStructField_1_1();
                 return;
             }
@@ -705,14 +705,14 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
             resetImports(getIonMajorVersion(), getIonMinorVersion());
             resetSymbolTable();
             newImports = new ArrayList<>(3);
-            if (minorVersion == 0) {
+            if (getMinorVersion() == 0) {
                 newImports.add(getSystemSymbolTable());
             }
             state = State.READING_SYMBOL_TABLE_IMPORTS_LIST;
         }
 
         private void preparePossibleAppend() {
-            if (minorVersion > 0) {
+            if (getMinorVersion() > 0) {
                 prepareScalar();
                 if (!matchesSystemSymbol_1_1(valueMarker, SystemSymbols_1_1.ION_SYMBOL_TABLE)) {
                     resetSymbolTable();
@@ -777,7 +777,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
         private void startReadingImportStructField() {
             int fieldId = getFieldId();
-            if (minorVersion > 0 && fieldId < 0) {
+            if (getMinorVersion() > 0 && fieldId < 0) {
                 fieldId = mapInlineTextToSystemSid(fieldTextMarker);
             }
             if (fieldId == NAME_SID) {
@@ -811,7 +811,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         }
 
         void readSymbolTable() {
-            Event event;
+            byte event;
             while (true) {
                 switch (state) {
                     case ON_SYMBOL_TABLE_STRUCT:
@@ -944,9 +944,9 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
     private State state = State.READING_VALUE;
 
     @Override
-    public Event nextValue() {
-        Event event;
-        if (parent == null || state != State.READING_VALUE) {
+    public byte nextValue() {
+        byte event;
+        if (isPositionedAtTopLevelOfStream() || state != State.READING_VALUE) {
             while (true) {
                 if (state != State.READING_VALUE) {
                     symbolTableReader.readSymbolTable();
@@ -956,7 +956,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
                     }
                 }
                 event = super.nextValue();
-                if (parent == null && isPositionedOnSymbolTable()) {
+                if (isPositionedAtTopLevelOfStream() && isPositionedOnSymbolTable()) {
                     cachedReadOnlySymbolTable = null;
                     symbolTableReader.resetState();
                     state = State.ON_SYMBOL_TABLE_STRUCT;
@@ -992,7 +992,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.getTypeAnnotations();
         }
-        if (!hasAnnotations) {
+        if (!hasAnnotations()) {
             return _Private_Utils.EMPTY_STRING_ARRAY;
         }
         if (annotationSequenceMarker.startIndex >= 0) {
@@ -1026,7 +1026,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.getTypeAnnotationSymbols();
         }
-        if (!hasAnnotations) {
+        if (!hasAnnotations()) {
             return SymbolToken.EMPTY_ARRAY;
         }
         if (annotationSequenceMarker.startIndex >= 0) {
@@ -1074,7 +1074,7 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.iterateTypeAnnotations();
         }
-        if (!hasAnnotations) {
+        if (!hasAnnotations()) {
             return EMPTY_ITERATOR;
         }
         if (annotationSequenceMarker.startIndex >= 0) {

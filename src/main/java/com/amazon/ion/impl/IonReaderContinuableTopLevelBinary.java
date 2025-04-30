@@ -145,11 +145,11 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
             // reading the incomplete container until the end is reached.
             // Each value contains its own length prefix, so it is safe to reset the incomplete flag before attempting
             // to read the value.
-            isValueIncomplete = false;
+            setIsValueIncomplete(false);
             if (nextValue() == IonCursor.Event.NEEDS_DATA) {
                 // Attempting to read the partial value required consuming the remaining bytes in the stream, which
                 // is now at its end.
-                isValueIncomplete = true;
+                setIsValueIncomplete(true);
                 endStream();
             } else {
                 // The reader successfully positioned itself on a value within an incomplete container.
@@ -161,14 +161,14 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
     @Override
     public IonType next() {
         type = null;
-        if (isValueIncomplete) {
+        if (isValueIncomplete()) {
             handleIncompleteValue();
-        } else if (!isSlowMode || isNonContinuable || parent != null) {
+        } else if (!isSlowMode() || isNonContinuable || !isPositionedAtTopLevelOfStream()) {
             if (nextValue() == IonCursor.Event.NEEDS_DATA) {
                 if (isNonContinuable) {
                     endStream();
                 }
-            } else if (isValueIncomplete && !isNonContinuable) {
+            } else if (isValueIncomplete() && !isNonContinuable) {
                 // The value is incomplete and the reader is continuable, so the reader must return null from next().
                 // Setting the event to NEEDS_DATA ensures that if the user attempts to skip past the incomplete
                 // value, null will continue to be returned.
@@ -203,10 +203,10 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
     /**
      * Prepares a scalar value to be parsed by ensuring it is present in the buffer.
      */
-    @Override
+
     void prepareScalar() {
-        if (!isValueIncomplete) {
-            if (!isSlowMode || event == IonCursor.Event.VALUE_READY) {
+        if (!isValueIncomplete()) {
+            if (!isSlowMode() || event == IonCursor.Event.VALUE_READY) {
                 super.prepareScalar();
                 return;
             }

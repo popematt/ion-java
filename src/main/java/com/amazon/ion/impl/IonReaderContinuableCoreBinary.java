@@ -1101,7 +1101,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return true if current value has a sequence of annotations that begins with `$ion`; otherwise, false.
      */
     boolean startsWithIonAnnotation() {
-        if (minorVersion > 0) {
+        if (getMinorVersion() > 0) {
             Marker marker = annotationTokenMarkers.get(0);
             return matchesSystemSymbol_1_1(marker, SystemSymbols_1_1.ION);
         }
@@ -1142,9 +1142,9 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      */
     private boolean isPositionedOnEncodingDirective() {
         return event == Event.START_CONTAINER
-            && hasAnnotations
+            && hasAnnotations()
             && valueMarker.typeId.type == IonType.SEXP
-            && parent == null
+            && isPositionedAtTopLevelOfStream()
             && startsWithIonAnnotation();
     }
 
@@ -1240,7 +1240,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             if (isEvaluatingEExpression) {
                 return false;
             }
-            Event event = fillValue();
+            byte event = fillValue();
             return event == Event.NEEDS_DATA || event == Event.NEEDS_INSTRUCTION;
         }
 
@@ -1365,7 +1365,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
          * Navigate to the next value at the core level (without interpretation by subclasses).
          * @return the event that conveys the result of the operation.
          */
-        private Event coreNextValue() {
+        private byte coreNextValue() {
             if (isEvaluatingEExpression) {
                 evaluateNext();
                 return event;
@@ -1390,7 +1390,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
          * `NEEDS_DATA` and this method can be called again when more data is available.
          */
         void readEncodingDirective() {
-            Event event;
+            byte event;
             while (true) {
                 switch (state) {
                     case ON_DIRECTIVE_SEXP:
@@ -1743,7 +1743,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
         @Override
         protected List<SymbolToken> getAnnotations() {
-            if (!hasAnnotations) {
+            if (!hasAnnotations()) {
                 return Collections.emptyList();
             }
             List<SymbolToken> out = new ArrayList<>();
@@ -1773,7 +1773,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
         @Override
         protected void stepOutOfEExpression() {
-            validateValueEndIndex(parent.endIndex);
+            validateValueEndIndex(parentMarker().endIndex);
             IonReaderContinuableCoreBinary.super.stepOutOfEExpression();
         }
     }
@@ -1783,13 +1783,13 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      *  false.
      */
     protected boolean startsWithIonSymbolTable() {
-        if (minorVersion == 0 && annotationSequenceMarker.startIndex >= 0) {
+        if (getMinorVersion() == 0 && annotationSequenceMarker.startIndex >= 0) {
             long savedPeekIndex = peekIndex;
             peekIndex = annotationSequenceMarker.startIndex;
             int sid = readVarUInt_1_0();
             peekIndex = savedPeekIndex;
             return ION_SYMBOL_TABLE_SID == sid;
-        } else if (minorVersion == 1) {
+        } else if (getMinorVersion() == 1) {
             Marker marker = annotationTokenMarkers.get(0);
             return matchesSystemSymbol_1_1(marker, SystemSymbols_1_1.ION_SYMBOL_TABLE);
         }
@@ -1800,7 +1800,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return true if the reader is positioned on a symbol table; otherwise, false.
      */
     protected boolean isPositionedOnSymbolTable() {
-        return hasAnnotations &&
+        return hasAnnotations() &&
             getEncodingType() == IonType.STRUCT &&
             startsWithIonSymbolTable();
     }
@@ -1857,7 +1857,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         // is not considered critical.
         lobBytesRead = 0;
         while (true) {
-            if (parent == null || state != State.READING_VALUE) {
+            if (isPositionedAtTopLevelOfStream() || state != State.READING_VALUE) {
                 boolean isEncodingDirective = false;
                 if (state != State.READING_VALUE && state != State.COMPILING_MACRO) {
                     boolean isEncodingDirectiveFromEExpression = isEvaluatingEExpression;
@@ -1888,7 +1888,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 } else {
                     event = super.nextValue();
                 }
-                if (minorVersion == 1 && parent == null && isPositionedOnEncodingDirective()) {
+                if (getMinorVersion() == 1 && isPositionedAtTopLevelOfStream() && isPositionedOnEncodingDirective()) {
                     encodingDirectiveReader.resetState();
                     state = State.ON_DIRECTIVE_SEXP;
                     continue;
@@ -1909,7 +1909,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                     // This macro invocation expands to nothing; continue iterating until a user value is found.
                     continue;
                 }
-                if (parent == null && isPositionedOnEvaluatedEncodingDirective()) {
+                if (isPositionedAtTopLevelOfStream() && isPositionedOnEvaluatedEncodingDirective()) {
                     encodingDirectiveReader.resetState();
                     state = State.ON_DIRECTIVE_SEXP;
                     continue;
@@ -1935,8 +1935,8 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @throws IOException if thrown by the writer during transcoding.
      */
     private void transcodeValueLiteral() throws IOException {
-        if (parent == null && isPositionedOnSymbolTable()) {
-            if (minorVersion > 0) {
+        if (isPositionedAtTopLevelOfStream() && isPositionedOnSymbolTable()) {
+            if (getMinorVersion() > 0) {
                 // TODO finalize handling of Ion 1.0-style symbol tables in Ion 1.1: https://github.com/amazon-ion/ion-java/issues/1002
                 throw new IonException("Macro-aware transcoding of Ion 1.1 data containing Ion 1.0-style symbol tables not yet supported.");
             }
@@ -1971,10 +1971,10 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event nextValue() {
+    public byte nextValue() {
         lobBytesRead = 0;
         while (true) {
-            if (parent == null || state != State.READING_VALUE) {
+            if (isPositionedAtTopLevelOfStream() || state != State.READING_VALUE) {
                 if (state != State.READING_VALUE && state != State.COMPILING_MACRO) {
                     encodingDirectiveReader.readEncodingDirective();
                     if (state != State.READING_VALUE) {
@@ -1989,7 +1989,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 } else {
                     event = super.nextValue();
                 }
-                if (minorVersion == 1 && parent == null && isPositionedOnEncodingDirective()) {
+                if (getMinorVersion() == 1 && isPositionedAtTopLevelOfStream() && isPositionedOnEncodingDirective()) {
                     encodingDirectiveReader.resetState();
                     state = State.ON_DIRECTIVE_SEXP;
                     continue;
@@ -2008,7 +2008,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                     if (evaluateNext()) {
                         continue;
                     }
-                    if (parent == null && isPositionedOnEvaluatedEncodingDirective()) {
+                    if (isPositionedAtTopLevelOfStream() && isPositionedOnEvaluatedEncodingDirective()) {
                         encodingDirectiveReader.resetState();
                         state = State.ON_DIRECTIVE_SEXP;
                         continue;
@@ -2021,7 +2021,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event fillValue() {
+    public byte fillValue() {
         if (isEvaluatingEExpression) {
             event = Event.VALUE_READY;
             return event;
@@ -2030,7 +2030,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event stepIntoContainer() {
+    public byte stepIntoContainer() {
         if (isEvaluatingEExpression) {
             macroEvaluatorIonReader.stepIn();
             event = Event.NEEDS_INSTRUCTION;
@@ -2040,7 +2040,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event stepOutOfContainer() {
+    public byte stepOutOfContainer() {
         if (isEvaluatingEExpression) {
             if (macroEvaluatorIonReader.getDepth() > 0) {
                 // The user has stepped into a container produced by the evaluator. Therefore, this stepOut() call
@@ -2142,7 +2142,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return the matching size.
      */
     private IntegerSize classifyFixedWidthInteger(IntegerSize smaller, IntegerSize larger) {
-        if (minorVersion == 0) {
+        if (getMinorVersion() == 0) {
             return classifyInteger_1_0() ? smaller : larger;
         }
         if (taglessType == null) {
@@ -2337,7 +2337,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             if (peekIndex >= valueMarker.endIndex) {
                 value = BigDecimal.ZERO;
             } else {
-                value = minorVersion == 0 ? readBigDecimal_1_0() : readBigDecimal_1_1();
+                value = getMinorVersion() == 0 ? readBigDecimal_1_0() : readBigDecimal_1_1();
             }
         } else if (valueMarker.typeId.type == IonType.INT) {
             if (valueMarker.typeId.isNull) {
@@ -2374,7 +2374,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             if (peekIndex >= valueMarker.endIndex) {
                 value = Decimal.ZERO;
             } else {
-                value = minorVersion == 0 ? readDecimal_1_0() : readDecimal_1_1();
+                value = getMinorVersion() == 0 ? readDecimal_1_0() : readDecimal_1_1();
             }
         } else if (valueMarker.typeId.type == IonType.INT) {
             if (valueMarker.typeId.isNull) {
@@ -2410,7 +2410,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 return 0;
             }
             prepareScalar();
-            value = minorVersion == 0 ? readLong_1_0() : readLong_1_1();
+            value = getMinorVersion() == 0 ? readLong_1_0() : readLong_1_1();
         } else if (valueMarker.typeId.type == IonType.FLOAT) {
             scalarConverter.addValue(doubleValue());
             scalarConverter.setAuthoritativeType(_Private_ScalarConversions.AS_TYPE.double_value);
@@ -2445,7 +2445,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 return BigInteger.ZERO;
             }
             prepareScalar();
-            value = minorVersion == 0 ? readBigInteger_1_0() : readBigInteger_1_1();
+            value = getMinorVersion() == 0 ? readBigInteger_1_0() : readBigInteger_1_1();
         } else if (valueMarker.typeId.type == IonType.FLOAT) {
             if (valueMarker.typeId.isNull) {
                 value = null;
@@ -2527,7 +2527,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             }
             ByteBuffer bytes = prepareByteBuffer(valueMarker.startIndex, valueMarker.endIndex);
             if (length == FLOAT_16_BYTE_LENGTH) {
-                if (minorVersion == 0) {
+                if (getMinorVersion() == 0) {
                     throw new IonException("Ion 1.0 floats may may only have length 0, 4, or 8.");
                 }
                 value = readFloat16(bytes);
@@ -2570,7 +2570,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (peekIndex >= valueMarker.endIndex) {
             throw new IonException("Timestamp value cannot have length 0.");
         }
-        return minorVersion == 0 ? readTimestamp_1_0() : readTimestamp_1_1();
+        return getMinorVersion() == 0 ? readTimestamp_1_0() : readTimestamp_1_1();
     }
 
     @Override
@@ -2591,7 +2591,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             throwDueToInvalidType(IonType.BOOL);
         }
         prepareScalar();
-        return minorVersion == 0 ? readBoolean_1_0() : readBoolean_1_1();
+        return getMinorVersion() == 0 ? readBoolean_1_0() : readBoolean_1_1();
     }
 
     /**
@@ -2675,7 +2675,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             return -1;
         }
         prepareScalar();
-        if (minorVersion == 0) {
+        if (getMinorVersion() == 0) {
             return (int) readUInt(valueMarker.startIndex, valueMarker.endIndex);
         } else {
             if (taglessType != null) {
@@ -2705,7 +2705,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         annotationSids.clear();
         long savedPeekIndex = peekIndex;
         peekIndex = annotationSequenceMarker.startIndex;
-        if (minorVersion == 0) {
+        if (getMinorVersion() == 0) {
             while (peekIndex < annotationSequenceMarker.endIndex) {
                 annotationSids.add(readVarUInt_1_0());
             }
@@ -2774,7 +2774,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             Marker marker = annotationTokenMarkers.get(i);
             if (marker.startIndex < 0) {
                 // This means the endIndex represents the token's symbol ID.
-                if (minorVersion == 1 && marker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
+                if (getMinorVersion() == 1 && marker.typeId == IonTypeID.SYSTEM_SYMBOL_VALUE) {
                     consumer.accept(getSystemSymbolToken(marker));
                 } else {
                     consumer.accept(getSymbolToken((int) marker.endIndex));
@@ -2879,7 +2879,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.isInStruct();
         }
-        return parent != null && parent.typeId.type == IonType.STRUCT;
+        return parentMarker() != null && parentMarker().typeId.type == IonType.STRUCT;
     }
 
     @Override
