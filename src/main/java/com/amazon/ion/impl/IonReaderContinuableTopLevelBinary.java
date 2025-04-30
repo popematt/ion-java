@@ -45,18 +45,54 @@ import java.io.InputStream;
  */
 final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableApplicationBinary implements IonReader, _Private_ReaderWriter {
 
-    // True if continuable reading is disabled.
-    private final boolean isNonContinuable;
+    private IonType type = null;
 
+    // Contains IS_NON_CONTINUABLE, IS_FILL_REQUIRED, IS_FILLING_VALUE
+    private byte bitFlags = 0;
+    // True if continuable reading is disabled.
+    private static final byte IS_NON_CONTINUABLE = 0b00000001;
     // True if input is sourced from a non-fixed stream and the reader is non-continuable, meaning that its top level
     // values are not automatically filled during next().
-    private final boolean isFillRequired;
-
+    private static final byte IS_FILL_REQUIRED   = 0b00000010;
     // True if a value is in the process of being filled.
-    private boolean isFillingValue = false;
+    private static final byte IS_FILLING_VALUE   = 0b00000100;
 
-    // The type of value on which the reader is currently positioned.
-    private IonType type = null;
+    private boolean isNonContinuable() {
+        return (bitFlags & IS_NON_CONTINUABLE) != 0;
+    }
+    // IS_NON_CONTINUABLE is supposed to be final. Do not call this method outside the constructor.
+    private void setIsNonContinuable(boolean value) {
+        if (value) {
+            bitFlags |= IS_NON_CONTINUABLE;
+        } else {
+            bitFlags &= ~IS_NON_CONTINUABLE;
+        }
+    }
+
+    private boolean isFillRequired() {
+        return (bitFlags & IS_FILL_REQUIRED) != 0;
+    }
+
+    // IS_FILL_REQUIRED is supposed to be final. Do not call this method outside the constructor.
+    private void setIsFillRequired(boolean value) {
+        if (value) {
+            bitFlags |= IS_FILL_REQUIRED;
+        } else {
+            bitFlags &= ~IS_FILL_REQUIRED;
+        }
+    }
+
+    private boolean isFillingValue() {
+        return (bitFlags & IS_FILLING_VALUE) != 0;
+    }
+
+    private void setIsFillingValue(boolean isFillingValue) {
+        if (isFillingValue) {
+            bitFlags |= IS_FILLING_VALUE;
+        } else {
+            bitFlags &= ~IS_FILLING_VALUE;
+        }
+    }
 
     // The SymbolTable that was transferred via the last call to pop_passed_symbol_table.
     private SymbolTable symbolTableLastTransferred = null;
@@ -70,8 +106,8 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
      */
     IonReaderContinuableTopLevelBinary(IonReaderBuilder builder, InputStream inputStream, byte[] alreadyRead, int alreadyReadOff, int alreadyReadLen) {
         super(builder, inputStream, alreadyRead, alreadyReadOff, alreadyReadLen);
-        isNonContinuable = !builder.isIncrementalReadingEnabled();
-        isFillRequired = isNonContinuable;
+        setIsNonContinuable(!builder.isIncrementalReadingEnabled());
+        setIsFillRequired(isNonContinuable());
     }
 
     /**
@@ -83,8 +119,8 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
      */
     IonReaderContinuableTopLevelBinary(IonReaderBuilder builder, byte[] data, int offset, int length) {
         super(builder, data, offset, length);
-        isNonContinuable = !builder.isIncrementalReadingEnabled();
-        isFillRequired = false;
+        setIsNonContinuable(!builder.isIncrementalReadingEnabled());
+        setIsFillRequired(false);
     }
 
     @Override
@@ -114,16 +150,16 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
      */
     private void nextAndFill() {
         while (true) {
-            if (!isFillingValue && nextValue() == IonCursor.Event.NEEDS_DATA) {
+            if (!isFillingValue() && nextValue() == IonCursor.Event.NEEDS_DATA) {
                 return;
             }
-            isFillingValue = true;
+            setIsFillingValue(true);
             if (fillValue() == IonCursor.Event.NEEDS_DATA) {
                 return;
             }
-            isFillingValue = false;
+            setIsFillingValue(false);
             if (event != IonCursor.Event.NEEDS_INSTRUCTION) {
-                type = super.getType();
+                type = (super.getType());
                 return;
             }
             // The value was skipped for being too large. Get the next one.
@@ -137,10 +173,10 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
         if (event == Event.NEEDS_DATA) {
             // The reader has already consumed all bytes from the buffer. If non-continuable, this is the end of the
             // stream. If continuable, continue to return null from next().
-            if (isNonContinuable) {
+            if (isNonContinuable()) {
                 endStream();
             }
-        } else if (isNonContinuable) {
+        } else if (isNonContinuable()) {
             // The reader is non-continuable and has not yet consumed all bytes from the buffer, so it can continue
             // reading the incomplete container until the end is reached.
             // Each value contains its own length prefix, so it is safe to reset the incomplete flag before attempting
@@ -153,7 +189,7 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
                 endStream();
             } else {
                 // The reader successfully positioned itself on a value within an incomplete container.
-                type = super.getType();
+                type = (super.getType());
             }
         }
     }
@@ -163,18 +199,18 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
         type = null;
         if (isValueIncomplete()) {
             handleIncompleteValue();
-        } else if (!isSlowMode() || isNonContinuable || !isPositionedAtTopLevelOfStream()) {
+        } else if (!isSlowMode() || isNonContinuable() || !isPositionedAtTopLevelOfStream()) {
             if (nextValue() == IonCursor.Event.NEEDS_DATA) {
-                if (isNonContinuable) {
+                if (isNonContinuable()) {
                     endStream();
                 }
-            } else if (isValueIncomplete() && !isNonContinuable) {
+            } else if (isValueIncomplete() && !isNonContinuable()) {
                 // The value is incomplete and the reader is continuable, so the reader must return null from next().
                 // Setting the event to NEEDS_DATA ensures that if the user attempts to skip past the incomplete
                 // value, null will continue to be returned.
                 event = Event.NEEDS_DATA;
             } else {
-                isFillingValue = false;
+                setIsFillingValue(false);
                 type = super.getType();
             }
         } else {
@@ -186,7 +222,7 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
     @Override
     public void stepIn() {
         super.stepIntoContainer();
-        type = null;
+        type = null; // 3ms
     }
 
     @Override
@@ -210,7 +246,7 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
                 super.prepareScalar();
                 return;
             }
-            if (isFillRequired) {
+            if (isFillRequired()) {
                 if (fillValue() == Event.VALUE_READY) {
                     super.prepareScalar();
                     return;
@@ -342,7 +378,7 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
 
     @Override
     public void close() {
-        if (!isNonContinuable) {
+        if (!isNonContinuable()) {
             endStream();
         }
         super.close();
