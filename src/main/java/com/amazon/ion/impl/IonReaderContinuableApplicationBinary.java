@@ -15,6 +15,8 @@ import com.amazon.ion.SystemSymbols;
 import com.amazon.ion.UnknownSymbolException;
 import com.amazon.ion.ValueFactory;
 import com.amazon.ion.impl.bin.IntList;
+import com.amazon.ion.impl.bin.utf8.Utf8StringDecoder;
+import com.amazon.ion.impl.bin.utf8.Utf8StringDecoderPool;
 import com.amazon.ion.system.IonReaderBuilder;
 import com.amazon.ion.system.SimpleCatalog;
 
@@ -153,6 +155,8 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
         long target;
 
+        private final Utf8StringDecoder utf8Decoder = Utf8StringDecoderPool.getInstance().getOrCreate();
+
         @Override
         public boolean hasNext() {
             return nextAnnotationPeekIndex < target;
@@ -161,8 +165,8 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
         @Override
         public String next() {
             if (isSids) {
-                long savedPeekIndex = peekIndex;
-                peekIndex = nextAnnotationPeekIndex;
+                int savedPeekIndex = peekIndex;
+                peekIndex = (int) nextAnnotationPeekIndex;
                 int sid;
                 if (getMinorVersion() == 0) {
                     byte b = buffer[(int) peekIndex++];
@@ -194,8 +198,8 @@ class IonReaderContinuableApplicationBinary extends IonReaderContinuableCoreBina
 
         SymbolToken nextSymbolToken() {
             if (isSids) {
-                long savedPeekIndex = peekIndex;
-                peekIndex = nextAnnotationPeekIndex;
+                int savedPeekIndex = peekIndex;
+                peekIndex = (int) nextAnnotationPeekIndex;
                 int sid = getMinorVersion() == 0 ? readVarUInt_1_0() : (int) readFlexInt_1_1();
                 nextAnnotationPeekIndex = peekIndex;
                 peekIndex = savedPeekIndex;
