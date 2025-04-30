@@ -224,18 +224,22 @@ class IonCursorBinary implements IonCursor {
     /**
      * The index of the current container in `containerStack`.
      */
-    short containerIndex = 0;
+    short containerIndex = -1;
 
     /**
      * Returns the parent of the value(s) that are currently being read, or `null` if the reader is currently
      * positioned at the top level.
      */
     Marker parentMarker() {
-        return containerStack[containerIndex];
+        if (containerIndex < 0) {
+            return null;
+        } else {
+            return containerStack[containerIndex];
+        }
     }
 
     boolean isPositionedAtTopLevelOfStream() {
-        return containerIndex == 0;
+        return containerIndex == -1;
     }
 
     private ArgumentGroupMarker[] argumentGroupStack = new ArgumentGroupMarker[CONTAINER_STACK_INITIAL_CAPACITY];
@@ -488,7 +492,7 @@ class IonCursorBinary implements IonCursor {
         valuePreHeaderIndex = offset;
         checkpoint = peekIndex;
 
-        for (int i = 1; i < CONTAINER_STACK_INITIAL_CAPACITY; i++) {
+        for (int i = 0; i < CONTAINER_STACK_INITIAL_CAPACITY; i++) {
             containerStack[i] = new Marker(-1, -1);
         }
 
@@ -503,8 +507,6 @@ class IonCursorBinary implements IonCursor {
         byteBuffer = ByteBuffer.wrap(buffer, offset, length);
         clearSlowMode();
         refillableState = null;
-
-        containerStack[0] = null;
     }
 
     /**
@@ -626,7 +628,7 @@ class IonCursorBinary implements IonCursor {
         peekIndex = 0;
         checkpoint = 0;
 
-        for (int i = 1; i < CONTAINER_STACK_INITIAL_CAPACITY; i++) {
+        for (int i = 0; i < CONTAINER_STACK_INITIAL_CAPACITY; i++) {
             containerStack[i] = new Marker(-1, -1);
         }
 
@@ -651,8 +653,6 @@ class IonCursorBinary implements IonCursor {
             State.READY
         );
         registerOversizedValueHandler(configuration.getOversizedValueHandler());
-
-        containerStack[0] = null;
     }
 
     /*
@@ -840,7 +840,7 @@ class IonCursorBinary implements IonCursor {
      * @param shiftAmount the amount to shift left.
      */
     private void shiftContainerEnds(long shiftAmount) {
-        for (int i = containerIndex; i > 0; i--) {
+        for (int i = containerIndex; i >= 0; i--) {
             if (containerStack[i].endIndex > 0) {
                 containerStack[i].endIndex -= shiftAmount;
             }
@@ -2273,7 +2273,7 @@ class IonCursorBinary implements IonCursor {
     private boolean slowSeekToDelimitedEnd_1_1() {
         refillableState.state = State.READY;
         refillableState.isSkippingCurrentValue = true;
-        while ((containerIndex - 1) > refillableState.targetSeekDepth) {
+        while (containerIndex > refillableState.targetSeekDepth) {
             stepOutOfContainer();
             if (event == Event.NEEDS_DATA) {
                 refillableState.state = State.SEEK_DELIMITED;
@@ -2957,10 +2957,10 @@ class IonCursorBinary implements IonCursor {
         }
         // Push the remaining length onto the stack, seek past the container's header, and increase the depth.
         pushContainer();
+        Marker parent = parentMarker();
         if (containerIndex == refillableState.fillDepth) {
             clearSlowMode();
         }
-        Marker parent = parentMarker();
         parent.typeId = valueMarker.typeId;
         parent.endIndex = valueMarker.endIndex;
         setCheckpointBeforeUnannotatedTypeId();
@@ -2976,9 +2976,9 @@ class IonCursorBinary implements IonCursor {
      * @return true if the cursor remains in slow mode; false if it exited slow mode.
      */
     private boolean checkAndSetContainerMode() {
-        if (containerIndex != refillableState.fillDepth) {
+        if (containerIndex != refillableState.fillDepth - 1) {
             if (valueMarker.endIndex > DELIMITED_MARKER && valueMarker.endIndex <= limit) {
-                refillableState.fillDepth = containerIndex;
+                refillableState.fillDepth = containerIndex + 1;
             } else {
                 return true;
             }
@@ -3116,12 +3116,12 @@ class IonCursorBinary implements IonCursor {
      */
     private void uncheckedPopContainer() {
         setCheckpointBeforeUnannotatedTypeId();
-        if (--containerIndex > 0) {
-            if (refillableState != null && containerIndex - 1 < refillableState.fillDepth) {
+        if (--containerIndex >= 0) {
+            if (refillableState != null && containerIndex < refillableState.fillDepth) {
                 resumeSlowMode();
             }
         } else {
-            containerIndex = 0;
+            containerIndex = -1;
             if (refillableState != null) {
                 resumeSlowMode();
             }
@@ -3161,8 +3161,8 @@ class IonCursorBinary implements IonCursor {
      */
     private void slowPopContainer() {
         setCheckpointBeforeUnannotatedTypeId();
-        if (--containerIndex <= 0) { // we're at top level
-            containerIndex = 0;
+        if (--containerIndex < 0) { // we're at top level
+            containerIndex = -1;
         }
         event = Event.NEEDS_INSTRUCTION;
         valueMarker.typeId = null;
@@ -3395,7 +3395,7 @@ class IonCursorBinary implements IonCursor {
             peekIndex = (int) valueMarker.endIndex;
         }
         valuePreHeaderIndex = peekIndex;
-        if (refillableState.fillDepth > containerIndex - 1) {
+        if (refillableState.fillDepth > containerIndex) {
             // This value was filled, but was skipped. Reset the fillDepth so that the reader does not think the
             // next value was filled immediately upon encountering it.
             refillableState.fillDepth = -1;
@@ -3464,7 +3464,7 @@ class IonCursorBinary implements IonCursor {
      * @return the result of the operation (e.g. START_SCALAR, END_CONTAINER).
      */
     private byte slowNextValue() {
-        if (refillableState.fillDepth > containerIndex - 1) {
+        if (refillableState.fillDepth > containerIndex) {
             // This value was filled, but was skipped. Reset the fillDepth so that the reader does not think the
             // next value was filled immediately upon encountering it.
             refillableState.fillDepth = -1;
@@ -3902,8 +3902,8 @@ class IonCursorBinary implements IonCursor {
             isEof = uncheckedSkipRemainingDelimitedContainerElements_1_1();
         }
         // Pop the dummy delimited container from the stack.
-        if (--containerIndex <= 0) {
-            containerIndex = 0;
+        if (--containerIndex < 0) {
+            containerIndex = -1;
         }
         return isEof;
     }
@@ -3967,7 +3967,7 @@ class IonCursorBinary implements IonCursor {
     @Override
     public byte fillValue() {
         event = Event.VALUE_READY;
-        if (isSlowMode() && refillableState.fillDepth <= containerIndex - 1) {
+        if (isSlowMode() && refillableState.fillDepth <= containerIndex) {
             slowFillValue();
             if (refillableState.isSkippingCurrentValue) {
                 seekPastOversizedValue();
@@ -4003,7 +4003,7 @@ class IonCursorBinary implements IonCursor {
                 if (getCheckpointLocation() == CheckpointLocation.AFTER_CONTAINER_HEADER) {
                     // This container is buffered in its entirety. There is no need to fill the buffer again until stepping
                     // out of the fill depth.
-                    refillableState.fillDepth = containerIndex;
+                    refillableState.fillDepth = containerIndex + 1;
                 }
                 event = Event.VALUE_READY;
             }
@@ -4051,7 +4051,7 @@ class IonCursorBinary implements IonCursor {
         event = Event.NEEDS_DATA;
         valueMarker.typeId = null;
         // Slices are treated as if they were at the top level.
-        containerIndex = 0;
+        containerIndex = -1;
         if (SystemSymbols.ION_1_0.equals(ionVersionId)) {
             typeIds = IonTypeID.TYPE_IDS_1_0;
             setMinorVersion((byte) 0);

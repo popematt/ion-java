@@ -106,11 +106,6 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     // Initial capacity of the ArrayList used to hold the symbol IDs of the annotations on the current value.
     private static final int ANNOTATIONS_LIST_INITIAL_CAPACITY = 8;
 
-    // The current state.
-    protected byte applicationReaderState = 11; // IonReaderContinuableApplicationBinary.State.READING_VALUE;
-
-    protected byte topLevelReaderPackedFields = 0;
-
     static class Helpers {
 
         private final Utf8StringDecoder utf8Decoder = Utf8StringDecoderPool.getInstance().getOrCreate();
@@ -2952,9 +2947,9 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     @Override
     public int getDepth() {
         if (isEvaluatingEExpression) {
-            return containerIndex + macroEvaluatorIonReader.getDepth();
+            return containerIndex + 1 + macroEvaluatorIonReader.getDepth();
         }
-        return containerIndex;
+        return containerIndex + 1;
     }
 
     @Override

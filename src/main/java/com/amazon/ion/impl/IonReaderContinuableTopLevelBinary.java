@@ -47,103 +47,52 @@ final class IonReaderContinuableTopLevelBinary extends IonReaderContinuableAppli
 
     private IonType type = null;
 
-    private static final byte ION_TYPE_MASK      = 0b00001111;
+    // Contains IS_NON_CONTINUABLE, IS_FILL_REQUIRED, IS_FILLING_VALUE
+    private byte bitFlags = 0;
     // True if continuable reading is disabled.
-    private static final byte IS_NON_CONTINUABLE = 0b00010000;
+    private static final byte IS_NON_CONTINUABLE = 0b00000001;
     // True if input is sourced from a non-fixed stream and the reader is non-continuable, meaning that its top level
     // values are not automatically filled during next().
-    private static final byte IS_FILL_REQUIRED   = 0b00100000;
+    private static final byte IS_FILL_REQUIRED   = 0b00000010;
     // True if a value is in the process of being filled.
-    private static final byte IS_FILLING_VALUE   = 0b01000000;
+    private static final byte IS_FILLING_VALUE   = 0b00000100;
 
     private boolean isNonContinuable() {
-        return (topLevelReaderPackedFields & IS_NON_CONTINUABLE) != 0;
+        return (bitFlags & IS_NON_CONTINUABLE) != 0;
     }
+    // IS_NON_CONTINUABLE is supposed to be final. Do not call this method outside the constructor.
     private void setIsNonContinuable(boolean value) {
         if (value) {
-            topLevelReaderPackedFields |= IS_NON_CONTINUABLE;
+            bitFlags |= IS_NON_CONTINUABLE;
         } else {
-            topLevelReaderPackedFields &= ~IS_NON_CONTINUABLE;
+            bitFlags &= ~IS_NON_CONTINUABLE;
         }
     }
 
     private boolean isFillRequired() {
-        return (topLevelReaderPackedFields & IS_FILL_REQUIRED) != 0;
+        return (bitFlags & IS_FILL_REQUIRED) != 0;
     }
 
+    // IS_FILL_REQUIRED is supposed to be final. Do not call this method outside the constructor.
     private void setIsFillRequired(boolean value) {
         if (value) {
-            topLevelReaderPackedFields |= IS_FILL_REQUIRED;
+            bitFlags |= IS_FILL_REQUIRED;
         } else {
-            topLevelReaderPackedFields &= ~IS_FILL_REQUIRED;
+            bitFlags &= ~IS_FILL_REQUIRED;
         }
     }
 
     private boolean isFillingValue() {
-        return (topLevelReaderPackedFields & IS_FILLING_VALUE) != 0;
+        return (bitFlags & IS_FILLING_VALUE) != 0;
     }
 
     private void setIsFillingValue(boolean isFillingValue) {
         if (isFillingValue) {
-            topLevelReaderPackedFields |= IS_FILLING_VALUE;
+            bitFlags |= IS_FILLING_VALUE;
         } else {
-            topLevelReaderPackedFields &= ~IS_FILLING_VALUE;
+            bitFlags &= ~IS_FILLING_VALUE;
         }
     }
-
-//    // TODO: This is in a hot path. See if we can switch back to storing the regular enum.
-//    private void setIonType(IonType ionType) {
-//        topLevelReaderPackedFields &= ~ION_TYPE_MASK;
-//        if (ionType == null) {
-//            return;
-//        }
-//        switch (ionType) {
-//            case NULL:      topLevelReaderPackedFields |= 0x1; return;
-//            case BOOL:      topLevelReaderPackedFields |= 0x2; return;
-//            case INT:       topLevelReaderPackedFields |= 0x3; return;
-//            case FLOAT:     topLevelReaderPackedFields |= 0x4; return;
-//            case DECIMAL:   topLevelReaderPackedFields |= 0x5; return;
-//            case TIMESTAMP: topLevelReaderPackedFields |= 0x6; return;
-//            case SYMBOL:    topLevelReaderPackedFields |= 0x7; return;
-//            case STRING:    topLevelReaderPackedFields |= 0x8; return;
-//            case CLOB:      topLevelReaderPackedFields |= 0x9; return;
-//            case BLOB:      topLevelReaderPackedFields |= 0xA; return;
-//            case LIST:      topLevelReaderPackedFields |= 0xB; return;
-//            case SEXP:      topLevelReaderPackedFields |= 0xC; return;
-//            case STRUCT:    topLevelReaderPackedFields |= 0xD; return;
-//            case DATAGRAM:  topLevelReaderPackedFields |= 0xE;
-//        }
-//    }
-//
-//    private IonType getIonType() {
-//        switch (topLevelReaderPackedFields & ION_TYPE_MASK) {
-//            case 0x0: return null;
-//            case 0x1: return IonType.NULL;
-//            case 0x2: return IonType.BOOL;
-//            case 0x3: return IonType.INT;
-//            case 0x4: return IonType.FLOAT;
-//            case 0x5: return IonType.DECIMAL;
-//            case 0x6: return IonType.TIMESTAMP;
-//            case 0x7: return IonType.SYMBOL;
-//            case 0x8: return IonType.STRING;
-//            case 0x9: return IonType.CLOB;
-//            case 0xA: return IonType.BLOB;
-//            case 0xB: return IonType.LIST;
-//            case 0xC: return IonType.SEXP;
-//            case 0xD: return IonType.STRUCT;
-//            case 0xE: return IonType.DATAGRAM;
-//            default:
-//                throw new IllegalStateException("Cannot get IonType from packed fields: " + topLevelReaderPackedFields);
-//        }
-//    }
-//
-//    private void clearIonType() {
-//        topLevelReaderPackedFields &= ~ION_TYPE_MASK;
-//    }
-//
-//    private boolean hasIonType() {
-//        return (topLevelReaderPackedFields & ION_TYPE_MASK) != 0;
-//    }
 
     // The SymbolTable that was transferred via the last call to pop_passed_symbol_table.
     private SymbolTable symbolTableLastTransferred = null;

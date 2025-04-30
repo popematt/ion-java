@@ -4900,9 +4900,9 @@ public class IonReaderContinuableTopLevelBinaryTest {
     @Test
     public void readAnnotations_1_0() throws Exception {
         byte[] inputBytes = toBinary("name::0 symbols::name::0 name::symbols::imports::0 0 symbols::name::0");
-        // assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotations, inputBytes);
-        // assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotationSymbols, inputBytes);
-        // assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotationsIterator, inputBytes);
+        assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotations, inputBytes);
+        assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotationSymbols, inputBytes);
+        assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotationsIterator, inputBytes);
         assertAnnotationsCorrectlyParsed(false, IonReaderContinuableTopLevelBinaryTest::annotations, inputBytes);
         assertAnnotationsCorrectlyParsed(false, IonReaderContinuableTopLevelBinaryTest::annotationSymbols, inputBytes);
         assertAnnotationsCorrectlyParsed(false, IonReaderContinuableTopLevelBinaryTest::annotationsIterator, inputBytes);
@@ -4937,11 +4937,9 @@ public class IonReaderContinuableTopLevelBinaryTest {
     })
     public void readAnnotations_1_1(String inputBytesAsText) throws Exception {
         byte[] inputBytes = withIvm(1, hexStringToByteArray(cleanCommentedHexBytes(inputBytesAsText)));
-        // Only these three fail.
         assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotations, inputBytes);
         assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotationSymbols, inputBytes);
         assertAnnotationsCorrectlyParsed(true, IonReaderContinuableTopLevelBinaryTest::annotationsIterator, inputBytes);
-
         assertAnnotationsCorrectlyParsed(false, IonReaderContinuableTopLevelBinaryTest::annotations, inputBytes);
         assertAnnotationsCorrectlyParsed(false, IonReaderContinuableTopLevelBinaryTest::annotationSymbols, inputBytes);
         assertAnnotationsCorrectlyParsed(false, IonReaderContinuableTopLevelBinaryTest::annotationsIterator, inputBytes);
