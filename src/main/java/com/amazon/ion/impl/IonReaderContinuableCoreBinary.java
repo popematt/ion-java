@@ -1135,7 +1135,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return true if the reader is positioned on an encoding directive; otherwise, false.
      */
     private boolean isPositionedOnEncodingDirective() {
-        return event == Event.START_CONTAINER
+        return event == Event.START_CONTAINER_ORDINAL
             && hasAnnotations
             && valueMarker.typeId.type == IonType.SEXP
             && parent == null
@@ -1234,8 +1234,8 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             if (isEvaluatingEExpression) {
                 return false;
             }
-            Event event = fillValue();
-            return event == Event.NEEDS_DATA || event == Event.NEEDS_INSTRUCTION;
+            byte event = fillValue();
+            return event == Event.NEEDS_DATA_ORDINAL || event == Event.NEEDS_INSTRUCTION_ORDINAL;
         }
 
         private void classifyDirective() {
@@ -1359,7 +1359,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
          * Navigate to the next value at the core level (without interpretation by subclasses).
          * @return the event that conveys the result of the operation.
          */
-        private Event coreNextValue() {
+        private byte coreNextValue() {
             if (isEvaluatingEExpression) {
                 evaluateNext();
                 return event;
@@ -1384,29 +1384,29 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
          * `NEEDS_DATA` and this method can be called again when more data is available.
          */
         void readEncodingDirective() {
-            Event event;
+            byte event;
             while (true) {
                 switch (state) {
                     case ON_DIRECTIVE_SEXP:
-                        if (Event.NEEDS_DATA == stepIntoContainer()) {
+                        if (Event.NEEDS_DATA_ORDINAL == stepIntoContainer()) {
                             return;
                         }
                         state = State.IN_DIRECTIVE_SEXP;
                         break;
                     case IN_DIRECTIVE_SEXP:
                         event = coreNextValue();
-                        if (event == Event.NEEDS_DATA) {
+                        if (event == Event.NEEDS_DATA_ORDINAL) {
                             return;
                         }
-                        errorIf(event == Event.END_CONTAINER, "invalid Ion directive; missing directive keyword");
+                        errorIf(event == Event.END_CONTAINER_ORDINAL, "invalid Ion directive; missing directive keyword");
                         classifyDirective();
                         break;
                     case IN_MODULE_DIRECTIVE_SEXP_AWAITING_MODULE_NAME:
                         event = coreNextValue();
-                        if (event == Event.NEEDS_DATA) {
+                        if (event == Event.NEEDS_DATA_ORDINAL) {
                             return;
                         }
-                        errorIf(event == Event.END_CONTAINER, "invalid module definition; missing module name");
+                        errorIf(event == Event.END_CONTAINER_ORDINAL, "invalid module definition; missing module name");
                         errorIf(getEncodingType() != IonType.SYMBOL, "invalid module definition; module name must be a symbol");
                         // TODO: Support other module names
                         errorIf(!DEFAULT_MODULE.equals(getSymbolText()), "IonJava currently supports only the default module");
@@ -1414,10 +1414,10 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                         break;
                     case IN_MODULE_DIRECTIVE_SEXP_BODY:
                         event = coreNextValue();
-                        if (event == Event.NEEDS_DATA) {
+                        if (event == Event.NEEDS_DATA_ORDINAL) {
                             return;
                         }
-                        if (event == Event.END_CONTAINER) {
+                        if (event == Event.END_CONTAINER_ORDINAL) {
                             finishEncodingDirective();
                             return;
                         }
@@ -1427,13 +1427,13 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                         state = State.ON_SEXP_IN_MODULE_DIRECTIVE;
                         break;
                     case ON_SEXP_IN_MODULE_DIRECTIVE:
-                        if (Event.NEEDS_DATA == stepIntoContainer()) {
+                        if (Event.NEEDS_DATA_ORDINAL == stepIntoContainer()) {
                             return;
                         }
                         state = State.IN_SEXP_IN_MODULE_DIRECTIVE;
                         break;
                     case IN_SEXP_IN_MODULE_DIRECTIVE:
-                        if (Event.NEEDS_DATA == coreNextValue()) {
+                        if (Event.NEEDS_DATA_ORDINAL == coreNextValue()) {
                             return;
                         }
                         if (!IonType.isText(getEncodingType())) {
@@ -1449,10 +1449,10 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                         break;
                     case IN_SYMBOL_TABLE_SEXP:
                         event = coreNextValue();
-                        if (event == Event.NEEDS_DATA) {
+                        if (event == Event.NEEDS_DATA_ORDINAL) {
                             return;
                         }
-                        if (event == Event.END_CONTAINER) {
+                        if (event == Event.END_CONTAINER_ORDINAL) {
                             stepOutOfSexpWithinEncodingDirective();
                             break;
                         }
@@ -1460,11 +1460,11 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                         break;
                     case IN_APPENDED_SYMBOL_TABLE:
                         event = coreNextValue();
-                        if (Event.NEEDS_DATA == event) {
+                        if (Event.NEEDS_DATA_ORDINAL == event) {
                             return;
                         }
                         isSymbolTableAppend = true;
-                        if (Event.END_CONTAINER == event) {
+                        if (Event.END_CONTAINER_ORDINAL == event) {
                             // Nothing to append.
                             stepOutOfSexpWithinEncodingDirective();
                             break;
@@ -1475,17 +1475,17 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                         state = State.ON_SYMBOL_TABLE_LIST;
                         break;
                     case ON_SYMBOL_TABLE_LIST:
-                        if (Event.NEEDS_DATA == stepIntoContainer()) {
+                        if (Event.NEEDS_DATA_ORDINAL == stepIntoContainer()) {
                             return;
                         }
                         state = State.IN_SYMBOL_TABLE_LIST;
                         break;
                     case IN_SYMBOL_TABLE_LIST:
                         event = coreNextValue();
-                        if (event == Event.NEEDS_DATA) {
+                        if (event == Event.NEEDS_DATA_ORDINAL) {
                             return;
                         }
-                        if (event == Event.END_CONTAINER) {
+                        if (event == Event.END_CONTAINER_ORDINAL) {
                             stepOutOfContainer();
                             state = State.IN_SYMBOL_TABLE_SEXP;
                             break;
@@ -1504,10 +1504,10 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                         break;
                     case IN_MACRO_TABLE_SEXP:
                         event = coreNextValue();
-                        if (event == Event.NEEDS_DATA) {
+                        if (event == Event.NEEDS_DATA_ORDINAL) {
                             return;
                         }
-                        if (event == Event.END_CONTAINER) {
+                        if (event == Event.END_CONTAINER_ORDINAL) {
                             stepOutOfSexpWithinEncodingDirective();
                             break;
                         }
@@ -1515,11 +1515,11 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                         break;
                     case IN_APPENDED_MACRO_TABLE:
                         event = coreNextValue();
-                        if (Event.NEEDS_DATA == event) {
+                        if (Event.NEEDS_DATA_ORDINAL == event) {
                             return;
                         }
                         isMacroTableAppend = true;
-                        if (event == Event.END_CONTAINER) {
+                        if (event == Event.END_CONTAINER_ORDINAL) {
                             // Nothing to append
                             stepOutOfSexpWithinEncodingDirective();
                             break;
@@ -1604,7 +1604,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             } else {
                 nextTaglessValue(encoding.taglessEncodingKind);
             }
-            if (event == Event.NEEDS_DATA) {
+            if (event == Event.NEEDS_DATA_ORDINAL) {
                 throw new UnsupportedOperationException("TODO: support continuable parsing of macro arguments.");
             }
             readValueAsExpression(false, fieldName);
@@ -1621,12 +1621,12 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             } else {
                 enterTaglessArgumentGroup(encoding.taglessEncodingKind);
             }
-            if (event == Event.NEEDS_DATA) {
+            if (event == Event.NEEDS_DATA_ORDINAL) {
                 throw new UnsupportedOperationException("TODO: support continuable parsing of macro arguments.");
             }
             expressionTape.add(null, ExpressionType.EXPRESSION_GROUP_ORDINAL, -1, -1, fieldName);
             boolean isSingleton = true;
-            while (nextGroupedValue() != Event.NEEDS_INSTRUCTION || isMacroInvocation()) {
+            while (nextGroupedValue() != Event.NEEDS_INSTRUCTION_ORDINAL || isMacroInvocation()) {
                 readValueAsExpression(false, null); // TODO or, distribute the field name?
                 isSingleton = false;
             }
@@ -1637,7 +1637,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                     parameter.getCardinality().name())
                 );
             }
-            if (exitArgumentGroup() == Event.NEEDS_DATA) {
+            if (exitArgumentGroup() == Event.NEEDS_DATA_ORDINAL) {
                 throw new UnsupportedOperationException("TODO: support continuable parsing of macro arguments.");
             }
             expressionTape.add(null, ExpressionType.EXPRESSION_GROUP_END_ORDINAL, -1, -1, null);
@@ -1742,7 +1742,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
 
         @Override
         protected boolean nextRaw() {
-            return IonReaderContinuableCoreBinary.super.nextValue() != Event.END_CONTAINER;
+            return IonReaderContinuableCoreBinary.super.nextValue() != Event.END_CONTAINER_ORDINAL;
         }
 
         @Override
@@ -1805,16 +1805,16 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
                 // Evaluation of this macro is complete. Resume reading from the stream.
                 expressionArgsReader.finishEvaluatingMacroInvocation();
                 isEvaluatingEExpression = false;
-                event = Event.NEEDS_INSTRUCTION;
+                event = Event.NEEDS_INSTRUCTION_ORDINAL;
                 return true;
             } else {
-                event = Event.END_CONTAINER;
+                event = Event.END_CONTAINER_ORDINAL;
             }
         } else {
             if (IonType.isContainer(type)) {
-                event = Event.START_CONTAINER;
+                event = Event.START_CONTAINER_ORDINAL;
             } else {
-                event = Event.START_SCALAR;
+                event = Event.START_SCALAR_ORDINAL;
             }
         }
         return false;
@@ -1910,7 +1910,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             }
             break;
         }
-        if (event == Event.NEEDS_DATA || event == Event.END_CONTAINER) {
+        if (event == Event.NEEDS_DATA_ORDINAL || event == Event.END_CONTAINER_ORDINAL) {
             return false;
         }
         transcodeValueLiteral();
@@ -1932,7 +1932,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             // Ion 1.0 symbol tables are transcoded verbatim for now; this may change depending on the resolution to
             // https://github.com/amazon-ion/ion-java/issues/1002.
             macroAwareTranscoder.writeValue(asIonReader);
-        } else if (event == Event.START_CONTAINER && !isNullValue()) {
+        } else if (event == Event.START_CONTAINER_ORDINAL && !isNullValue()) {
             // Containers need to be transcoded recursively to avoid expanding macro invocations at any depth.
             if (isInStruct()) {
                 macroAwareTranscoder.setFieldNameSymbol(getFieldNameSymbol());
@@ -1960,14 +1960,14 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event nextValue() {
+    public byte nextValue() {
         lobBytesRead = 0;
         while (true) {
             if (parent == null || state != State.READING_VALUE) {
                 if (state != State.READING_VALUE && state != State.COMPILING_MACRO) {
                     encodingDirectiveReader.readEncodingDirective();
                     if (state != State.READING_VALUE) {
-                        event = Event.NEEDS_DATA;
+                        event = Event.NEEDS_DATA_ORDINAL;
                         break;
                     }
                 }
@@ -2010,32 +2010,32 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     }
 
     @Override
-    public Event fillValue() {
+    public byte fillValue() {
         if (isEvaluatingEExpression) {
-            event = Event.VALUE_READY;
+            event = Event.VALUE_READY_ORDINAL;
             return event;
         }
         return super.fillValue();
     }
 
     @Override
-    public Event stepIntoContainer() {
+    public byte stepIntoContainer() {
         if (isEvaluatingEExpression) {
             macroEvaluatorIonReader.stepIn();
-            event = Event.NEEDS_INSTRUCTION;
+            event = Event.NEEDS_INSTRUCTION_ORDINAL;
             return event;
         }
         return super.stepIntoContainer();
     }
 
     @Override
-    public Event stepOutOfContainer() {
+    public byte stepOutOfContainer() {
         if (isEvaluatingEExpression) {
             if (macroEvaluatorIonReader.getDepth() > 0) {
                 // The user has stepped into a container produced by the evaluator. Therefore, this stepOut() call
                 // must step out of that evaluated container.
                 macroEvaluatorIonReader.stepOut();
-                event = Event.NEEDS_INSTRUCTION;
+                event = Event.NEEDS_INSTRUCTION_ORDINAL;
                 return event;
             } else {
                 // The evaluator is not producing a container value. Therefore, the user intends for this stepOut() call
