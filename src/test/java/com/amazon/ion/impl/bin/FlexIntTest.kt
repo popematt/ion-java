@@ -3,7 +3,11 @@
 package com.amazon.ion.impl.bin
 
 import com.amazon.ion.TestUtils.*
+import com.amazon.ion.v2.impl_1_1.*
 import java.math.BigInteger
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.random.Random
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
@@ -16,6 +20,20 @@ class FlexIntTest {
 
     @ParameterizedTest
     @CsvSource(
+
+
+        // -4231 | 66 03
+        //  3257 | 6A 03
+
+        // 00000001 00111010
+        // 10011011 11100110
+        //
+
+        "                  64, 00000010 00000001", // 02 01
+        "                3257, 11100110 00110010", // E6 32
+        "               -3257, 00011110 11001101",
+        "                  78, 00111010 00000001", // 3A 01
+        "               -6407, 11100110 10011011", // E6 9B
         "                   0, 00000001",
         "                   1, 00000011",
         "                   2, 00000101",
@@ -73,6 +91,15 @@ class FlexIntTest {
         FlexInt.writeFlexIntOrUIntInto(bytes, 0, value, numBytes)
         Assertions.assertEquals(expectedBits, byteArrayToBitString(bytes))
         Assertions.assertEquals((expectedBits.length + 1) / 9, numBytes)
+
+        val rand = Random(2)
+        val context = rand.nextBytes(20)
+        bytes.copyInto(context, 5)
+        val buffer = ByteBuffer.wrap(context)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+        buffer.limit(19)
+        buffer.position(5)
+        Assertions.assertEquals(value, IntHelper.readFlexIntAsLong(buffer))
     }
 
     @ParameterizedTest
@@ -111,6 +138,16 @@ class FlexIntTest {
         FlexInt.writeFlexIntOrUIntInto(bytes, 0, value, numBytes)
         Assertions.assertEquals(expectedBits, byteArrayToBitString(bytes))
         Assertions.assertEquals((expectedBits.length + 1) / 9, numBytes)
+
+
+        val rand = Random(2)
+        val context = rand.nextBytes(20)
+        bytes.copyInto(context, 5)
+        val buffer = ByteBuffer.wrap(context)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+        buffer.limit(19)
+        buffer.position(5)
+        Assertions.assertEquals(value, IntHelper.readFlexUIntAsLong(buffer))
     }
 
     @ParameterizedTest
