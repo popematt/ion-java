@@ -1,0 +1,145 @@
+package com.amazon.ion.v3.impl_1_1
+
+import com.amazon.ion.impl.bin.utf8.*
+import com.amazon.ion.impl.macro.*
+import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_0.*
+import java.io.Closeable
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/**
+ * In theory, we could use the resource pool to track all active child containers, and then if we need to shift data
+ * over in order to refill the buffer, we can go through and update the positions of all active containers.
+ *
+ * Or we could try making a deep copy and swapping out the buffers in the active containers for the deep copy.
+ *
+ * It seems like `Channel`s could be the answer, in some way.
+ */
+class ResourcePool(
+    private val source: ByteBuffer,
+): Closeable {
+
+    val scratch: Array<ByteArray> = Array(16) { n -> ByteArray(n) }
+
+    private lateinit var _utf8Decoder: Utf8StringDecoder
+
+    val utf8Decoder: Utf8StringDecoder
+        get() {
+            if (!::_utf8Decoder.isInitialized) {
+                _utf8Decoder = Utf8StringDecoderPool.getInstance().getOrCreate()
+            }
+            return _utf8Decoder
+        }
+
+    val scratchBuffer: ByteBuffer = source.asReadOnlyBuffer()
+    val structs = ArrayList<StructReaderImpl>(32)
+    val delimitedStructs = ArrayList<DelimitedStructReaderImpl>(32)
+    val lists = ArrayList<SeqReaderImpl>(32)
+    val delimitedLists = ArrayList<DelimitedSequenceReaderImpl>(32)
+    val eexpArgumentReaders = ArrayList<EExpArgumentReaderImpl>(8)
+    val annotations = ArrayList<AnnotationIterator>(8)
+
+    private fun newSlice(start: Int): ByteBuffer {
+        val slice: ByteBuffer = source.asReadOnlyBuffer()
+        slice.position(start)
+        slice.order(ByteOrder.LITTLE_ENDIAN)
+        return slice
+    }
+
+    private fun newSlice(start: Int, length: Int): ByteBuffer {
+        val slice: ByteBuffer = source.asReadOnlyBuffer()
+        slice.limit(start + length)
+        slice.position(start)
+        slice.order(ByteOrder.LITTLE_ENDIAN)
+        return slice
+    }
+
+    fun getList(start: Int, length: Int): SeqReaderImpl {
+        val reader = lists.removeLastOrNull()
+        if (reader != null) {
+            reader.init(start, length)
+            return reader
+        } else {
+            return SeqReaderImpl(newSlice(start, length), this)
+        }
+    }
+
+    fun getDelimitedList(start: Int, maxLength: Int, parent: ValueReaderBase): DelimitedSequenceReaderImpl {
+        val reader = delimitedLists.removeLastOrNull()
+        if (reader != null) {
+            reader.init(start, maxLength)
+            return reader
+        } else {
+            return DelimitedSequenceReaderImpl(newSlice(start, maxLength), this, parent)
+        }
+    }
+
+    fun getEExpArgs(start: Int, maxLength: Int, signature: List<Macro.Parameter>): EExpArgumentReaderImpl {
+        val reader = eexpArgumentReaders.removeLastOrNull()
+            ?.apply { init(start, maxLength) }
+            ?: EExpArgumentReaderImpl(newSlice(start, maxLength), this)
+        reader.initArgs(signature)
+        return reader
+    }
+
+    fun getAnnotations(opcode: Int, start: Int, length: Int): AnnotationIterator {
+        val reader = annotations.removeLastOrNull() as AnnotationIteratorImpl?
+        if (reader != null) {
+            reader.init(opcode, start, length)
+            return reader
+        } else {
+            return AnnotationIteratorImpl(opcode, newSlice(start, length), this)
+        }
+    }
+
+    fun getPrefixedSexp(start: Int, length: Int): SeqReaderImpl {
+        val reader = lists.removeLastOrNull()
+        if (reader != null) {
+            reader.init(start, length)
+            return reader
+        } else {
+            return SeqReaderImpl(newSlice(start, length), this)
+        }
+    }
+
+    fun getDelimitedSexp(start: Int, parent: ValueReaderBase): DelimitedSequenceReaderImpl {
+        val reader = delimitedLists.removeLastOrNull()
+        if (reader != null) {
+            reader.init(start, source.limit() - start)
+            reader.parent = parent
+            return reader
+        } else {
+            return DelimitedSequenceReaderImpl(newSlice(start), this, parent)
+        }
+    }
+
+    fun getStruct(start: Int, length: Int): StructReaderImpl {
+        val reader = structs.removeLastOrNull()
+        if (reader != null) {
+            reader.init(start, length)
+            return reader
+        } else {
+            return StructReaderImpl(newSlice(start, length), this)
+        }
+    }
+
+    fun getDelimitedStruct(start: Int): DelimitedStructReaderImpl {
+        val reader = delimitedStructs.removeLastOrNull()
+        if (reader != null) {
+            reader.init(start, source.limit() - start)
+            return reader
+        } else {
+            return DelimitedStructReaderImpl(newSlice(start), this)
+        }
+    }
+
+    override fun close() {
+        annotations.clear()
+        lists.clear()
+        delimitedLists.clear()
+        structs.clear()
+        delimitedStructs.clear()
+        eexpArgumentReaders.clear()
+    }
+}

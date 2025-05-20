@@ -1,4 +1,4 @@
-package com.amazon.ion.v2.impl_1_0
+package com.amazon.ion.v3.impl_1_0
 
 import com.amazon.ion.Decimal
 import com.amazon.ion.IonException
@@ -7,14 +7,14 @@ import com.amazon.ion.SystemSymbols
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoder
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoderPool
-import com.amazon.ion.v2.*
-import com.amazon.ion.v2.impl_1_0.StaticFunctions.Companion.length
-import com.amazon.ion.v2.impl_1_0.StaticFunctions.Companion.readVarInt
-import com.amazon.ion.v2.impl_1_0.StaticFunctions.Companion.readVarUInt
-import com.amazon.ion.v2.impl_1_0.StaticFunctions.Companion.type
-import com.amazon.ion.v2.impl_1_0.StaticFunctions.Companion.ionType
-import com.amazon.ion.v2.impl_1_0.StaticFunctions.Companion.skip
-import com.amazon.ion.v2.impl_1_1.*
+import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.length
+import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.readVarInt
+import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.readVarUInt
+import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.type
+import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.ionType
+import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.skip
+import com.amazon.ion.v3.impl_1_1.*
 import java.io.Closeable
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -66,16 +66,6 @@ internal class ReaderPool_1_0(
     val lists = ArrayList<ListReader_1_0>(64)
     val sexps = ArrayList<SexpReader_1_0>(64)
     val annotations = ArrayList<AnnotationIterator>(16)
-
-    var ion11Reader: StreamReaderImpl? = null
-    fun getIon11Reader(start: Int, thisReader: StreamReader_1_0): StreamReaderImpl {
-        if (ion11Reader == null) {
-            ion11Reader = StreamReaderImpl(source.duplicate(), thisReader)
-        }
-        ion11Reader!!.source.position(start)
-        return ion11Reader!!
-    }
-
 
     fun getList(start: Int, length: Int, symbolTable: Array<String?>): ListReader_1_0 {
         val reader = lists.removeLastOrNull()
@@ -134,7 +124,6 @@ internal class ReaderPool_1_0(
         structs.clear()
         lists.clear()
         sexps.clear()
-        ion11Reader = null
     }
 }
 
@@ -391,7 +380,7 @@ internal class StaticFunctions {
 abstract class ValueReaderBase internal constructor(
     internal var source: ByteBuffer,
     internal var pool: ReaderPool_1_0,
-    protected var symbolTable: Array<String?>,
+    internal var symbolTable: Array<String?>,
 ): ValueReader {
 
     companion object {
@@ -644,7 +633,7 @@ abstract class ValueReaderBase internal constructor(
     override fun symbolValueSid(): Int {
         var length = typeId.toInt() and 0xF
         if (length == 0xE) {
-            length = readVarUInt(source).toInt()
+            length = readVarUInt(source)
         }
         val sid = when (length) {
             0 -> 0
@@ -652,7 +641,7 @@ abstract class ValueReaderBase internal constructor(
             2 -> source.getShort().toInt() and 0xFFFF
             3 -> IntReader.readUIntAsInt(source, 3)
             4 -> source.getInt()
-            else -> throw IonException("SIDs larger than 4 bytes are not supported.")
+            else -> throw IonException("SIDs larger than 4 bytes are not supported; found $length")
         }
         typeId = TID_NONE
         return sid
@@ -665,8 +654,6 @@ abstract class ValueReaderBase internal constructor(
     override fun clobValue(): ByteBuffer {
         TODO("Not yet implemented")
     }
-
-    override fun lookupSid(sid: Int): String? = symbolTable.getOrNull(sid)
 
     override fun listValue(): ListReader_1_0 {
         val length = length(typeId.toInt(), source)
@@ -690,24 +677,26 @@ abstract class ValueReaderBase internal constructor(
         return pool.getStruct(start, length, symbolTable)
     }
 
-    override fun eexpValue(): EexpReader {
-        throw IonException("Not positioned on an E-expression")
-    }
-
     // Delimited containers would need to have a reference to the parent, perhaps, so that when you close the delimited
     // container, the parent position can be updated to the appropriate index.
 
     override fun getIonVersion(): Short = 0x0100
 
-//    override fun ivmVersion(): Short {
-//        if (typeId.toInt() != 0xE0) throw IonException("Not positioned on an IVM")
-//        symbolTable = ION_1_0_SYMBOL_TABLE
-//        typeId = TID_NONE
-//        val version = source.getShort()
-//        // TODO: Check the last byte of the IVM to make sure it is well formed.
-//        source.get()
-//        return version
-//    }
+    override fun ivm(): Short {
+        if (typeId.toInt() != 0xE0) throw IonException("Not positioned on an IVM")
+        symbolTable = ION_1_0_SYMBOL_TABLE
+        typeId = TID_NONE
+        val version = source.getShort()
+        // TODO: Check the last byte of the IVM to make sure it is well formed.
+        source.get()
+        return version
+    }
+
+    override fun seekTo(position: Int) {
+        source.position(position)
+    }
+
+    override fun position(): Int = source.position()
 }
 
 class StreamReader_1_0(source: ByteBuffer): ValueReaderBase(source, ReaderPool_1_0(source.asReadOnlyBuffer()), ION_1_0_SYMBOL_TABLE), StreamReader {
@@ -719,19 +708,19 @@ class StreamReader_1_0(source: ByteBuffer): ValueReaderBase(source, ReaderPool_1
     // When we see a top-level annotated value, first place a marker, then check if the annotation is "$ion_symbol_table"
     // Then see if it's a struct. If so, then use the symbol table reader.
 
-    override fun ivm(): StreamReader {
-        if (typeId.toInt() != 0xE0) throw IonException("Not positioned on an IVM")
-        symbolTable = ION_1_0_SYMBOL_TABLE
-        typeId = TID_NONE
-        val version = source.getShort().toInt()
-        // TODO: Check the last byte of the IVM to make sure it is well formed.
-        source.get()
-        return when (version) {
-            0x0100 -> this
-            0x0101 -> pool.getIon11Reader(source.position(), this)
-            else -> throw IonException("Unrecognized Ion version: ${version.toString(16)}")
-        }
-    }
+//    override fun ivm(): StreamReader {
+//        if (typeId.toInt() != 0xE0) throw IonException("Not positioned on an IVM")
+//        symbolTable = ION_1_0_SYMBOL_TABLE
+//        typeId = TID_NONE
+//        val version = source.getShort().toInt()
+//        // TODO: Check the last byte of the IVM to make sure it is well formed.
+//        source.get()
+//        return when (version) {
+//            0x0100 -> this
+//            0x0101 -> pool.getIon11Reader(source.position(), this)
+//            else -> throw IonException("Unrecognized Ion version: ${version.toString(16)}")
+//        }
+//    }
 
     override tailrec fun nextToken(): Int {
         val token = super.nextToken()
