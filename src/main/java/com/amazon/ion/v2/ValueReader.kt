@@ -49,6 +49,21 @@ interface ValueReader: AutoCloseable {
      * Very low level API. Do not use unless you are trying to bypass macro evaluation.
      */
     fun eexpArgs(): EexpArgsReader = TODO()
+
+    /**
+     * Returns the major/minor version of the current IVM as two bytes in a short.
+     * This method should only be called when positioned on an IVM.
+     * * For Ion 1.0, returns 0x0100
+     * * For Ion 1.1, returns 0x0101
+     */
+//    fun ivmVersion(): Short
+
+    /**
+     * Returns the major/minor version of this reader, each as one of the bytes of a short.
+     * * For Ion 1.0, returns 0x0100
+     * * For Ion 1.1, returns 0x0101
+     */
+    fun getIonVersion(): Short
 }
 
 interface ListReader: ValueReader

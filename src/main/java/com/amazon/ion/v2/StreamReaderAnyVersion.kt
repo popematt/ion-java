@@ -20,6 +20,7 @@ class StreamReaderAnyVersion(private var delegate: StreamReader): StreamReader {
         }
         return nextToken()
     }
+    override fun getIonVersion(): Short = delegate.getIonVersion()
 
     override fun currentToken(): Int = delegate.currentToken()
     override fun ivm(): StreamReader = delegate.ivm()
