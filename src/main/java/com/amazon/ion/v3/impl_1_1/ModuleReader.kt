@@ -6,11 +6,11 @@ import com.amazon.ion.impl.macro.MacroCompiler
 import com.amazon.ion.impl.macro.ReaderAdapterIonReader
 import com.amazon.ion.v3.*
 
-internal class ModuleReader {
-    private val macroCompiler = MacroCompiler(
-        getMacro = this::getMacro,
-        reader = ReaderAdapterIonReader(StreamReaderAsIonReader())
-    )
+internal class ModuleReader() {
+//    private val macroCompiler = MacroCompiler(
+//        getMacro = this::getMacro,
+//        reader = ReaderAdapterIonReader(StreamReaderAsIonReader()),
+//    )
     var symbolTable: (Int) -> String? = { null }
 
     // TODO: Add a proper `Module` abstraction. For now, we'll use this.
@@ -19,7 +19,6 @@ internal class ModuleReader {
     fun readModule(sexp: ValueReader, availableBindings: Map<String, Module>): Module {
         sexp.nextToken()
         val moduleName = sexp.symbolValue() ?: throw IonException("Module name must have known text")
-        println("Reading module: $moduleName")
         val localAvailableBindings = mutableMapOf<String, Module>()
         localAvailableBindings.putAll(availableBindings)
         val moduleSymbols = ArrayList<String?>()

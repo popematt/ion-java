@@ -4,14 +4,10 @@ interface AnnotationIterator: Iterator<Unit>, AutoCloseable {
     fun getSid(): Int
     fun getText(): String?
 
-    fun toStringArray(): Array<String?> {
-        val strings = ArrayList<String?>(4)
-        while (hasNext()) {
-            next()
-            strings.add(getText())
-        }
-        return strings.toTypedArray()
-    }
+    /**
+     * Convenience method that loads all annotations into an array of strings.
+     */
+    fun toStringArray(): Array<String?>
 
     fun clone(): AnnotationIterator
 }

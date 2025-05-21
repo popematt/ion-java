@@ -11,8 +11,8 @@ abstract class ValueReaderBase(
     internal var source: ByteBuffer,
     internal var pool: ResourcePool,
     // TODO: Fully integrate these.
-    internal var symbolTable: Array<String?> = emptyArray(),
-    internal var macroTable: Array<Macro> = emptyArray(),
+    internal var symbolTable: Array<String?>,
+    internal var macroTable: Array<Macro>,
 ): ValueReader {
 
     init {
@@ -43,13 +43,17 @@ abstract class ValueReaderBase(
         source.limit(start + length)
         source.position(start)
         opcode = TID_UNSET
+        resetState()
     }
+
+    protected open fun resetState() {}
 
     // TODO: Consolidate with `init`
     internal fun initTables(
         symbolTable: Array<String?>,
         macroTable: Array<Macro>,
     ) {
+        if (symbolTable.isEmpty()) throw IllegalStateException("symbolTable array may not be empty")
         this.symbolTable = symbolTable
         this.macroTable = macroTable
     }
@@ -237,11 +241,11 @@ abstract class ValueReaderBase(
         } else if (opcode == 0xE2) {
             // 2 byte SID with bias
             val sid = IntHelper.readFixedUInt(source, 2) + 256
-            return null
+            return symbolTable[sid]
         } else if (opcode == 0xE3) {
             // FlexUInt SID with bias
             val sid = IntHelper.readFlexUInt(source) + 65792
-            return null
+            return symbolTable[sid]
         } else {
             throw IonException("Not positioned on a symbol")
         }
@@ -356,33 +360,44 @@ abstract class ValueReaderBase(
 
     override fun eexpValue(): Int {
         val opcode = opcode.toInt()
-        println("Reading at position: ${source.position()}")
-        if (opcode < 0x40) {
-            return opcode
-        } else if (opcode < 0x50) {
-            // Opcode with 12-bit address and bias
-            val bias = (opcode and 0xF) * 256 + 64
-            val unbiasedId = source.get().toInt() and 0xFF
-            val id: Int = unbiasedId + bias
-            return id
-        } else if (opcode < 0x60) {
-            // Opcode with 20-bit address and bias
-            val bias = (opcode and 0xF) * 256 * 256 + 4160
-            val unbiasedId = source.getShort().toInt() and 0xFFFF
-            val id: Int = unbiasedId + bias
-            return id
-        } else if (opcode == 0xEF) {
-            // System macro
-            return (source.get().toInt() and 0xFF) or Int.MIN_VALUE
-        } else if (opcode == 0xF4) {
-            // E-expression with FlexUInt macro address
-            return IntHelper.readFlexUInt(source)
-        } else if (opcode == 0xF5) {
-            // E-expression with FlexUInt macro address followed by FlexUInt length prefix
-            val address = IntHelper.readFlexUInt(source)
-            return address
-        } else {
-            throw IonException("Not positioned on an E-Expression")
+        when (opcode shr 4) {
+            0x0, 0x1, 0x2, 0x3 -> return opcode
+            0x4 -> {
+                // Opcode with 12-bit address and bias
+                val bias = (opcode and 0xF) * 256 + 64
+                val unbiasedId = source.get().toInt() and 0xFF
+                val id: Int = unbiasedId + bias
+                return id
+            }
+            0x5 -> {
+                // Opcode with 20-bit address and bias
+                val bias = (opcode and 0xF) * 256 * 256 + 4160
+                val unbiasedId = source.getShort().toInt() and 0xFFFF
+                val id: Int = unbiasedId + bias
+                return id
+            }
+            0xE -> {
+                if (opcode == 0xEF) {
+                    // System macro
+                    return (source.get().toInt() and 0xFF) or Int.MIN_VALUE
+                } else {
+                    throw IonException("Not positioned on an E-Expression")
+                }
+            }
+            0xF -> {
+                if (opcode == 0xF4) {
+                    // E-expression with FlexUInt macro address
+                    return IntHelper.readFlexUInt(source)
+                } else if (opcode == 0xF5) {
+                    // E-expression with FlexUInt macro address followed by FlexUInt length prefix
+                    val address = IntHelper.readFlexUInt(source)
+                    return address
+                } else {
+                    throw IonException("Not positioned on an E-Expression")
+                }
+            }
+            else -> throw IonException("Not positioned on an E-Expression")
+
         }
     }
 
@@ -394,20 +409,18 @@ abstract class ValueReaderBase(
         val position = source.position()
         val reader = if (length < 0) {
             // TODO: Calculate end position more efficiently.
-            val maxLength = source.limit() - position
+            val maxPossibleLength = source.limit() - position
 
-            val sacrificialReader = pool.getEExpArgs(position, maxLength, signature)
+            val sacrificialReader = pool.getEExpArgs(position, maxPossibleLength, signature)
                 .also { initTables(symbolTable, macroTable) }
             while (sacrificialReader.nextToken() != TokenTypeConst.END) {
                 sacrificialReader.skip()
             }
             sacrificialReader.close()
             val newPosition = sacrificialReader.position()
-            // FIXME: This is incorrect.
-            println("Setting new position to: $newPosition")
 
             source.position(newPosition)
-            pool.getEExpArgs(position, maxLength, signature)
+            pool.getEExpArgs(position, maxPossibleLength, signature)
                 .also { initTables(symbolTable, macroTable) }
         } else {
             source.position(position + length)
@@ -417,24 +430,13 @@ abstract class ValueReaderBase(
         return reader
     }
 
-
     override fun annotations(): AnnotationIterator {
         val opcode = opcode.toInt()
         this.opcode = TID_AFTER_ANNOTATION
+        val length = AnnotationIteratorImpl.calculateLength(opcode, source)
         val start = source.position()
-        var length = IdMappings.length(opcode, source)
-        if (length < 0) {
-            length = source.limit() - start
-            // And we need to make sure that the position of _this_ reader is updated correctly...
-            // TODO: Fix this.
-            val ann = pool.getAnnotations(opcode, start, length)
-            while (ann.hasNext()) ann.next()
-            source.position((ann as AnnotationIteratorImpl).source.position())
-            ann.close()
-        } else {
-            source.position(start + length)
-        }
-        return pool.getAnnotations(opcode, start, length)
+        source.position(start + length)
+        return pool.getAnnotations(opcode, start, length, symbolTable)
     }
 
     override fun timestampValue(): Timestamp {

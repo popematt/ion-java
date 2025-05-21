@@ -14,7 +14,7 @@ private val ION_1_1_SYMBOL_TABLE = SystemSymbols_1_1.allSymbolTexts().toTypedArr
 
 class StreamReaderImpl2 internal constructor(
     source: ByteBuffer,
-): ValueReaderBase(source, ResourcePool(source.asReadOnlyBuffer())), StreamReader {
+): ValueReaderBase(source, ResourcePool(source.asReadOnlyBuffer(), ION_1_1_SYMBOL_TABLE, emptyArray()), ION_1_1_SYMBOL_TABLE, emptyArray()), StreamReader {
 
     // private var symbolTable = ION_1_1_SYMBOL_TABLE
 
@@ -114,7 +114,7 @@ class StreamReaderImpl2 internal constructor(
                 val module = moduleReader.readModule(sexp, availableModules)
                 availableModules[module.name] = module
                 if (module.name == "_") {
-                    println("Updating symbol table. Now contains ${module.symbols.size} symbols")
+//                    println("Updating symbol table. Now contains ${module.symbols.size} symbols")
                     symbolTable = module.symbols.toTypedArray()
                 }
             }

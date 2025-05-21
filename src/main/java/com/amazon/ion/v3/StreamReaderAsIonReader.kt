@@ -8,13 +8,33 @@ import com.amazon.ion.IonType
 import com.amazon.ion.SymbolTable
 import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
-import com.amazon.ion.impl._Private_Utils
+import com.amazon.ion.impl.*
+import com.amazon.ion.v3.impl_1_0.*
+import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.visitor.*
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.*
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_0
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.nio.ByteBuffer
 import java.util.Date
 
-class StreamReaderAsIonReader(valueReader: ValueReader? = null): IonReader {
-    init { valueReader?.let(::initWith) }
+class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
+
+    private lateinit var _ion10Reader: ValueReader
+    private val ion10Reader: ValueReader
+        get() {
+            if (! ::_ion10Reader.isInitialized) _ion10Reader = StreamReader_1_0(source)
+            return _ion10Reader
+        }
+
+    private lateinit var _ion11Reader: ValueReader
+    private val ion11Reader: ValueReader
+        get() {
+            if (!::_ion11Reader.isInitialized) _ion11Reader = StreamReaderImpl(source)
+            return _ion11Reader
+        }
 
     private inline fun <reified T> Array<T?>.grow(): Array<T?> {
         val newSize = this.size * 2
@@ -41,7 +61,7 @@ class StreamReaderAsIonReader(valueReader: ValueReader? = null): IonReader {
     private var stackSize: Int = 0
 
     private var type: IonType? = null
-    private lateinit var reader: ValueReader
+    // private lateinit var reader: ValueReader
     private var fieldName: String? = null
     private var fieldNameSid: Int = -1
 
@@ -49,9 +69,15 @@ class StreamReaderAsIonReader(valueReader: ValueReader? = null): IonReader {
     private var annotationsSids = IntArray(8) { -1 }
     private var annotationsSize = 0
 
-    internal fun initWith(reader: ValueReader) {
+
+    private var reader: ValueReader = if (source.getInt(0).toUInt() == 0xE00101EAu) {
+        ion11Reader
+    } else {
+        ion10Reader
+    }
+
+    init {
         stackSize = 0
-        this.reader = reader
         reset()
     }
 
@@ -88,6 +114,8 @@ class StreamReaderAsIonReader(valueReader: ValueReader? = null): IonReader {
         TODO("Not yet implemented")
     }
 
+    // TODO: Make this call `next()` and then cache the result.
+    //       Add a check in `next()` for the cached result
     override fun hasNext(): Boolean = TODO("Deprecated and unsupported")
 
     override fun next(): IonType? {
@@ -120,7 +148,6 @@ class StreamReaderAsIonReader(valueReader: ValueReader? = null): IonReader {
             TokenTypeConst.FIELD_NAME -> {
                 fieldNameSid = (reader as StructReader).fieldNameSid()
                 if (fieldNameSid < 0) {
-                    // Inline field name text
                     fieldName = (reader as StructReader).fieldName()
                 } else {
 //                    fieldName = reader.lookupSid(fieldNameSid)
@@ -130,7 +157,8 @@ class StreamReaderAsIonReader(valueReader: ValueReader? = null): IonReader {
             }
             TokenTypeConst.END -> return null
             TokenTypeConst.IVM -> {
-                TODO("Switch versions, if needed.")
+                handleTopLevelIvm()
+                null
             }
             else -> TODO("Unreachable: ${TokenTypeConst(token)}")
         }
@@ -138,6 +166,39 @@ class StreamReaderAsIonReader(valueReader: ValueReader? = null): IonReader {
             return type
         }
         return _next()
+    }
+
+    private fun handleTopLevelIvm() {
+        val currentVersion = reader.getIonVersion().toInt()
+        val version = reader.ivm().toInt()
+        // If the version is the same, then we know it's a valid version, and we can skip validation
+        if (version != currentVersion) {
+            val position = reader.position()
+            reader = when (version) {
+                ION_1_0 -> ion10Reader
+                ION_1_1 -> ion11Reader
+                else -> throw IonException("Unknown Ion Version ${version ushr 8}.${version and 0xFF}")
+            }
+            reader.seekTo(position)
+        }
+
+        if (version == ION_1_1) {
+//            println("Updating symbol table to Ion 1.1")
+            // FIXME: Update this so that the default module is empty, and the active modules contains
+            //        the default module followed by the system module.
+//            availableModules.clear()
+//            availableModules["_"] =
+//                ModuleReader.Module("_", SystemSymbols_1_1.allSymbolTexts().toMutableList(), mutableListOf())
+//
+//            // TODO: Add macros to the system module
+//            availableModules["\$ion"] = ION_1_1_SYSTEM_MODULE
+//            activeModules.clear()
+//            activeModules.add(availableModules["_"]!!)
+//            macroTable = ION_1_1_SYSTEM_MACROS
+            // symbolTable = ION_1_1_SYSTEM_SYMBOLS
+        } else {
+            // symbolTable = ApplicationReaderDriver.ION_1_0_SYMBOL_TABLE
+        }
     }
 
     override fun stepIn() {

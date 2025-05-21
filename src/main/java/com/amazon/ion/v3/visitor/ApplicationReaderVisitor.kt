@@ -48,10 +48,9 @@ abstract class ApplicationReaderVisitor: VisitingReaderCallback {
     override fun onAnnotation(annotations: AnnotationIterator): VisitingReaderCallback? {
         if (depth == 0) {
             // TODO: See if we can peek() so that we don't have to clone() here
-            val ann = annotations.clone()
-            ann.next()
-            val sid = ann.getSid()
-            val annotation = if (sid < 0) ann.getText() else symbolTable[sid]
+            (annotations as PrivateAnnotationIterator).peek()
+            val sid = annotations.getSid()
+            val annotation = if (sid < 0) annotations.getText() else symbolTable[sid]
             if (annotation == "\$ion") {
                 TODO()
             }
@@ -59,7 +58,7 @@ abstract class ApplicationReaderVisitor: VisitingReaderCallback {
         return this
     }
 
-    private val moduleReader = ModuleReader()
+    // private val moduleReader = ModuleReader()
     private val availableModules = mutableMapOf<String, ModuleReader.Module>()
     init {
         // TODO: also do this when encountering an IVM.
