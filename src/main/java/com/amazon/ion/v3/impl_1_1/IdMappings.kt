@@ -2,8 +2,12 @@ package com.amazon.ion.v3.impl_1_1
 
 import com.amazon.ion.*
 import com.amazon.ion.v3.*
+import java.lang.IllegalStateException
 import java.nio.ByteBuffer
 
+/**
+ * Helper class containing info about Ion 1.1 opcodes.
+ */
 object IdMappings {
     @JvmStatic
     val TOKEN_TYPE_FOR_OPCODE = IntArray(256) { i -> tokenTypeForOpCode(i) }
@@ -14,7 +18,7 @@ object IdMappings {
     @JvmStatic
     private fun tokenTypeForOpCode(opcode: Int): Int {
         return when (opcode) {
-            in 0x00 .. 0x5F -> TokenTypeConst.EEXP
+            in 0x00 .. 0x5F -> TokenTypeConst.MACRO_INVOCATION
             in 0x60 .. 0x68 -> TokenTypeConst.INT
             0x69 -> TokenTypeConst.RESERVED
             in 0x6A .. 0x6D -> TokenTypeConst.FLOAT
@@ -34,13 +38,13 @@ object IdMappings {
             in 0xEA .. 0xEB -> TokenTypeConst.NULL
             in 0xEC .. 0xED -> TokenTypeConst.NOP
             0xEE -> TokenTypeConst.SYMBOL
-            0xEF -> TokenTypeConst.EEXP
+            0xEF -> TokenTypeConst.MACRO_INVOCATION
             0xF0 -> TokenTypeConst.END
             0xF1 ->	TokenTypeConst.LIST
             0xF2 ->	TokenTypeConst.SEXP
             0xF3 ->	TokenTypeConst.STRUCT
-            0xF4 ->	TokenTypeConst.EEXP
-            0xF5 ->	TokenTypeConst.EEXP
+            0xF4 ->	TokenTypeConst.MACRO_INVOCATION
+            0xF5 ->	TokenTypeConst.MACRO_INVOCATION
             0xF6 ->	TokenTypeConst.INT
             0xF7 ->	TokenTypeConst.DECIMAL
             0xF8 ->	TokenTypeConst.TIMESTAMP
@@ -67,7 +71,11 @@ object IdMappings {
             in 0x00 .. 0x5F -> -2
             in 0x60 .. 0x68 -> opcode and 0xF
             0x69 -> -3
-            in 0x6A .. 0x6D -> TokenTypeConst.FLOAT
+            // Floats
+            0x6A -> 0
+            0x6B -> 2
+            0x6C -> 4
+            0x6D -> 8
             in 0x6E .. 0x6F -> 0
             in 0x70 .. 0x7F -> opcode and 0xF
 
@@ -126,11 +134,28 @@ object IdMappings {
     fun length(typeId: Int, buffer: ByteBuffer): Int {
         return when (typeId) {
             ValueReaderBase.TID_EMPTY_ARGUMENT.toInt() -> 0
-            ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> -2
+            ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> IntHelper.readFlexUInt(buffer)
+            ValueReaderBase.TID_ON_FIELD_NAME.toInt() -> -2
+            ValueReaderBase.TID_UNSET.toInt() -> throw IllegalStateException("Not positioned on an expression or value")
             else -> when (val it = LENGTH_FOR_OPCODE[typeId]) {
                 -3 -> throw IonException("Invalid input: illegal typeId: $typeId")
                 -2 -> -2
                 -1 -> IntHelper.readFlexUInt(buffer)
+                else -> it
+            }
+        }
+    }
+
+    /**
+     * Returns >= 0 for known lengths, -1 for unknown lengths, and -2 for incalculable lengths
+     */
+    @JvmStatic
+    fun length(typeId: Int): Int {
+        return when (typeId) {
+            ValueReaderBase.TID_EMPTY_ARGUMENT.toInt() -> 0
+            ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> -2
+            else -> when (val it = LENGTH_FOR_OPCODE[typeId]) {
+                -3 -> throw IonException("Invalid input: illegal typeId: $typeId")
                 else -> it
             }
         }

@@ -280,40 +280,18 @@ enum class SystemMacro(
             .filter { it._systemSymbol != null }
             .associateBy { it.macroName }
 
+        // TODO: Once all of the macros are implemented, replace this with an array as in SystemSymbols_1_1
+        private val MACROS_BY_ID: Array<SystemMacro> = SystemMacro.entries
+            .filterNot { it.id < 0 }
+            .sortedBy { it.id }
+            .toTypedArray()
+
         @JvmStatic
         fun size() = 24
 
         /** Gets a [SystemMacro] by its address in the system table */
         @JvmStatic
-        operator fun get(id: Int): SystemMacro {
-            return when (id) {
-                0 -> None
-                1 -> Values
-                2 -> Default
-                3 -> Meta
-                4 -> Repeat
-                5 -> Flatten
-                6 -> Delta
-                7 -> Sum
-                8 -> Annotate
-                9 -> MakeString
-                10 -> MakeSymbol
-                11 -> MakeDecimal
-                12 -> MakeTimestamp
-                13 -> MakeBlob
-                14 -> MakeList
-                15 -> MakeSExp
-                16 -> MakeField
-                17 -> MakeStruct
-                18 -> ParseIon
-                19 -> SetSymbols
-                20 -> AddSymbols
-                21 -> SetMacros
-                22 -> AddMacros
-                23 -> Use
-                else -> unreachable()
-            }
-        }
+        operator fun get(id: Int): SystemMacro = MACROS_BY_ID[id]
 
         /** Gets, by name, a [SystemMacro] with an address in the system table (i.e. that can be invoked as E-Expressions) */
         @JvmStatic

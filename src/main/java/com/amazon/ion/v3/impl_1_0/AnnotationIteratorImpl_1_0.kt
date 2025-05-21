@@ -11,8 +11,9 @@ internal class AnnotationIteratorImpl_1_0(
 ): AnnotationIterator, PrivateAnnotationIterator {
     private var sid = -1
     override fun hasNext(): Boolean = source.hasRemaining()
-    override fun next() {
+    override fun next(): String? {
         sid = StaticFunctions.readVarUInt(source).toInt()
+        return symbolTable[sid]
     }
     override fun getSid(): Int = sid
     override fun getText(): String? = symbolTable[sid]
@@ -41,8 +42,7 @@ internal class AnnotationIteratorImpl_1_0(
     override fun toStringArray(): Array<String?> {
         val strings = ArrayList<String?>(4)
         while (this.hasNext()) {
-            next()
-            strings.add(getText())
+            strings.add(next())
         }
         return strings.toTypedArray()
     }

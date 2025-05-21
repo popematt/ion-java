@@ -2,7 +2,7 @@ package com.amazon.ion.impl;
 
 import com.amazon.ion.SymbolTable;
 
-interface _Private_LocalSymbolTable extends SymbolTable {
+public interface _Private_LocalSymbolTable extends SymbolTable {
 
     /**
      * @return a mutable copy of the symbol table.

@@ -3,6 +3,7 @@
 package com.amazon.ion.impl.macro
 
 import com.amazon.ion.*
+import com.amazon.ion.v3.*
 import java.math.BigDecimal
 import java.math.BigInteger
 
@@ -21,6 +22,13 @@ import java.math.BigInteger
  * TODO: Consider creating an enum or integer-based expression type id so that we can `switch` efficiently on it.
  */
 sealed interface Expression {
+    val tokenType: Int
+    val length: Int
+
+    sealed abstract class ExpressionBase(
+        final override val tokenType: Int,
+        final override val length: Int,
+    ) : Expression
 
     /** Interface for expressions that "contain" other expressions */
     sealed interface HasStartAndEnd : Expression {
@@ -86,7 +94,7 @@ sealed interface Expression {
      *
      * TODO: See if we can get rid of this by e.g. using nulls during macro compilation.
      */
-    object Placeholder : TemplateBodyExpression, EExpressionBodyExpression
+    object Placeholder : TemplateBodyExpression, EExpressionBodyExpression, ExpressionBase(TokenTypeConst.RESERVED, 1)
 
     /**
      * A group of expressions that form the argument for one macro parameter.
@@ -97,17 +105,14 @@ sealed interface Expression {
      * @property selfIndex the index of the first expression of the expression group (i.e. this instance)
      * @property endExclusive the index of the last expression contained in the expression group
      */
-    data class ExpressionGroup(override var selfIndex: Int, override var endExclusive: Int) : EExpressionBodyExpression, TemplateBodyExpression, HasStartAndEnd
+    data class ExpressionGroup(override var selfIndex: Int, override var endExclusive: Int) : EExpressionBodyExpression, TemplateBodyExpression, HasStartAndEnd, ExpressionBase(TokenTypeConst.EXPRESSION_GROUP, endExclusive - selfIndex)
 
     // Scalars
-    data class NullValue(override var annotations: List<SymbolToken> = emptyList(), override var type: IonType) : DataModelValue {
-        override fun withAnnotations(annotations: List<SymbolToken>): NullValue {
-            this.annotations = annotations
-            return this
-        }
+    data class NullValue(override var annotations: List<SymbolToken> = emptyList(), override val type: IonType) : DataModelValue, ExpressionBase(TokenTypeConst.NULL, 1) {
+        override fun withAnnotations(annotations: List<SymbolToken>) = copy(annotations = annotations)
     }
 
-    data class BoolValue(override var annotations: List<SymbolToken> = emptyList(), var value: Boolean) : DataModelValue {
+    data class BoolValue(override var annotations: List<SymbolToken> = emptyList(), var value: Boolean) : DataModelValue, ExpressionBase(TokenTypeConst.BOOL, 1) {
         override val type: IonType get() = IonType.BOOL
         override fun withAnnotations(annotations: List<SymbolToken>): BoolValue {
             this.annotations = annotations
@@ -120,7 +125,7 @@ sealed interface Expression {
         val longValue: Long
     }
 
-    data class LongIntValue(override var annotations: List<SymbolToken> = emptyList(), var value: Long) : IntValue {
+    data class LongIntValue(override var annotations: List<SymbolToken> = emptyList(), var value: Long) : IntValue, ExpressionBase(TokenTypeConst.INT, 1) {
         override val type: IonType get() = IonType.INT
         override fun withAnnotations(annotations: List<SymbolToken>): LongIntValue {
             this.annotations = annotations
@@ -130,7 +135,7 @@ sealed interface Expression {
         override val longValue: Long get() = value
     }
 
-    data class BigIntValue(override var annotations: List<SymbolToken> = emptyList(), var value: BigInteger) : IntValue {
+    data class BigIntValue(override var annotations: List<SymbolToken> = emptyList(), var value: BigInteger) : IntValue, ExpressionBase(TokenTypeConst.INT, 1) {
         override val type: IonType get() = IonType.INT
         override fun withAnnotations(annotations: List<SymbolToken>): BigIntValue {
             this.annotations = annotations
@@ -140,7 +145,7 @@ sealed interface Expression {
         override val longValue: Long get() = value.longValueExact()
     }
 
-    data class FloatValue(override var annotations: List<SymbolToken> = emptyList(), var value: Double) : DataModelValue {
+    data class FloatValue(override var annotations: List<SymbolToken> = emptyList(), var value: Double) : DataModelValue, ExpressionBase(TokenTypeConst.FLOAT, 1) {
         override val type: IonType get() = IonType.FLOAT
         override fun withAnnotations(annotations: List<SymbolToken>): FloatValue {
             this.annotations = annotations
@@ -148,7 +153,7 @@ sealed interface Expression {
         }
     }
 
-    data class DecimalValue(override var annotations: List<SymbolToken> = emptyList(), var value: BigDecimal) : DataModelValue {
+    data class DecimalValue(override var annotations: List<SymbolToken> = emptyList(), var value: BigDecimal) : DataModelValue, ExpressionBase(TokenTypeConst.DECIMAL, 1) {
         override val type: IonType get() = IonType.DECIMAL
         override fun withAnnotations(annotations: List<SymbolToken>): DecimalValue {
             this.annotations = annotations
@@ -156,7 +161,7 @@ sealed interface Expression {
         }
     }
 
-    data class TimestampValue(override var annotations: List<SymbolToken> = emptyList(), var value: Timestamp) : DataModelValue {
+    data class TimestampValue(override var annotations: List<SymbolToken> = emptyList(), var value: Timestamp) : DataModelValue, ExpressionBase(TokenTypeConst.TIMESTAMP, 1) {
         override val type: IonType get() = IonType.TIMESTAMP
         override fun withAnnotations(annotations: List<SymbolToken>): TimestampValue {
             this.annotations = annotations
@@ -168,7 +173,7 @@ sealed interface Expression {
         val stringValue: String
     }
 
-    data class StringValue(override var annotations: List<SymbolToken> = emptyList(), var value: String) : TextValue {
+    data class StringValue(override var annotations: List<SymbolToken> = emptyList(), var value: String) : TextValue, ExpressionBase(TokenTypeConst.STRING,1 ) {
         override val type: IonType get() = IonType.STRING
         override val stringValue: String get() = value
         override fun withAnnotations(annotations: List<SymbolToken>): StringValue {
@@ -177,7 +182,7 @@ sealed interface Expression {
         }
     }
 
-    data class SymbolValue(override var annotations: List<SymbolToken> = emptyList(), var value: SymbolToken) : TextValue {
+    data class SymbolValue(override var annotations: List<SymbolToken> = emptyList(), var value: SymbolToken) : TextValue, ExpressionBase(TokenTypeConst.SYMBOL, 1) {
         override val type: IonType get() = IonType.SYMBOL
         override val stringValue: String get() = value.assumeText()
         override fun withAnnotations(annotations: List<SymbolToken>): SymbolValue {
@@ -189,11 +194,11 @@ sealed interface Expression {
     sealed interface LobValue : DataModelValue {
         // TODO: Consider replacing this with a ByteArray "View" that is backed by the original
         //       data source to avoid eagerly copying data.
-        val value: ByteArray
+        var value: ByteArray
     }
 
     // We must override hashcode and equals in the lob types because `value` is a `byte[]`
-    data class BlobValue(override var annotations: List<SymbolToken> = emptyList(), override var value: ByteArray) : LobValue {
+    data class BlobValue(override var annotations: List<SymbolToken> = emptyList(), override var value: ByteArray) : LobValue, ExpressionBase(TokenTypeConst.BLOB, 1) {
         override val type: IonType get() = IonType.BLOB
         override fun withAnnotations(annotations: List<SymbolToken>): BlobValue {
             this.annotations = annotations
@@ -208,7 +213,7 @@ sealed interface Expression {
         }
     }
 
-    data class ClobValue(override var annotations: List<SymbolToken> = emptyList(), override var value: ByteArray) : LobValue {
+    data class ClobValue(override var annotations: List<SymbolToken> = emptyList(), override var value: ByteArray) : LobValue, ExpressionBase(TokenTypeConst.CLOB, 1) {
         override val type: IonType get() = IonType.CLOB
         override fun withAnnotations(annotations: List<SymbolToken>): ClobValue {
             this.annotations = annotations
@@ -233,7 +238,7 @@ sealed interface Expression {
         override var annotations: List<SymbolToken> = emptyList(),
         override var selfIndex: Int,
         override var endExclusive: Int
-    ) : DataModelContainer {
+    ) : DataModelContainer, ExpressionBase(TokenTypeConst.LIST, endExclusive - selfIndex) {
         override val type: IonType get() = IonType.LIST
         override fun withAnnotations(annotations: List<SymbolToken>): ListValue {
             this.annotations = annotations
@@ -248,7 +253,7 @@ sealed interface Expression {
         override var annotations: List<SymbolToken> = emptyList(),
         override var selfIndex: Int,
         override var endExclusive: Int
-    ) : DataModelContainer {
+    ) : DataModelContainer, ExpressionBase(TokenTypeConst.SEXP, endExclusive - selfIndex) {
         override val type: IonType get() = IonType.SEXP
         override fun withAnnotations(annotations: List<SymbolToken>): SExpValue {
             this.annotations = annotations
@@ -264,7 +269,7 @@ sealed interface Expression {
         override var selfIndex: Int,
         override var endExclusive: Int,
         val templateStructIndex: Map<String, List<Int>>
-    ) : DataModelContainer {
+    ) : DataModelContainer, ExpressionBase(TokenTypeConst.STRUCT, endExclusive - selfIndex) {
         override val type: IonType get() = IonType.STRUCT
         override fun withAnnotations(annotations: List<SymbolToken>): StructValue {
             this.annotations = annotations
@@ -272,12 +277,12 @@ sealed interface Expression {
         }
     }
 
-    data class FieldName(var value: SymbolToken) : DataModelExpression
+    data class FieldName(var value: SymbolToken) : DataModelExpression, ExpressionBase(TokenTypeConst.FIELD_NAME, 1)
 
     /**
      * A reference to a variable that needs to be expanded.
      */
-    data class VariableRef(var signatureIndex: Int) : TemplateBodyExpression
+    data class VariableRef(var signatureIndex: Int) : TemplateBodyExpression, ExpressionBase(TokenTypeConst.VARIABLE_REF, 1)
 
     sealed interface InvokableExpression : HasStartAndEnd, Expression {
         val macro: Macro
@@ -290,7 +295,7 @@ sealed interface Expression {
         override var macro: Macro,
         override var selfIndex: Int,
         override var endExclusive: Int
-    ) : TemplateBodyExpression, HasStartAndEnd, InvokableExpression
+    ) : TemplateBodyExpression, HasStartAndEnd, InvokableExpression, ExpressionBase(TokenTypeConst.MACRO_INVOCATION, endExclusive - selfIndex)
 
     /**
      * An e-expression that needs to be expanded.
@@ -299,5 +304,5 @@ sealed interface Expression {
         override var macro: Macro,
         override var selfIndex: Int,
         override var endExclusive: Int
-    ) : EExpressionBodyExpression, HasStartAndEnd, InvokableExpression
+    ) : EExpressionBodyExpression, HasStartAndEnd, InvokableExpression, ExpressionBase(TokenTypeConst.MACRO_INVOCATION, endExclusive - selfIndex)
 }

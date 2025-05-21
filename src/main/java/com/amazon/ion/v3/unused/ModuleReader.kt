@@ -1,16 +1,22 @@
-package com.amazon.ion.v3.impl_1_1
+package com.amazon.ion.v3.unused
 
 import com.amazon.ion.IonException
-import com.amazon.ion.impl.macro.*
+import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.impl.macro.MacroCompiler
-import com.amazon.ion.impl.macro.ReaderAdapterIonReader
-import com.amazon.ion.v3.*
+import com.amazon.ion.impl.macro.MacroRef
+import com.amazon.ion.impl.macro.ReaderAdapter
+import com.amazon.ion.v3.TokenTypeConst
+import com.amazon.ion.v3.ValueReader
 
-internal class ModuleReader() {
-//    private val macroCompiler = MacroCompiler(
-//        getMacro = this::getMacro,
-//        reader = ReaderAdapterIonReader(StreamReaderAsIonReader()),
-//    )
+/**
+ * Work in progress class that can read module definitions.
+ *
+ * This does not support e-expressions in the module definition.
+ */
+internal class ModuleReader(
+    private val readerAdapter: ReaderAdapter,
+    private val macroCompiler: MacroCompiler,
+) {
     var symbolTable: (Int) -> String? = { null }
 
     // TODO: Add a proper `Module` abstraction. For now, we'll use this.
@@ -32,7 +38,13 @@ internal class ModuleReader() {
         // 4 -> seen symbol table
         var state = 0
         while (sexp.nextToken() != TokenTypeConst.END) {
-            if (sexp.currentToken() != TokenTypeConst.SEXP) throw IonException("Invalid module definition; expected SEXP found ${TokenTypeConst(sexp.currentToken())}")
+            if (sexp.currentToken() != TokenTypeConst.SEXP) throw IonException(
+                "Invalid module definition; expected SEXP found ${
+                    TokenTypeConst(
+                        sexp.currentToken()
+                    )
+                }"
+            )
             sexp.sexpValue().use { clause ->
                 state = readModuleDeclarationClause(clause, localAvailableBindings, moduleSymbols, moduleMacros, state)
             }
@@ -40,8 +52,14 @@ internal class ModuleReader() {
         return Module(moduleName, moduleSymbols, moduleMacros)
     }
 
-    private fun readModuleDeclarationClause(clause: ValueReader, localAvailableBindings: MutableMap<String, Module>, moduleSymbols: MutableList<String?>, moduleMacros: List<Pair<String?, Macro>>, state: Int): Int {
-        if (clause.nextToken() != TokenTypeConst.SYMBOL) throw IonException("Invalid module definition; expected SYMBOL found ${TokenTypeConst(clause.currentToken())}")
+    private fun readModuleDeclarationClause(clause: ValueReader, localAvailableBindings: MutableMap<String, Module>, moduleSymbols: MutableList<String?>, moduleMacros: MutableList<Pair<String?, Macro>>, state: Int): Int {
+        if (clause.nextToken() != TokenTypeConst.SYMBOL) throw IonException(
+            "Invalid module definition; expected SYMBOL found ${
+                TokenTypeConst(
+                    clause.currentToken()
+                )
+            }"
+        )
         val clauseType = clause.symbolValue()
 
         when (clauseType) {
@@ -72,8 +90,17 @@ internal class ModuleReader() {
         }
     }
 
-    fun populateMacros(clause: ValueReader, availableBindings: Map<String, Module>, moduleMacros: List<Pair<String?, Macro>>) {
-        TODO("Macro table not implemented yet.")
+    fun populateMacros(clause: ValueReader, localAvailableBindings: Map<String, Module>, moduleMacros: MutableList<Pair<String?, Macro>>) {
+        while (true) {
+            when (clause.nextToken()) {
+                TokenTypeConst.SEXP -> {
+
+                }
+                TokenTypeConst.END -> return
+            }
+        }
+
+
     }
 
     private fun populateSymbols(clause: ValueReader, localAvailableBindings: Map<String, Module>, moduleSymbols: MutableList<String?>) {
@@ -99,7 +126,13 @@ internal class ModuleReader() {
                 TokenTypeConst.SYMBOL -> into.add(list.symbolValue())
                 TokenTypeConst.STRING -> into.add(list.stringValue())
                 TokenTypeConst.END -> return
-                else -> throw IonException("Symbols list may only contain non-null, un-annotated text values; found ${TokenTypeConst(token)}")
+                else -> throw IonException(
+                    "Symbols list may only contain non-null, un-annotated text values; found ${
+                        TokenTypeConst(
+                            token
+                        )
+                    }"
+                )
             }
         }
     }

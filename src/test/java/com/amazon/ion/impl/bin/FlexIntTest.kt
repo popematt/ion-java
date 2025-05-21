@@ -3,7 +3,7 @@
 package com.amazon.ion.impl.bin
 
 import com.amazon.ion.TestUtils.*
-import com.amazon.ion.v2.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.*
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder

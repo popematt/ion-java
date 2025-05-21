@@ -14,11 +14,11 @@ import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.readVarUInt
 import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.type
 import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.ionType
 import com.amazon.ion.v3.impl_1_0.StaticFunctions.Companion.skip
-import com.amazon.ion.v3.impl_1_1.*
 import java.io.Closeable
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.experimental.and
 
 // TODO:
@@ -131,7 +131,6 @@ internal class StaticFunctions {
 
     companion object {
         @JvmStatic
-        @OptIn(ExperimentalStdlibApi::class)
         fun readVarUInt(source: ByteBuffer): Int {
             val firstByte = source.get()
             return if (firstByte < 0) {
@@ -142,7 +141,6 @@ internal class StaticFunctions {
         }
 
         @JvmStatic
-        @OptIn(ExperimentalStdlibApi::class)
         fun readVarUInt(source: ByteBuffer, firstByte: Byte): Long {
             var result = firstByte.toLong()
             do {
@@ -378,8 +376,11 @@ internal class StaticFunctions {
 }
 
 abstract class ValueReaderBase internal constructor(
+    @JvmField
     internal var source: ByteBuffer,
+    @JvmField
     internal var pool: ReaderPool_1_0,
+    @JvmField
     internal var symbolTable: Array<String?>,
 ): ValueReader {
 
@@ -393,9 +394,14 @@ abstract class ValueReaderBase internal constructor(
         const val TID_NONE: Short = -93
     }
 
+    init {
+        source.order(ByteOrder.BIG_ENDIAN)
+    }
+
     /**
      * Either the current opcode/typeId (if positive) or some other indicator, if negative.
      */
+    @JvmField
     internal var typeId: Short = TID_NONE
 
     internal fun init(
@@ -448,7 +454,10 @@ abstract class ValueReaderBase internal constructor(
         return type
     }
 
+    // TODO: Consider caching `currentToken` value.
     override fun currentToken(): Int = type(typeId.toInt())
+
+    override fun isTokenSet(): Boolean = typeId != TID_NONE
 
     override fun ionType(): IonType? = ionType(typeId.toInt())
 
@@ -630,6 +639,8 @@ abstract class ValueReaderBase internal constructor(
         return symbolTable[symbolValueSid()]
     }
 
+    override fun lookupSid(sid: Int): String? = symbolTable[sid]
+
     override fun symbolValueSid(): Int {
         var length = typeId.toInt() and 0xF
         if (length == 0xE) {
@@ -697,6 +708,8 @@ abstract class ValueReaderBase internal constructor(
     }
 
     override fun position(): Int = source.position()
+
+    override fun expressionGroup(): SequenceReader = throw UnsupportedOperationException("Expression groups not supported in Ion 1.0")
 }
 
 class StreamReader_1_0(source: ByteBuffer): ValueReaderBase(source, ReaderPool_1_0(source.asReadOnlyBuffer()), ION_1_0_SYMBOL_TABLE), StreamReader {
@@ -708,19 +721,6 @@ class StreamReader_1_0(source: ByteBuffer): ValueReaderBase(source, ReaderPool_1
     // When we see a top-level annotated value, first place a marker, then check if the annotation is "$ion_symbol_table"
     // Then see if it's a struct. If so, then use the symbol table reader.
 
-//    override fun ivm(): StreamReader {
-//        if (typeId.toInt() != 0xE0) throw IonException("Not positioned on an IVM")
-//        symbolTable = ION_1_0_SYMBOL_TABLE
-//        typeId = TID_NONE
-//        val version = source.getShort().toInt()
-//        // TODO: Check the last byte of the IVM to make sure it is well formed.
-//        source.get()
-//        return when (version) {
-//            0x0100 -> this
-//            0x0101 -> pool.getIon11Reader(source.position(), this)
-//            else -> throw IonException("Unrecognized Ion version: ${version.toString(16)}")
-//        }
-//    }
 
     override tailrec fun nextToken(): Int {
         val token = super.nextToken()

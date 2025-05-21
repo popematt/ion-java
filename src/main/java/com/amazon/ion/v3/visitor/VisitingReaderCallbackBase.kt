@@ -8,6 +8,9 @@ import com.amazon.ion.v3.TokenType
 import java.math.BigInteger
 import java.nio.ByteBuffer
 
+/**
+ * FIXME: This might be redundant given that we can have default methods on interfaces.
+ */
 abstract class VisitingReaderCallbackBase: VisitingReaderCallback {
     override fun onAnnotation(annotations: AnnotationIterator): VisitingReaderCallback? = this
     override fun onField(fieldName: String?, fieldSid: Int): VisitingReaderCallback? = this

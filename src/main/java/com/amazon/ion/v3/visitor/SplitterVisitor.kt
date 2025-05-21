@@ -5,6 +5,9 @@ import com.amazon.ion.v3.*
 import java.math.BigInteger
 import java.nio.ByteBuffer
 
+/**
+ * This is questionably useful.
+ */
 class SplitterVisitor(val v1: VisitingReaderCallback, val v2: VisitingReaderCallback): VisitingReaderCallback {
 
     private fun handleSplitDecision(method: VisitingReaderCallback.() -> VisitingReaderCallback?): VisitingReaderCallback? {

@@ -4,14 +4,23 @@ import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+object Debug {
+    var enabled = false
+}
+
 abstract class ValueReaderBase(
+    @JvmField
     internal var source: ByteBuffer,
+    @JvmField
     internal var pool: ResourcePool,
-    // TODO: Fully integrate these.
+    @JvmField
     internal var symbolTable: Array<String?>,
+    @JvmField
     internal var macroTable: Array<Macro>,
 ): ValueReader {
 
@@ -19,22 +28,42 @@ abstract class ValueReaderBase(
         source.order(ByteOrder.LITTLE_ENDIAN)
     }
 
+    /**
+     *
+     * == Structs ==
+     *
+     * - UNSET -> ON_FIELD_NAME, END
+     * - ON_FIELD_NAME -> AFTER_FIELD_NAME
+     * - AFTER_FIELD_NAME -> AFTER_ANNOTATIONS, opcode
+     * - AFTER_ANNOTATIONS -> opcode
+     * - opcode -> UNSET
+     *
+     * == Sequences ==
+     *
+     * - UNSET -> END, AFTER_ANNOTATIONS, opcode
+     * - AFTER_ANNOTATIONS -> opcode
+     * - opcode -> UNSET
+     */
     companion object {
         const val TID_UNSET: Short = -1
         const val NEEDS_DATA: Short = -2
         const val INVALID_DATA: Short = -3
         const val TID_AFTER_ANNOTATION: Short = -4
-        const val TID_AFTER_FIELD_NAME: Short = -5
-        const val TID_START: Short = -6
-        const val TID_END: Short = -7
-        const val TID_EXPRESSION_GROUP: Short = -8
-        const val TID_EMPTY_ARGUMENT: Short = -9
+        const val TID_ON_FIELD_NAME: Short = -5
+        const val TID_AFTER_FIELD_NAME: Short = -6
+        const val TID_START: Short = -7
+        const val TID_END: Short = -8
+        const val TID_EXPRESSION_GROUP: Short = -9
+        const val TID_EMPTY_ARGUMENT: Short = -10
     }
 
     /**
      * Either the current opcode/typeId (if positive) or some other indicator, if negative.
      */
+    @JvmField
     internal var opcode: Short = TID_UNSET
+
+//    internal var id = "" // UUID.randomUUID().toString().take(8)
 
     internal fun init(
         start: Int,
@@ -43,6 +72,7 @@ abstract class ValueReaderBase(
         source.limit(start + length)
         source.position(start)
         opcode = TID_UNSET
+//        id = UUID.randomUUID().toString().take(8)
         resetState()
     }
 
@@ -53,7 +83,7 @@ abstract class ValueReaderBase(
         symbolTable: Array<String?>,
         macroTable: Array<Macro>,
     ) {
-        if (symbolTable.isEmpty()) throw IllegalStateException("symbolTable array may not be empty")
+        check(symbolTable[0] == null)
         this.symbolTable = symbolTable
         this.macroTable = macroTable
     }
@@ -65,6 +95,7 @@ abstract class ValueReaderBase(
 
             // Check for the next token...
             val b = source.get()
+//            if (Debug.enabled) println("[$id ${this::class.simpleName}] At position ${source.position() - 1}, read byte ${(b.toInt() and 0xFF).toString(16)}")
             opcode = (b.toInt() and 0xFF).toShort()
             type = type(opcode.toInt())
             when (opcode) {
@@ -78,66 +109,190 @@ abstract class ValueReaderBase(
     }
 
     //  Returns the TokenType constant.
-    private fun type(state: Int): Int {
+    protected fun type(state: Int): Int {
         if (state < 0) {
-            return if (state == TID_END.toInt())
-                TokenTypeConst.END
-            else
-                TokenTypeConst.UNSET
+            return when (state) {
+                TID_END.toInt() -> TokenTypeConst.END
+                TID_ON_FIELD_NAME.toInt() -> TokenTypeConst.FIELD_NAME
+                TID_EXPRESSION_GROUP.toInt() -> TokenTypeConst.EXPRESSION_GROUP
+                TID_EMPTY_ARGUMENT.toInt() -> TokenTypeConst.ABSENT_ARGUMENT
+                else -> TokenTypeConst.UNSET
+            }
         }
         return IdMappings.TOKEN_TYPE_FOR_OPCODE[state]
     }
 
     override fun currentToken(): Int = type(opcode.toInt())
 
+    override fun isTokenSet(): Boolean = opcode != TID_UNSET
+
     override fun ionType(): IonType? {
-        TODO("Not yet implemented")
+        val opcode = opcode.toInt()
+        return when (type(opcode)) {
+            TokenTypeConst.NULL -> {
+                if (opcode == 0xEA) {
+                    IonType.NULL
+                } else {
+                    source.mark()
+                    val type = when (source.get().toInt()) {
+                        0x00 -> IonType.BOOL
+                        0x01 -> IonType.INT
+                        0x02 -> IonType.FLOAT
+                        0x03 -> IonType.DECIMAL
+                        0x04 -> IonType.TIMESTAMP
+                        0x05 -> IonType.STRING
+                        0x06 -> IonType.SYMBOL
+                        0x07 -> IonType.BLOB
+                        0x08 -> IonType.CLOB
+                        0x09 -> IonType.LIST
+                        0x0A -> IonType.SEXP
+                        0x0B -> IonType.STRUCT
+                        else -> throw IonException("Not a valid null value")
+                    }
+                    source.reset()
+                    type
+                }
+            }
+            TokenTypeConst.BOOL -> IonType.BOOL
+            TokenTypeConst.INT -> IonType.INT
+            TokenTypeConst.FLOAT -> IonType.FLOAT
+            TokenTypeConst.DECIMAL -> IonType.DECIMAL
+            TokenTypeConst.TIMESTAMP -> IonType.TIMESTAMP
+            TokenTypeConst.SYMBOL -> IonType.SYMBOL
+            TokenTypeConst.STRING -> IonType.STRING
+            TokenTypeConst.CLOB -> IonType.CLOB
+            TokenTypeConst.BLOB -> IonType.BLOB
+            TokenTypeConst.LIST -> IonType.LIST
+            TokenTypeConst.SEXP -> IonType.SEXP
+            TokenTypeConst.STRUCT -> IonType.STRUCT
+            else -> null
+        }
     }
 
     override fun valueSize(): Int {
-        TODO("Not yet implemented")
+        return IdMappings.length(opcode.toInt())
     }
 
     override fun skip() {
         val opcode = opcode.toInt()
-        this.opcode = TID_UNSET
+        if (this.opcode == TID_END) {
+            TODO()
+        }
         val length = IdMappings.length(opcode, source)
         if (length >= 0) {
             source.position(source.position() + length)
         } else {
-            when (val token = type(opcode)) {
-                TokenTypeConst.FIELD_NAME -> {
-                    // TODO: Refactor this to the StructReader.
-                    (this as StructReader).fieldName()
+            if (opcode == TID_ON_FIELD_NAME.toInt()) {
+                // TODO: Move this to the StructReader if we can.
+                val r = (this as StructReader)
+                val sid = r.fieldNameSid()
+                if (sid < 0) r.fieldName()
+                return
+            } else if (opcode < 0x60) {
+                val macro = macroValue()
+                val args = macroArguments(macro.signature)
+                val end = args.calculateEndPosition()
+                args.close()
+                source.position(end)
+            } else when (opcode) {
+                // Symbol with FlexUInt SID
+                0xE3 -> symbolValueSid()
+
+                // TODO: make this better for delimited containers. Because of the way that `listValue()`
+                //   et al are implemented for delimited containers, this does a double read of the delimited
+                //   containers in order to skip it once. This problem is compounded when nested. Delimited
+                //   containers that are nested 1 layer deep will be skipped with a double read for each read
+                //   of the parent, so 4 reads to skip it once.
+                // FIXME: 14% of all
+
+                // Delimited List and sexp
+                0xF1, 0xF2 -> {
+                    val start = source.position()
+                    val s = pool.getDelimitedSequence(start, this, symbolTable, macroTable)
+                    while (s.nextToken() != TokenTypeConst.END) {
+                        s.skip()
+                    }
+                    s.close()
                 }
-                // TODO: make this better.
-                TokenTypeConst.LIST -> listValue().use {  }
-                TokenTypeConst.SEXP -> sexpValue().use {  }
-                TokenTypeConst.STRUCT -> structValue().use {
-                    while (it.nextToken() != TokenTypeConst.END) { it.skip() }
+                // Opcode F3
+                0xF3 -> structValue().use {
+                    while (it.nextToken() != TokenTypeConst.END) {
+//                        it.fieldName()
+//                        it.nextToken()
+                        it.skip()
+                    }
                     source.position((it as ValueReaderBase).source.position())
                 }
-                TokenTypeConst.ANNOTATIONS -> annotations().use {  }
-                TokenTypeConst.EEXP -> {
-                    val id = eexpValue()
-                    if (id < 0) {
-                        eexpArgs(SystemMacro[id and 0xFF]!!.signature).use {
-                            while (it.nextToken() != TokenTypeConst.END) { it.skip() }
-                            source.position(it.source.position())
-                        }
-                    } else {
-                        eexpArgs(macroTable[id].signature).use {
-                            while (it.nextToken() != TokenTypeConst.END) { it.skip() }
-                            source.position(it.source.position())
-                        }
-                    }
+                0xE4, 0xE5, 0xE6,
+                0xE7, 0xE8, 0xE9  -> annotations().close()
+                // E-Expressions that do not have a length prefix.
+                0xEF, 0xF4 -> {
+                    val macro = macroValue()
+                    // TODO: If we stop eagerly calculating the size of macro args, this may need to change.
+                    macroArguments(macro.signature).close()
                 }
                 else -> {
-                    TODO("Skipping a ${TokenTypeConst(token)} [opcode: 0x${opcode.toString(16)}]")
+                    TODO("Skipping an opcode: 0x${opcode.toString(16)}")
                 }
             }
         }
+        this.opcode = TID_UNSET
     }
+
+//    override fun skip() {
+//        val opcode = opcode.toInt()
+//        if (this.opcode == TID_END) {
+//            TODO()
+//        }
+//        val length = IdMappings.length(opcode, source)
+//        if (length >= 0) {
+//            source.position(source.position() + length)
+//        } else {
+//            when (val token = type(opcode)) {
+//                TokenTypeConst.FIELD_NAME -> {
+//                    // TODO: Move this to the StructReader if we can.
+//                    val r = (this as StructReader)
+//                    val sid = r.fieldNameSid()
+//                    if (sid < 0) r.fieldName()
+//                    return
+//                }
+//                TokenTypeConst.SYMBOL -> {
+//                    if (symbolValueSid() < 0) {
+//                        // Length prefixed symbols and system symbols are already covered, so this should be unreachable.
+//                        TODO("Skipping Symbols for opcode ${opcode.toString(16)}")
+//                    }
+//                }
+//                // TODO: make this better for delimited containers. Because of the way that `listValue()`
+//                //   et al are implemented for delimited containers, this does a double read of the delimited
+//                //   containers in order to skip it once. This problem is compounded when nested. Delimited
+//                //   containers that are nested 1 layer deep will be skipped with a double read for each read
+//                //   of the parent, so 4 reads to skip it once.
+//                // FIXME: 14% of all
+//                TokenTypeConst.LIST -> {
+//                    listValue().use {  }
+//                }
+//                TokenTypeConst.SEXP -> sexpValue().use {  }
+//                TokenTypeConst.STRUCT -> structValue().use {
+//                    while (it.nextToken() != TokenTypeConst.END) {
+////                        it.fieldName()
+////                        it.nextToken()
+//                        it.skip()
+//                    }
+//                    source.position((it as ValueReaderBase).source.position())
+//                }
+//                TokenTypeConst.ANNOTATIONS -> annotations().use {  }
+//                TokenTypeConst.MACRO_INVOCATION -> {
+//                    val macro = macroValue()
+//                    val end = macroArguments(macro.signature).use { it.calculateEndPosition() }
+//                    source.position(end)
+//                }
+//                else -> {
+//                    TODO("Skipping a ${TokenTypeConst(token)} [opcode: 0x${opcode.toString(16)}]")
+//                }
+//            }
+//        }
+//        this.opcode = TID_UNSET
+//    }
 
     override fun nullValue(): IonType {
         val opcode = opcode.toInt()
@@ -172,7 +327,7 @@ abstract class ValueReaderBase(
         val bool = when (opcode) {
             0x6E -> true
             0x6F -> false
-            else -> throw IonException("Not positioned on a boolean")
+            else -> throw IonException("Not positioned on a boolean: ${opcode.toString(16)}")
         }
         return bool
     }
@@ -194,7 +349,7 @@ abstract class ValueReaderBase(
                 // Not really supported for Longs anyway.
                 TODO("Variable length integers")
             } else {
-                throw IonException("Not positioned on an int; found ${TokenTypeConst(opcode)}")
+                throw IonException("Not positioned on an int; found ${TokenTypeConst(opcode)} (opcode: $opcode)")
             }
         }
     }
@@ -211,11 +366,22 @@ abstract class ValueReaderBase(
             throw IonException("Not positioned on a string")
         }
         val position = source.position()
+        // Why do we need scratchBuffer here?
         val scratchBuffer = pool.scratchBuffer
         scratchBuffer.limit(position + length)
         scratchBuffer.position(position)
         source.position(position + length)
         return pool.utf8Decoder.decode(scratchBuffer, length)
+    }
+
+    override fun lookupSid(sid: Int): String? {
+        try {
+            return symbolTable[sid]
+        } catch (t: Throwable) {
+            println("Failed SID Lookup for $sid")
+            println("There are ${symbolTable.size} symbols: ${symbolTable.contentToString()}")
+            throw t
+        }
     }
 
     override fun symbolValue(): String? {
@@ -287,7 +453,7 @@ abstract class ValueReaderBase(
         TODO("Not yet implemented")
     }
 
-    override fun listValue(): ListReader {
+    final override fun listValue(): ListReader {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
         val length = if (opcode shr 4 == 0xB) {
@@ -296,35 +462,32 @@ abstract class ValueReaderBase(
             IntHelper.readFlexUInt(source)
         } else if (opcode == 0xF1) {
             val start = source.position()
-            return pool.getDelimitedList(start, source.limit() - start, this)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getDelimitedSequence(start, this, symbolTable, macroTable)
         } else {
             throw IonException("Not positioned on a list")
         }
         val start = source.position()
         source.position(start + length)
-        return pool.getList(start, length)
-            .also { initTables(symbolTable, macroTable) }
+        return pool.getList(start, length, symbolTable, macroTable)
     }
 
-    override fun sexpValue(): SexpReader {
+    final override fun sexpValue(): SexpReader {
+        val opcode = opcode.toInt()
+        this.opcode = TID_UNSET
         val length = IdMappings.length(opcode.toInt(), source)
         if (length < 0) {
             // Delimited container
             val start = source.position()
-            return pool.getDelimitedSexp(start, this)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getDelimitedSexp(start, this, symbolTable, macroTable)
         } else {
             // Length prefixed container
             val start = source.position()
             source.position(start + length)
-            opcode = TID_UNSET
-            return pool.getPrefixedSexp(start, length)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getPrefixedSexp(start, length, symbolTable, macroTable)
         }
     }
 
-    override fun structValue(): StructReader {
+    final override fun structValue(): StructReader {
         val opcode = opcode.toInt()
         val length = IdMappings.length(opcode, source)
         if (length < 0) {
@@ -332,54 +495,48 @@ abstract class ValueReaderBase(
             val start = source.position()
             this.opcode = TID_UNSET
 
-            val sacrificialReader = pool.getDelimitedStruct(start)
-                .also { initTables(symbolTable, macroTable) }
-            while (true) {
-                val next = sacrificialReader.nextToken()
-                if (next == TokenTypeConst.END) break
-                sacrificialReader.fieldNameSid()
-                sacrificialReader.nextToken()
-                sacrificialReader.skip()
-            }
-            val endPosition = sacrificialReader.source.position()
-            sacrificialReader.close()
-            source.position(endPosition)
+//            val sacrificialReader = pool.getDelimitedStruct(start, this, symbolTable, macroTable)
+//            while (sacrificialReader.nextToken() != TokenTypeConst.END) {
+//                sacrificialReader.skip()
+//            }
+//
+//            val endPosition = sacrificialReader.source.position()
+//            sacrificialReader.close()
+//            source.position(endPosition)
 
-            return pool.getDelimitedStruct(start)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getDelimitedStruct(start, this, symbolTable, macroTable)
         } else {
             // Length prefixed container
             val start = source.position()
             source.position(start + length)
             this.opcode = TID_UNSET
-            return pool.getStruct(start, length)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getStruct(start, length, symbolTable, macroTable)
         }
     }
 
-
-    override fun eexpValue(): Int {
+    final override fun macroValue(): Macro {
         val opcode = opcode.toInt()
         when (opcode shr 4) {
-            0x0, 0x1, 0x2, 0x3 -> return opcode
+            0x0, 0x1, 0x2, 0x3 -> return macroTable[opcode]
             0x4 -> {
                 // Opcode with 12-bit address and bias
                 val bias = (opcode and 0xF) * 256 + 64
                 val unbiasedId = source.get().toInt() and 0xFF
                 val id: Int = unbiasedId + bias
-                return id
+                return macroTable[id]
             }
             0x5 -> {
                 // Opcode with 20-bit address and bias
                 val bias = (opcode and 0xF) * 256 * 256 + 4160
                 val unbiasedId = source.getShort().toInt() and 0xFFFF
                 val id: Int = unbiasedId + bias
-                return id
+                return macroTable[id]
             }
             0xE -> {
                 if (opcode == 0xEF) {
                     // System macro
-                    return (source.get().toInt() and 0xFF) or Int.MIN_VALUE
+                    val id = source.get().toInt()
+                    return EncodingContextManager.ION_1_1_SYSTEM_MACROS[id]
                 } else {
                     throw IonException("Not positioned on an E-Expression")
                 }
@@ -387,11 +544,11 @@ abstract class ValueReaderBase(
             0xF -> {
                 if (opcode == 0xF4) {
                     // E-expression with FlexUInt macro address
-                    return IntHelper.readFlexUInt(source)
+                    return macroTable[IntHelper.readFlexUInt(source)]
                 } else if (opcode == 0xF5) {
                     // E-expression with FlexUInt macro address followed by FlexUInt length prefix
                     val address = IntHelper.readFlexUInt(source)
-                    return address
+                    return macroTable[address]
                 } else {
                     throw IonException("Not positioned on an E-Expression")
                 }
@@ -401,36 +558,26 @@ abstract class ValueReaderBase(
         }
     }
 
-    override fun eexpArgs(signature: List<Macro.Parameter>): EExpArgumentReaderImpl {
+    final override fun macroArguments(signature: List<Macro.Parameter>): EExpArgumentReaderImpl {
         // TODO: Add a state value representing "start of arguments", and check for it here
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
         val length = IdMappings.length(opcode, source)
         val position = source.position()
         val reader = if (length < 0) {
-            // TODO: Calculate end position more efficiently.
             val maxPossibleLength = source.limit() - position
-
-            val sacrificialReader = pool.getEExpArgs(position, maxPossibleLength, signature)
-                .also { initTables(symbolTable, macroTable) }
-            while (sacrificialReader.nextToken() != TokenTypeConst.END) {
-                sacrificialReader.skip()
-            }
-            sacrificialReader.close()
-            val newPosition = sacrificialReader.position()
-
-            source.position(newPosition)
-            pool.getEExpArgs(position, maxPossibleLength, signature)
-                .also { initTables(symbolTable, macroTable) }
+            val args = pool.getEExpArgs(position, maxPossibleLength, signature, symbolTable, macroTable)
+            // TODO: See if we can avoid eagerly calculating the length of the arguments
+            source.position(args.calculateEndPosition())
+            args
         } else {
             source.position(position + length)
-            pool.getEExpArgs(position, position + length, signature)
-                .also { initTables(symbolTable, macroTable) }
+            pool.getEExpArgs(position, length, signature, symbolTable, macroTable)
         }
         return reader
     }
 
-    override fun annotations(): AnnotationIterator {
+    final override fun annotations(): AnnotationIterator {
         val opcode = opcode.toInt()
         this.opcode = TID_AFTER_ANNOTATION
         val length = AnnotationIteratorImpl.calculateLength(opcode, source)
@@ -439,13 +586,13 @@ abstract class ValueReaderBase(
         return pool.getAnnotations(opcode, start, length, symbolTable)
     }
 
-    override fun timestampValue(): Timestamp {
+    final override fun timestampValue(): Timestamp {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
         return TimestampHelper.readTimestamp(opcode, source)
     }
 
-    override fun doubleValue(): Double {
+    final override fun doubleValue(): Double {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
         return when (opcode) {
@@ -463,20 +610,28 @@ abstract class ValueReaderBase(
         TODO("Not yet implemented")
     }
 
-    override fun getIonVersion(): Short = 0x0101
+    final override fun getIonVersion(): Short = 0x0101
 
-    override fun ivm(): Short {
+    final override fun ivm(): Short {
         if (opcode.toInt() != 0xE0) throw IonException("Not positioned on an IVM")
         opcode = TID_UNSET
         val version = source.getShort()
         // TODO: Check the last byte of the IVM to make sure it is well formed.
         source.get()
+
+        symbolTable = ION_1_1_SYSTEM_SYMBOLS
+        macroTable = ION_1_1_SYSTEM_MACROS
+
         return version
     }
 
-    override fun seekTo(position: Int) {
+    final override fun seekTo(position: Int) {
         source.position(position)
     }
-    override fun position(): Int = source.position()
+    final override fun position(): Int = source.position()
+
+    override fun expressionGroup(): SequenceReader {
+        TODO("Not yet implemented")
+    }
 }
 

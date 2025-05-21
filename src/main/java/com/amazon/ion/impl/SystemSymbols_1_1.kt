@@ -6,7 +6,7 @@ import com.amazon.ion.*
 import com.amazon.ion.SymbolTable.*
 import java.util.*
 
-enum class SystemSymbols_1_1(val id: Int, val text: String) {
+enum class SystemSymbols_1_1(val text: String, val id: Int) {
     // System SID 0 is reserved.
     ION( /*                     */ 1, "\$ion"),
     ION_1_0( /*                 */ 2, "\$ion_1_0"),
@@ -22,6 +22,7 @@ enum class SystemSymbols_1_1(val id: Int, val text: String) {
     ION_SHARED_MODULE( /*       */ 12, "\$ion_shared_module"),
     MACRO( /*                   */ 13, "macro"),
     MACROS( /*                  */ 14, "macros"),
+    SYMBOL_TABLE(  "symbol_table", 15),
     MODULE( /*                  */ 15, "module"),
     EXPORT( /*                  */ 16, "export"),
     IMPORT( /*                  */ 17, "import"),
@@ -71,6 +72,8 @@ enum class SystemSymbols_1_1(val id: Int, val text: String) {
     ADD_MACROS( /*              */ 61, "add_macros"),
     USE( /*                     */ 62, "use"),
     ;
+
+    constructor (id: Int, text: String) : this(text, if (id > 14) id + 1 else id)
 
     val utf8Bytes = text.encodeToByteArray()
 

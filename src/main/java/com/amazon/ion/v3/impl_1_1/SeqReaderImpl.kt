@@ -12,7 +12,7 @@ class SeqReaderImpl internal constructor(
 ): ValueReaderBase(source, pool, symbolTable, macroTable), ListReader, SexpReader {
 
     override fun close() {
+        if (this in pool.lists) throw IllegalStateException("Already closed: $this")
         pool.lists.add(this)
     }
-
 }

@@ -4,16 +4,47 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
+/**
+ * Implementation of delimited structs.
+ *
+ * TODO: See if we can combine the delimited and length prefixed implementations.
+ *       There may be a slight performance benefit because calls to `StructReader`
+ *       could be optimized more if there are fewer implementations to choose from.
+ *       See https://shipilev.net/blog/2015/black-magic-method-dispatch/
+ *
+ * To combine them, we probably just need to add a "isDelimited" flag, make sure
+ * that `flexSymMode` is always enabled for delimited structs, and check for the
+ * delimited end marker.
+ */
 class DelimitedStructReaderImpl internal constructor(
     source: ByteBuffer,
     pool: ResourcePool,
+    @JvmField
+    var parent: ValueReaderBase,
     symbolTable: Array<String?>,
     macroTable: Array<Macro>,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), StructReader {
 
+
+    fun findEnd() {
+        source.mark()
+        while (nextToken() != TokenTypeConst.END) {
+            fieldNameSid()
+            if (nextToken() == TokenTypeConst.ANNOTATIONS) nextToken()
+            skip()
+        }
+        source.limit(source.position())
+        source.reset()
+    }
+
     private var flexSymReader: FlexSymReader = FlexSymReader(pool)
 
     override fun close() {
+        while (nextToken() != TokenTypeConst.END) {
+            skip()
+        }
+//        if (this in pool.delimitedStructs) throw IllegalStateException("Already closed: $this")
+        parent.source.position(source.position())
         pool.delimitedStructs.add(this)
     }
 
@@ -32,7 +63,11 @@ class DelimitedStructReaderImpl internal constructor(
                 source.limit(position + 2)
                 return TokenTypeConst.END
             }
+            this.opcode = TID_ON_FIELD_NAME
             return TokenTypeConst.FIELD_NAME
+        }
+        if (opcode == TID_AFTER_FIELD_NAME.toInt()) {
+            this.opcode = TID_UNSET
         }
         return super.nextToken()
     }

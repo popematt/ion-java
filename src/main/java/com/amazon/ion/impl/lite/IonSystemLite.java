@@ -691,7 +691,8 @@ final class IonSystemLite
         // of that container. Subsequent processing is required to populate it.
         private IonValueLite shallowLoadCurrentValue() {
             IonType ionType = reader.getType();
-            if (reader.isNullValue()) {
+            boolean isNullValue = reader.isNullValue();
+            if (isNullValue) {
                 return newNull(ionType);
             }
 
