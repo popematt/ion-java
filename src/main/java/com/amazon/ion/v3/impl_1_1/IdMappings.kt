@@ -135,4 +135,19 @@ object IdMappings {
             }
         }
     }
+
+    /**
+     * Returns >= 0 for known lengths, -1 for unknown lengths, and -2 for incalculable lengths
+     */
+    @JvmStatic
+    fun length(typeId: Int): Int {
+        return when (typeId) {
+            ValueReaderBase.TID_EMPTY_ARGUMENT.toInt() -> 0
+            ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> -2
+            else -> when (val it = LENGTH_FOR_OPCODE[typeId]) {
+                -3 -> throw IonException("Invalid input: illegal typeId: $typeId")
+                else -> it
+            }
+        }
+    }
 }

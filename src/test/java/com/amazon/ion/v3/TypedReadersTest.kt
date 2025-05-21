@@ -791,7 +791,10 @@ class TypedReadersTest {
                 val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
                 val ION = IonSystemBuilder.standard().build()
                 StreamReaderAsIonReader(mappedByteBuffer).use {
-                    ION.loader.load(it)
+                    val iter = ION.iterate(it)
+                    while (iter.hasNext()) {
+                        iter.next()
+                    }
                 }
             }
 

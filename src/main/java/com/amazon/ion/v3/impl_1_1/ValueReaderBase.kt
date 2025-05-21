@@ -4,6 +4,8 @@ import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -54,6 +56,7 @@ abstract class ValueReaderBase(
         macroTable: Array<Macro>,
     ) {
         if (symbolTable.isEmpty()) throw IllegalStateException("symbolTable array may not be empty")
+        check(symbolTable[0] == null)
         this.symbolTable = symbolTable
         this.macroTable = macroTable
     }
@@ -95,7 +98,7 @@ abstract class ValueReaderBase(
     }
 
     override fun valueSize(): Int {
-        TODO("Not yet implemented")
+        return IdMappings.length(opcode.toInt())
     }
 
     override fun skip() {
@@ -216,6 +219,16 @@ abstract class ValueReaderBase(
         scratchBuffer.position(position)
         source.position(position + length)
         return pool.utf8Decoder.decode(scratchBuffer, length)
+    }
+
+    override fun lookupSid(sid: Int): String? {
+        try {
+            return symbolTable[sid]
+        } catch (t: Throwable) {
+            println(sid)
+            println(symbolTable.contentToString())
+            throw t
+        }
     }
 
     override fun symbolValue(): String? {
@@ -471,6 +484,10 @@ abstract class ValueReaderBase(
         val version = source.getShort()
         // TODO: Check the last byte of the IVM to make sure it is well formed.
         source.get()
+
+        symbolTable = ION_1_1_SYSTEM_SYMBOLS
+        macroTable = ION_1_1_SYSTEM_MACROS
+
         return version
     }
 

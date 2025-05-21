@@ -53,6 +53,7 @@ interface ValueReader: AutoCloseable {
     fun stringValue(): String
     fun symbolValue(): String?
     fun symbolValueSid(): Int
+    fun lookupSid(sid: Int): String?
 
     fun clobValue(): ByteBuffer
     fun blobValue(): ByteBuffer

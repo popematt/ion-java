@@ -1,20 +1,15 @@
 package com.amazon.ion.v3
 
-import com.amazon.ion.Decimal
-import com.amazon.ion.IntegerSize
-import com.amazon.ion.IonException
-import com.amazon.ion.IonReader
-import com.amazon.ion.IonType
-import com.amazon.ion.SymbolTable
-import com.amazon.ion.SymbolToken
-import com.amazon.ion.Timestamp
+import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.v3.impl_1_0.*
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.ValueReaderBase
 import com.amazon.ion.v3.visitor.*
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.*
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_0
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -90,8 +85,13 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
                 annotationsSids = annotationsSids.grow()
             }
             annotationsIterator.next()
-            annotationsSids[annotationCount] = annotationsIterator.getSid()
-            annotations[annotationCount] = annotationsIterator.getText()
+            val sid = annotationsIterator.getSid()
+            annotationsSids[annotationCount] = sid
+            if (sid < 0) {
+                annotations[annotationCount] = annotationsIterator.getText()
+            } else {
+                annotations[annotationCount] = reader.lookupSid(sid)
+            }
             annotationCount++
         }
         annotationsSize = annotationCount
@@ -140,7 +140,19 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
             TokenTypeConst.BLOB -> IonType.BLOB
             TokenTypeConst.LIST -> IonType.LIST
             TokenTypeConst.SEXP -> IonType.SEXP
-            TokenTypeConst.STRUCT -> IonType.STRUCT
+            TokenTypeConst.STRUCT -> {
+                if (annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotations[0] == "\$ion_symbol_table") {
+                    val newSymbols = reader.structValue().use { readLegacySymbolTable11(it) }
+                    val r = (reader as ValueReaderBase)
+                    r.initTables(newSymbols, ION_1_1_SYSTEM_MACROS)
+                    r.pool.symbolTable = newSymbols
+                    r.pool.macroTable = ION_1_1_SYSTEM_MACROS
+                    reset()
+                    null
+                } else {
+                    IonType.STRUCT
+                }
+            }
             TokenTypeConst.ANNOTATIONS -> {
                 storeAnnotations()
                 null
@@ -150,8 +162,7 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
                 if (fieldNameSid < 0) {
                     fieldName = (reader as StructReader).fieldName()
                 } else {
-//                    fieldName = reader.lookupSid(fieldNameSid)
-                    TODO()
+                    fieldName = reader.lookupSid(fieldNameSid)
                 }
                 null
             }
@@ -168,8 +179,9 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
         return _next()
     }
 
-    private fun handleTopLevelIvm() {
+    fun handleTopLevelIvm() {
         val currentVersion = reader.getIonVersion().toInt()
+        // Calling IVM also resets the symbol table, etc.
         val version = reader.ivm().toInt()
         // If the version is the same, then we know it's a valid version, and we can skip validation
         if (version != currentVersion) {
@@ -181,25 +193,72 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
             }
             reader.seekTo(position)
         }
-
-        if (version == ION_1_1) {
-//            println("Updating symbol table to Ion 1.1")
-            // FIXME: Update this so that the default module is empty, and the active modules contains
-            //        the default module followed by the system module.
-//            availableModules.clear()
-//            availableModules["_"] =
-//                ModuleReader.Module("_", SystemSymbols_1_1.allSymbolTexts().toMutableList(), mutableListOf())
-//
-//            // TODO: Add macros to the system module
-//            availableModules["\$ion"] = ION_1_1_SYSTEM_MODULE
-//            activeModules.clear()
-//            activeModules.add(availableModules["_"]!!)
-//            macroTable = ION_1_1_SYSTEM_MACROS
-            // symbolTable = ION_1_1_SYSTEM_SYMBOLS
-        } else {
-            // symbolTable = ApplicationReaderDriver.ION_1_0_SYMBOL_TABLE
-        }
     }
+
+    private fun readLegacySymbolTable11(structReader: StructReader): Array<String?> {
+        val newSymbols = ArrayList<String?>()
+        var isLstAppend = false
+        while (true) {
+            val token = structReader.nextToken()
+            if (token == TokenTypeConst.END) {
+                break
+            } else if (token != TokenTypeConst.FIELD_NAME) {
+                val sr = (structReader as ValueReaderBase)
+                println(sr.source)
+                throw IllegalStateException("Unexpected token type: ${TokenTypeConst(token)}")
+            }
+            val fieldNameSid = structReader.fieldNameSid()
+            val fieldName = if (fieldNameSid < 0) {
+                structReader.fieldName()
+            } else {
+                structReader.lookupSid(fieldNameSid)
+            }
+            when (fieldName) {
+                SystemSymbols.IMPORTS -> {
+                    val importsToken = structReader.nextToken()
+                    when (importsToken) {
+                        TokenTypeConst.SYMBOL -> {
+                            val sid = structReader.symbolValueSid()
+                            val text = if (sid < 0) {
+                                structReader.symbolValue()
+                            } else {
+                                structReader.lookupSid(sid)
+                            }
+                            if (text == SystemSymbols.ION_SYMBOL_TABLE) {
+                                isLstAppend = true
+                            }
+                        }
+                        TokenTypeConst.LIST -> {
+                            TODO("Imports not supported yet.")
+                        }
+                        else -> {
+                            // TODO: Should this be an error?
+                        }
+                    }
+                }
+                SystemSymbols.SYMBOLS -> {
+                    structReader.nextToken()
+                    structReader.listValue().use { listReader ->
+                        while (true) {
+                            when (val t = listReader.nextToken()) {
+                                TokenTypeConst.END -> break
+                                TokenTypeConst.STRING -> newSymbols.add(listReader.stringValue())
+                                TokenTypeConst.NULL -> newSymbols.add(null)
+                                else -> throw IonException("Unexpected token type in symbols list: $t")
+                            }
+                        }
+                    }
+                }
+                else -> {}
+            }
+        }
+        val startOfNewSymbolTable = if (isLstAppend) (reader as ValueReaderBase).symbolTable else arrayOf<String?>(null)
+        val newSymbolTable = Array<String?>(newSymbols.size + startOfNewSymbolTable.size) { null }
+        System.arraycopy(startOfNewSymbolTable, 0, newSymbolTable, 0, startOfNewSymbolTable.size)
+        System.arraycopy(newSymbols.toArray(), 0, newSymbolTable, startOfNewSymbolTable.size, newSymbols.size)
+        return newSymbolTable
+    }
+
 
     override fun stepIn() {
         val child = when (reader.currentToken()) {
@@ -228,7 +287,98 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
     override fun getDepth(): Int = stack.size
 
     override fun getSymbolTable(): SymbolTable {
-        TODO()
+        return when (reader.getIonVersion().toInt()) {
+            0x0100 -> LstSnapshot((reader as com.amazon.ion.v3.impl_1_0.ValueReaderBase).symbolTable)
+            0x0101 -> LstSnapshot((reader as ValueReaderBase).symbolTable)
+            else -> throw IllegalStateException("Unknown Ion version ${reader.getIonVersion()}")
+        }
+    }
+
+    private class LstSnapshot(private val symbolText: Array<String?>): _Private_LocalSymbolTable {
+        override fun getName(): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun getVersion(): Int {
+            TODO("Not yet implemented")
+        }
+
+        override fun isLocalTable(): Boolean {
+            TODO("Not yet implemented")
+        }
+
+        override fun isSharedTable(): Boolean {
+            TODO("Not yet implemented")
+        }
+
+        override fun isSubstitute(): Boolean {
+            TODO("Not yet implemented")
+        }
+
+        override fun isSystemTable(): Boolean {
+            TODO("Not yet implemented")
+        }
+
+        override fun isReadOnly(): Boolean {
+            TODO("Not yet implemented")
+        }
+
+        override fun makeReadOnly() {
+            TODO("Not yet implemented")
+        }
+
+        override fun getSystemSymbolTable(): SymbolTable {
+            TODO("Not yet implemented")
+        }
+
+        override fun getIonVersionId(): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun getImportedTables(): Array<SymbolTable> {
+            TODO("Not yet implemented")
+        }
+
+        override fun getImportedMaxId(): Int {
+            TODO("Not yet implemented")
+        }
+
+        override fun getMaxId(): Int {
+            TODO("Not yet implemented")
+        }
+
+        override fun intern(text: String?): SymbolToken {
+            TODO("Not yet implemented")
+        }
+
+        override fun find(text: String?): SymbolToken {
+            TODO("Not yet implemented")
+        }
+
+        override fun findSymbol(name: String?): Int {
+            TODO("Not yet implemented")
+        }
+
+        override fun findKnownSymbol(id: Int): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun iterateDeclaredSymbolNames(): MutableIterator<String> {
+            TODO("Not yet implemented")
+        }
+
+        override fun writeTo(writer: IonWriter?) {
+            TODO("Not yet implemented")
+        }
+
+        override fun makeCopy(): _Private_LocalSymbolTable {
+            TODO("Not yet implemented")
+        }
+
+        override fun getImportedTablesNoCopy(): Array<SymbolTable> {
+            TODO("Not yet implemented")
+        }
+
     }
 
     override fun getType(): IonType? = type
@@ -246,7 +396,7 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
     override fun getTypeAnnotations(): Array<String?> = annotations.copyOf(annotationsSize)
 
     override fun getTypeAnnotationSymbols(): Array<SymbolToken> {
-        return Array<SymbolToken>(annotations.size) { i ->
+        return Array(annotationsSize) { i ->
             _Private_Utils.newSymbolToken(annotations[i], annotationsSids[i]) as SymbolToken
         }
     }
@@ -303,8 +453,7 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
         val text = if (sid < 0) {
             reader.symbolValue()
         } else {
-//            reader.lookupSid(sid)
-            TODO()
+            reader.lookupSid(sid)
         }
         return _Private_Utils.newSymbolToken(text, sid)
     }

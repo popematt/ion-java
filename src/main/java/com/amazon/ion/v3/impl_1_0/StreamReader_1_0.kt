@@ -630,6 +630,8 @@ abstract class ValueReaderBase internal constructor(
         return symbolTable[symbolValueSid()]
     }
 
+    override fun lookupSid(sid: Int): String? = symbolTable[sid]
+
     override fun symbolValueSid(): Int {
         var length = typeId.toInt() and 0xF
         if (length == 0xE) {

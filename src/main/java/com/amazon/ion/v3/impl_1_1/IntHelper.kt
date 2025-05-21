@@ -58,12 +58,18 @@ object IntHelper {
     @JvmStatic
     fun readFlexUIntAsLong(source: ByteBuffer): Long {
         val position = source.position()
+        // TODO: Rewrite this as a relative get() so that we don't have to set the position
+        //       again in the 1-byte case.
         val firstByte = source.get(position)
         val numBytes = firstByte.countTrailingZeroBits() + 1
         if (source.remaining() < numBytes) throw IonException("Incomplete data")
         source.position(position + numBytes)
         when (numBytes) {
-            1, 2, 3, 4 -> {
+            1 -> {
+                source.position(position + 1)
+                return ((firstByte.toInt() and 0xFF) ushr 1).toLong()
+            }
+            2, 3, 4 -> {
                 // TODO: We could probably simplify some of these calculations.
                 val backtrack = 4 - numBytes
                 val data = source.getInt(position - backtrack)
@@ -80,6 +86,7 @@ object IntHelper {
                 // which would mean that the FlexUInt is 9 bytes long. In this case, we can read a long to get the
                 // remaining 8 bytes, and shift out the single bit.
                 val value = source.getLong(position + 1)
+                source.position(position + 9)
                 // Our assumption that it is a 9 byte flex uint is incorrect.
                 if (value and 0x1L == 0L) throw IonException("FlexInt value too large to find in a Long")
                 return value ushr 1
@@ -155,6 +162,7 @@ object IntHelper {
                 // which would mean that the FlexUInt is 9 bytes long. In this case, we can read a long to get the
                 // remaining 8 bytes, and shift out the single bit.
                 val value = source.getLong(position + 1)
+                source.position(position + 9)
                 // Our assumption that it is a 9 byte flex uint is incorrect.
                 if (value and 0x1L == 0L) throw IonException("FlexInt value too large to find in a Long")
                 return value shr 1

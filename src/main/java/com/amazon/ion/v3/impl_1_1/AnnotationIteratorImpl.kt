@@ -123,10 +123,10 @@ internal class AnnotationIteratorImpl(
             sid = -1
             val length = -flexSym
             val position = source.position()
+            source.position(position + length)
             val scratchBuffer = pool.scratchBuffer
             scratchBuffer.limit(position + length)
             scratchBuffer.position(position)
-            source.position(position + length)
             text = pool.utf8Decoder.decode(scratchBuffer, length)
         }
     }

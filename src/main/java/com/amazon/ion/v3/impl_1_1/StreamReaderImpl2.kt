@@ -8,13 +8,12 @@ import com.amazon.ion.v3.SexpReader
 import com.amazon.ion.v3.StreamReader
 import com.amazon.ion.v3.TokenTypeConst
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.nio.ByteBuffer
-
-private val ION_1_1_SYMBOL_TABLE = SystemSymbols_1_1.allSymbolTexts().toTypedArray()
 
 class StreamReaderImpl2 internal constructor(
     source: ByteBuffer,
-): ValueReaderBase(source, ResourcePool(source.asReadOnlyBuffer(), ION_1_1_SYMBOL_TABLE, emptyArray()), ION_1_1_SYMBOL_TABLE, emptyArray()), StreamReader {
+): ValueReaderBase(source, ResourcePool(source.asReadOnlyBuffer(), ION_1_1_SYSTEM_SYMBOLS, emptyArray()), ION_1_1_SYSTEM_SYMBOLS, emptyArray()), StreamReader {
 
     // private var symbolTable = ION_1_1_SYMBOL_TABLE
 

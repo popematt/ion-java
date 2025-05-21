@@ -18,7 +18,7 @@ class ApplicationReaderDriver(
 
     companion object {
         @JvmStatic
-        private val ION_1_1_SYSTEM_MACROS: Array<Macro> = SystemMacro.entries.filter { it.id >= 0 }.sortedBy { it.id }.toTypedArray()
+        internal val ION_1_1_SYSTEM_MACROS: Array<Macro> = SystemMacro.entries.filter { it.id >= 0 }.sortedBy { it.id }.toTypedArray()
         @JvmStatic
         internal val ION_1_1_SYSTEM_SYMBOLS = SystemSymbols_1_1.allSymbolTexts()
             .toMutableList()
@@ -69,19 +69,21 @@ class ApplicationReaderDriver(
     }
 
     private var symbolTable: Array<String?> = ION_1_0_SYMBOL_TABLE
+        set(value) {
+            check(value[0] == null)
+            field = value
+        }
     private var macroTable: Array<Macro> = emptyArray()
     private val moduleReader = ModuleReader()
     private val availableModules = mutableMapOf<String, ModuleReader.Module>()
     private val activeModules = mutableListOf<ModuleReader.Module>()
 
     private fun addOrSetSymbols(argReader: EExpArgumentReader, append: Boolean) {
-//        println("addOrSetSymbols(append=$append)")
         val newSymbols = if (append) symbolTable.toMutableList() else mutableListOf<String?>(null)
         argReader.nextToken()
         argReader.expressionGroup().use { sl -> moduleReader.readSymbolsList(sl, newSymbols) }
         availableModules["_"]!!.symbols = newSymbols
         // TODO: Fix this to use proper encoding module sequence.
-//        println(newSymbols)
         symbolTable = newSymbols.toTypedArray()
         // TODO: Clean this up:
         val r = (reader as ValueReaderBase)
@@ -642,7 +644,7 @@ class ApplicationReaderDriver(
     override fun close() {
         if (::_ion10Reader.isInitialized) _ion10Reader.close()
         if (::_ion11Reader.isInitialized) _ion11Reader.close()
-        symbolTable = emptyArray()
+        symbolTable = arrayOf(null)
         macroTable = emptyArray()
     }
 }
