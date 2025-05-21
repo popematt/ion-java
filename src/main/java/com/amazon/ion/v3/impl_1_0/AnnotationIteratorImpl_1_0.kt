@@ -37,4 +37,13 @@ internal class AnnotationIteratorImpl_1_0(
         next()
         source.reset()
     }
+
+    override fun toStringArray(): Array<String?> {
+        val strings = ArrayList<String?>(4)
+        while (this.hasNext()) {
+            next()
+            strings.add(getText())
+        }
+        return strings.toTypedArray()
+    }
 }

@@ -11,7 +11,9 @@ import java.nio.ByteBuffer
 class EExpArgumentReaderImpl(
     source: ByteBuffer,
     pool: ResourcePool,
-): ValueReaderBase(source, pool), EExpArgumentReader {
+    symbolTable: Array<String?>,
+    macroTable: Array<Macro>,
+): ValueReaderBase(source, pool, symbolTable, macroTable), EExpArgumentReader {
 
     private var signature: List<Macro.Parameter> = emptyList()
 
@@ -22,9 +24,9 @@ class EExpArgumentReaderImpl(
     private var currentParameterIndex = 0
 
     override fun close() {
-        println("Closing EExpArgumentReaderImpl...")
+//        println("Closing EExpArgumentReaderImpl...")
         while (nextToken() != TokenTypeConst.END) { skip() }
-        println("Ended: $source")
+//        println("Ended: $source")
     }
 
     fun initArgs(signature: List<Macro.Parameter>) {
@@ -53,7 +55,7 @@ class EExpArgumentReaderImpl(
                 presence[i] = 1
             }
         }
-        println("Position after presence bits: ${source.position()}")
+//        println("Position after presence bits: ${source.position()}")
 
         // Set the first argument to the current position. That's where it will be, if it is present.
         argumentIndices[0] = source.position()
@@ -109,12 +111,12 @@ class EExpArgumentReaderImpl(
         currentParameterIndex++
         if (cpIndex >= signature.size) {
             opcode = TID_END
-            println("Position: ${source.position()}, token: END")
+//            println("Position: ${source.position()}, token: END")
             return TokenTypeConst.END
         }
         val currentParameter = signature[cpIndex]
         val presence = presence[cpIndex]
-        println("Checking next argument presence. Positioned at ${source.position()}, presence: $presence")
+//        println("Checking next argument presence. Positioned at ${source.position()}, presence: $presence")
         return when (presence) {
             0 -> {
                 opcode = TID_EMPTY_ARGUMENT
@@ -137,24 +139,20 @@ class EExpArgumentReaderImpl(
         if (opcode != TID_EXPRESSION_GROUP) throw IonException("Not positioned on an expression group")
         this.opcode = TID_UNSET
 
-        println("Reading expression group length at position: ${source.position()}")
         val length = IntHelper.readFlexUInt(source)
         val position = source.position()
         // TODO: Check if we're on a tagless parameter.
         //       For now, we'll assume that they are all tagged.
         return if (length == 0) {
             val maxLength = source.limit() - position
+            // TODO: Something more efficient here
             val sacrificialReader = pool.getDelimitedList(position, maxLength, this)
             while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
             val endPosition = sacrificialReader.source.position()
             sacrificialReader.close()
-            // This is correct.
-            println("End position: $endPosition")
             source.position(endPosition)
             pool.getDelimitedList(position, maxLength, this)
         } else {
-            println("at EExpArgumentReaderImpl.kt:155 : $source")
-            println("Adjusting: position=$position, length=$length, new position=${position + length}")
             source.position(position + length)
             pool.getList(position, length)
         }

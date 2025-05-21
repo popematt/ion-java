@@ -58,7 +58,7 @@ object IntHelper {
     @JvmStatic
     fun readFlexUIntAsLong(source: ByteBuffer): Long {
         val position = source.position()
-        val firstByte = source.get()
+        val firstByte = source.get(position)
         val numBytes = firstByte.countTrailingZeroBits() + 1
         if (source.remaining() < numBytes) throw IonException("Incomplete data")
         source.position(position + numBytes)

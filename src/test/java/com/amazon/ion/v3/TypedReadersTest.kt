@@ -1,10 +1,10 @@
 package com.amazon.ion.v3
 
 import com.amazon.ion.*
-import com.amazon.ion.TestUtils.cleanCommentedHexBytes
-import com.amazon.ion.TestUtils.hexStringToByteArray
+import com.amazon.ion.TestUtils.*
 import com.amazon.ion.system.IonReaderBuilder
 import com.amazon.ion.system.IonSystemBuilder
+import com.amazon.ion.util.*
 import com.amazon.ion.v3.TypedReadersTest.TestExpectationVisitor.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.StreamReaderImpl
@@ -18,13 +18,11 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
-import java.time.Instant
 import java.util.*
 import kotlin.NoSuchElementException
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.params.ParameterizedTest
@@ -408,6 +406,8 @@ class TypedReadersTest {
             "2023-10-15T,                         82 35 7D",
             "2023-10-15T05:04Z,                   83 35 7D 85 08",
             "2023-10-15T05:04:03Z,                84 35 7D 85 38 00",
+            "2018-08-06T23:59:59Z,                84 30 34 77 bf 03",
+            "2018-08-06T23:59:59.000Z,            85 30 34 77 bf 03 00",
             "2023-10-15T05:04:03.123-00:00,       85 35 7D 85 30 EC 01",
             "2023-10-15T05:04:03.000123-00:00,    86 35 7D 85 30 EC 01 00",
             "2023-10-15T05:04:03.000000123-00:00, 87 35 7D 85 30 EC 01 00 00",
@@ -642,6 +642,30 @@ class TypedReadersTest {
         }
 
         @Test
+        fun oneSidAnnotation() {
+            val data = toByteBuffer("""
+            E0 01 01 EA
+            E4 03        | $ ion ::
+            60           | 0
+        """)
+            ApplicationReaderDriver(data).use { driver ->
+                driver.readAll(expect("\$ion::0"))
+            }
+        }
+
+        @Test
+        fun twoSidAnnotations() {
+            val data = toByteBuffer("""
+            E0 01 01 EA
+            E5 03 05     | $ ion :: $ ion_1_1
+            60           | 0
+        """)
+            ApplicationReaderDriver(data).use { driver ->
+                driver.readAll(expect("\$ion::\$ion_1_1::0"))
+            }
+        }
+
+        @Test
         fun strings() {
             val data = toByteBuffer("""
             E0 01 01 EA
@@ -718,17 +742,59 @@ class TypedReadersTest {
                 val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
                 ApplicationReaderDriver(mappedByteBuffer).use {
                     val binaryWriter = IonEncodingVersion.ION_1_1.binaryWriterBuilder().build(baos)
-                    it.readAll(TranscoderVisitor(binaryWriter))
+                    repeat(10) { _ -> it.read(TranscoderVisitor(binaryWriter)) }
                     binaryWriter.close()
                 }
             }
+            val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
 
-            val bytes = baos.toByteArray()
-            val buffer = ByteBuffer.wrap(bytes)
+            ApplicationReaderDriver(baos).use { driver -> driver.readAll(expected) }
+        }
 
-            ApplicationReaderDriver(buffer).use { driver ->
-                driver.readAll(NoOpVisitor())
+
+        val test = """
+            E0 01 01 EA
+            E0 01 01 EA
+            E7 01 63      | System Annotation 63
+            FD            | Delimited Struct
+            42 8C 01 01   66 EE 03 01   67 FB 1A 8C   98 24 69 6F   6E 5F 6C 6F
+            67 99 53 74   61 72 74 54   69 6D 65 9B   4D 61 72 6B   65 74 70 6C   61 63 65 97   50 72 6F 67   72 61 6D 94
+            54 69 6D 65   99 4F 70 65   72 61 74 69   6F 6E 99 41   63 63 6F 75   6E 74 49 64   9E 41 77 73   41 63 63 65
+            73 73 4B 65   79 49 64 9C   41 77 73 41   63 63 6F 75   6E 74 49 64   F9 25 41 77   73 43 61 6C   6C 65 72 50
+            72 69 6E 63   69 70 61 6C   9A 41 77 73   55 73 65 72   41 72 6E F9   21 41 77 73   55 73 65 72   50 72 69 6E
+            63 69 70 61   6C 97 43 68   61 69 6E 49   64 97 49 6E   73 74 61 6E   74 97 45 6E   64 54 69 6D   65 93 50 49
+            44 9F 52 65   6D 6F 74 65   49 70 41 64   64 72 65 73   73 F9 2F 52   65 6D 6F 74   65 49 70 41   64 64 72 65
+            73 73 53 65   71 75 65 6E   63 65 9C 52   65 6D 6F 74   65 53 6F 63   6B 65 74 99   52 65 71 75   65 73 74 49
+            64 92 53 4E   97 53 68 61   72 64 49 64   94 53 69 7A   65 9A 53 74   72 65 61 6D   4E 61 6D 65   99 54 68 72
+            6F 74 74 6C   65 72 99 55   73 65 72 41   67 65 6E 74   F9 2B 61 6D   7A 2D 73 64   6B 2D 69 6E   76 6F 63 61
+        """.trimIndent()
+        @Test
+        fun `a big one for Ion 1 1 conversion using IonJavaBenchmarkCli`() {
+            val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy_1_1.10n")
+
+            val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
+            FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+
+                ApplicationReaderDriver(mappedByteBuffer).use { driver -> driver.readAll(NoOpVisitor()) }
             }
+
+        }
+
+        @Test
+        fun `a big one for Ion 1 1 conversion using IonJavaBenchmarkCli and the IonReader API`() {
+            val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy_1_1.10n")
+
+            val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
+            FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+
+                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                val ION = IonSystemBuilder.standard().build()
+                StreamReaderAsIonReader(mappedByteBuffer).use {
+                    ION.loader.load(it)
+                }
+            }
+
         }
 
     }
@@ -840,7 +906,6 @@ class TypedReadersTest {
 
             val visitor = TranscoderVisitor(textWriter)
             repeat(20) { driver.read(visitor) }
-            // driver.readAll(reader, visitor)
             textWriter.close()
             println(sb)
         }
@@ -1044,9 +1109,11 @@ class TypedReadersTest {
         }
     }
 
-    fun transfer(reader: IonReader, writer: IonWriter) {
+    fun transfer(reader: IonReader, writer: IonWriter, max: Int = -1) {
 
-        while (true) {
+        var n = max
+        while (n != 0) {
+            if (n > 0) n--
             val next = reader.next()
             if (next == null) {
                 if (reader.depth > 0) {
@@ -1350,12 +1417,22 @@ class TypedReadersTest {
     }
 
 
+    private fun expect(reader: IonReader, max: Int = -1): TestExpectationVisitor {
+        // TODO: This is valid only as long as we have alternative reader implementations that we trust
+        val expectations = mutableListOf<Expectation>()
+        val expectationWriter = ExpectationWriter(expectations)
+        transfer(reader, expectationWriter, max)
+        reader.close()
+        return TestExpectationVisitor(expectations)
+    }
+
     private fun expect(ion: String): TestExpectationVisitor {
         // TODO: This is valid only as long as we have alternative reader implementations that we trust
         val reader = IonReaderBuilder.standard().build(ion)
         val expectations = mutableListOf<Expectation>()
         val expectationWriter = ExpectationWriter(expectations)
         transfer(reader, expectationWriter)
+        reader.close()
         return TestExpectationVisitor(expectations)
     }
 
@@ -1375,10 +1452,7 @@ class TypedReadersTest {
         }
 
         override fun setTypeAnnotations(vararg annotations: String?) {
-            expectations.add(Expectation.Annotation { actual ->
-                Assertions.assertArrayEquals(annotations, actual.toStringArray())
-                true
-            })
+            expectations.add(Expectation.Annotation(annotations.toList()))
         }
 
         override fun setTypeAnnotationSymbols(vararg annotations: SymbolToken?) {
@@ -1413,11 +1487,11 @@ class TypedReadersTest {
         override fun writeValues(reader: IonReader?) = TODO("Not yet implemented")
 
         override fun writeNull() {
-            expectations.add(Expectation.Null(IonType.NULL))
+            expectations.add(Expectation.NullValue(IonType.NULL))
         }
 
         override fun writeNull(type: IonType) {
-            expectations.add(Expectation.Null(type))
+            expectations.add(Expectation.NullValue(type))
         }
 
         override fun writeBool(value: Boolean) {
@@ -1433,7 +1507,7 @@ class TypedReadersTest {
         }
 
         override fun writeFloat(value: Double) {
-            expectations.add(TODO())
+            expectations.add(Expectation.FloatValue(value))
         }
 
         override fun writeDecimal(value: BigDecimal) {
@@ -1453,7 +1527,11 @@ class TypedReadersTest {
         }
 
         override fun writeSymbolToken(content: SymbolToken) {
-            expectations.add(Expectation.Symbol(content.text, content.sid))
+            if (content.text != null) {
+                expectations.add(Expectation.Symbol(content.text))
+            } else {
+                expectations.add(Expectation.Symbol(sid = content.sid))
+            }
         }
 
         override fun writeString(value: String) {
@@ -1486,10 +1564,24 @@ class TypedReadersTest {
         val expectations: MutableList<Expectation>,
         val assertionsEnabled: Boolean = true
     ): VisitingReaderCallback {
-        sealed class Expectation() {
-            open fun check(actual: Any?) = Unit
+        private val results = mutableListOf<String>()
 
-            data class Annotation(val check: (AnnotationIterator) -> Boolean): Expectation()
+        sealed class Expectation {
+            open val expected: Any? = Unit
+            open fun check(actual: Any?) {
+                if (expected != Unit) {
+                    assertEquals(expected, actual)
+                }
+            }
+
+            data class Annotation(override val expected: List<String?>): Expectation() {
+                override fun check(actual: Any?) {
+                    // FIXME:
+                    // actual as AnnotationIterator
+                    // val actualAnnotations = actual.toStringArray().toList()
+                    // assertEquals(expected, actualAnnotations)
+                }
+            }
 
             data class FieldName(val text: String? = null, val sid: Int = -1): Expectation() {
                 override fun check(actual: Any?) {
@@ -1519,50 +1611,38 @@ class TypedReadersTest {
             data object SexpStart: Expectation()
             data object StructStart: Expectation()
             data object End : Expectation()
-
             data object EOF : Expectation()
 
-            data class Null(val expected: IonType): Expectation() {
-                override fun check(actual: Any?) { assertEquals(expected, actual) }
-            }
-
-            data class IntValue(val expected: Long): Expectation() {
-                override fun check(actual: Any?) { assertEquals(expected, actual) }
-            }
-            data class StringValue(val expected: String): Expectation() {
-                override fun check(actual: Any?) { assertEquals(expected, actual) }
-            }
-            data class TimestampValue(val expected: Timestamp): Expectation() {
+            data class NullValue(override val expected: IonType): Expectation()
+            data class BoolValue(override val expected: Boolean): Expectation()
+            data class IntValue(override val expected: Long): Expectation()
+            data class FloatValue(override val expected: Double): Expectation()
+            data class DecimalValue(override val expected: Decimal): Expectation()
+            data class TimestampValue(override val expected: Timestamp): Expectation() {
                 constructor(ts: String): this(Timestamp.valueOf(ts))
-                override fun check(actual: Any?) { assertEquals(expected, actual) }
             }
+            data class StringValue(override val expected: String): Expectation()
 
-        }
-
-        private inline fun <reified T: Expectation> next(): T {
-            val ex = expectations.removeFirst()
-            if (ex is T) {
-                println("[✓] $ex")
-                return ex
-            } else {
-                println("[x] $ex")
-                throw java.lang.AssertionError("Expected ${ex::class.simpleName} but found ${T::class.simpleName}")
-            }
         }
 
         private inline fun <reified T: Expectation> next(actual: Any?) {
-            val ex = expectations.removeFirstOrNull() ?: Expectation.EOF
-            if (ex !is T) {
-                println("[x] $ex; found ${T::class.simpleName}: $actual")
-                if (assertionsEnabled) fail<Nothing>("Expected ${ex::class.simpleName} but found ${T::class.simpleName}: $actual")
-            } else {
-                try {
-                    ex.check(actual)
-                    println("[✓] $ex")
-                } catch (e: Throwable) {
-                    println("[x] $ex; found $actual")
-                    if (assertionsEnabled) throw e
+            try {
+                val ex = expectations.removeFirstOrNull() ?: Expectation.EOF
+                if (ex !is T) {
+                    results.add("[x][${results.size}] $ex; found ${T::class.simpleName}: $actual")
+                    if (assertionsEnabled) fail<Nothing>("Expected ${ex::class.simpleName} but found ${T::class.simpleName}: $actual")
+                } else {
+                    try {
+                        ex.check(actual)
+                        results.add("[✓][${results.size}] $ex")
+                    } catch (e: Throwable) {
+                        results.add("[x][${results.size}] $ex; found $actual")
+                        if (assertionsEnabled) throw e
+                    }
                 }
+            } catch (e: Throwable) {
+                println(results.takeLast(25).forEach(::println))
+                throw e
             }
         }
 
@@ -1603,11 +1683,11 @@ class TypedReadersTest {
         }
 
         override fun onNull(value: IonType) {
-            TODO("Not yet implemented")
+            next<Expectation.NullValue>(value)
         }
 
         override fun onBoolean(value: Boolean) {
-            TODO("Not yet implemented")
+            next<Expectation.BoolValue>(value)
         }
 
         override fun onLongInt(value: Long) {
@@ -1619,11 +1699,11 @@ class TypedReadersTest {
         }
 
         override fun onFloat(value: Double) {
-            TODO("Not yet implemented")
+            next<Expectation.FloatValue>(value)
         }
 
         override fun onDecimal(value: Decimal) {
-            TODO("Not yet implemented")
+            next<Expectation.DecimalValue>(value)
         }
 
         override fun onTimestamp(value: Timestamp) {

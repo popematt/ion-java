@@ -18,6 +18,8 @@ import java.nio.ByteOrder
  */
 class ResourcePool(
     private val source: ByteBuffer,
+    var symbolTable: Array<String?>,
+    var macroTable: Array<Macro>,
 ): Closeable {
 
     val scratch: Array<ByteArray> = Array(16) { n -> ByteArray(n) }
@@ -59,9 +61,10 @@ class ResourcePool(
         val reader = lists.removeLastOrNull()
         if (reader != null) {
             reader.init(start, length)
+            reader.initTables(symbolTable, macroTable)
             return reader
         } else {
-            return SeqReaderImpl(newSlice(start, length), this)
+            return SeqReaderImpl(newSlice(start, length), this, symbolTable, macroTable)
         }
     }
 
@@ -69,27 +72,28 @@ class ResourcePool(
         val reader = delimitedLists.removeLastOrNull()
         if (reader != null) {
             reader.init(start, maxLength)
+            reader.initTables(symbolTable, macroTable)
             return reader
         } else {
-            return DelimitedSequenceReaderImpl(newSlice(start, maxLength), this, parent)
+            return DelimitedSequenceReaderImpl(newSlice(start, maxLength), this, parent, symbolTable, macroTable)
         }
     }
 
     fun getEExpArgs(start: Int, maxLength: Int, signature: List<Macro.Parameter>): EExpArgumentReaderImpl {
         val reader = eexpArgumentReaders.removeLastOrNull()
             ?.apply { init(start, maxLength) }
-            ?: EExpArgumentReaderImpl(newSlice(start, maxLength), this)
+            ?: EExpArgumentReaderImpl(newSlice(start, maxLength), this, symbolTable, macroTable)
         reader.initArgs(signature)
         return reader
     }
 
-    fun getAnnotations(opcode: Int, start: Int, length: Int): AnnotationIterator {
+    fun getAnnotations(opcode: Int, start: Int, length: Int, symbolTable: Array<String?>): AnnotationIterator {
         val reader = annotations.removeLastOrNull() as AnnotationIteratorImpl?
         if (reader != null) {
-            reader.init(opcode, start, length)
+            reader.init(opcode, start, length, symbolTable)
             return reader
         } else {
-            return AnnotationIteratorImpl(opcode, newSlice(start, length), this)
+            return AnnotationIteratorImpl(opcode, newSlice(start, length), this, symbolTable)
         }
     }
 
@@ -97,9 +101,10 @@ class ResourcePool(
         val reader = lists.removeLastOrNull()
         if (reader != null) {
             reader.init(start, length)
+            reader.initTables(symbolTable, macroTable)
             return reader
         } else {
-            return SeqReaderImpl(newSlice(start, length), this)
+            return SeqReaderImpl(newSlice(start, length), this, symbolTable, macroTable)
         }
     }
 
@@ -107,10 +112,11 @@ class ResourcePool(
         val reader = delimitedLists.removeLastOrNull()
         if (reader != null) {
             reader.init(start, source.limit() - start)
+            reader.initTables(symbolTable, macroTable)
             reader.parent = parent
             return reader
         } else {
-            return DelimitedSequenceReaderImpl(newSlice(start), this, parent)
+            return DelimitedSequenceReaderImpl(newSlice(start), this, parent, symbolTable, macroTable)
         }
     }
 
@@ -118,9 +124,10 @@ class ResourcePool(
         val reader = structs.removeLastOrNull()
         if (reader != null) {
             reader.init(start, length)
+            reader.initTables(symbolTable, macroTable)
             return reader
         } else {
-            return StructReaderImpl(newSlice(start, length), this)
+            return StructReaderImpl(newSlice(start, length), this, symbolTable, macroTable)
         }
     }
 
@@ -128,9 +135,10 @@ class ResourcePool(
         val reader = delimitedStructs.removeLastOrNull()
         if (reader != null) {
             reader.init(start, source.limit() - start)
+            reader.initTables(symbolTable, macroTable)
             return reader
         } else {
-            return DelimitedStructReaderImpl(newSlice(start), this)
+            return DelimitedStructReaderImpl(newSlice(start), this, symbolTable, macroTable)
         }
     }
 

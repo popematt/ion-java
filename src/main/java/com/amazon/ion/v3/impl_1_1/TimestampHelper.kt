@@ -113,13 +113,10 @@ object TimestampHelper {
         val offset = if ((data.toInt() and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
         val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_U_TIMESTAMP_MILLISECOND_MASK) ushr S_U_TIMESTAMP_FRACTION_BIT_OFFSET
-        var fractionalSecond = BigDecimal.ZERO
-        if (unscaledValue > 0) {
-            if (unscaledValue > MAX_MILLISECONDS) {
-                throw IonException("Timestamp fraction must be between 0 and 1.")
-            }
-            fractionalSecond = BigDecimal.valueOf(unscaledValue, MILLISECOND_SCALE)
+        if (unscaledValue > MAX_MILLISECONDS) {
+            throw IonException("Timestamp fraction must be between 0 and 1.")
         }
+        val fractionalSecond = BigDecimal.valueOf(unscaledValue, MILLISECOND_SCALE)
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
 
     }
@@ -136,14 +133,10 @@ object TimestampHelper {
         val offset = if ((data.toInt() and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
         val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_U_TIMESTAMP_MICROSECOND_MASK) ushr S_U_TIMESTAMP_FRACTION_BIT_OFFSET
-        var fractionalSecond = BigDecimal.ZERO
-        if (unscaledValue > 0) {
-            // TODO: Why does IntelliJ think that this condition is always false?
-            if (unscaledValue > MAX_MICROSECONDS) {
-                throw IonException("Timestamp fraction must be between 0 and 1.")
-            }
-            fractionalSecond = BigDecimal.valueOf(unscaledValue, MICROSECOND_SCALE)
+        if (unscaledValue > MAX_MICROSECONDS) {
+            throw IonException("Timestamp fraction must be between 0 and 1.")
         }
+        val fractionalSecond = BigDecimal.valueOf(unscaledValue, MICROSECOND_SCALE)
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
     }
 
@@ -159,14 +152,10 @@ object TimestampHelper {
         val offset = if ((data.toInt() and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
         val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_U_TIMESTAMP_NANOSECOND_MASK) ushr S_U_TIMESTAMP_FRACTION_BIT_OFFSET
-        var fractionalSecond = BigDecimal.ZERO
-        if (unscaledValue > 0) {
-            // TODO: Why does IntelliJ think that this condition is always false?
-            if (unscaledValue > MAX_NANOSECONDS) {
-                throw IonException("Timestamp fraction must be between 0 and 1.")
-            }
-            fractionalSecond = BigDecimal.valueOf(unscaledValue, NANOSECOND_SCALE)
+        if (unscaledValue > MAX_NANOSECONDS) {
+            throw IonException("Timestamp fraction must be between 0 and 1.")
         }
+        val fractionalSecond = BigDecimal.valueOf(unscaledValue, NANOSECOND_SCALE)
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
     }
 
@@ -209,14 +198,10 @@ object TimestampHelper {
         val offset = readShortOffset(data)
         val second = ((data and S_O_TIMESTAMP_SECOND_MASK) ushr S_O_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_O_TIMESTAMP_MILLISECOND_MASK) ushr S_O_TIMESTAMP_FRACTION_BIT_OFFSET
-        var fractionalSecond = BigDecimal.ZERO
-        if (unscaledValue > 0) {
-            // TODO: Why does IntelliJ think that this condition is always false?
-            if (unscaledValue > MAX_MILLISECONDS) {
-                throw IonException("Timestamp fraction must be between 0 and 1.")
-            }
-            fractionalSecond = BigDecimal.valueOf(unscaledValue, MILLISECOND_SCALE)
+        if (unscaledValue > MAX_MILLISECONDS) {
+            throw IonException("Timestamp fraction must be between 0 and 1.")
         }
+        val fractionalSecond = BigDecimal.valueOf(unscaledValue, MILLISECOND_SCALE)
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
     }
 
@@ -232,14 +217,10 @@ object TimestampHelper {
         val offset = readShortOffset(data)
         val second = ((data and S_O_TIMESTAMP_SECOND_MASK) ushr S_O_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_U_TIMESTAMP_MICROSECOND_MASK) ushr S_O_TIMESTAMP_FRACTION_BIT_OFFSET
-        var fractionalSecond = BigDecimal.ZERO
-        if (unscaledValue > 0) {
-            // TODO: Why does IntelliJ think that this condition is always false?
-            if (unscaledValue > MAX_MICROSECONDS) {
-                throw IonException("Timestamp fraction must be between 0 and 1.")
-            }
-            fractionalSecond = BigDecimal.valueOf(unscaledValue, MICROSECOND_SCALE)
+        if (unscaledValue > MAX_MICROSECONDS) {
+            throw IonException("Timestamp fraction must be between 0 and 1.")
         }
+        val fractionalSecond = BigDecimal.valueOf(unscaledValue, MICROSECOND_SCALE)
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
     }
 
@@ -256,13 +237,10 @@ object TimestampHelper {
         val second = ((data and S_O_TIMESTAMP_SECOND_MASK) ushr S_O_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
 
         val unscaledValue = source.getInt() and THIRTY_BIT_MASK
-        var fractionalSecond = BigDecimal.ZERO
-        if (unscaledValue > 0) {
-            if (unscaledValue > MAX_NANOSECONDS) {
-                throw IonException("Timestamp fraction must be between 0 and 1.")
-            }
-            fractionalSecond = BigDecimal.valueOf(unscaledValue.toLong(), NANOSECOND_SCALE)
+        if (unscaledValue > MAX_NANOSECONDS) {
+            throw IonException("Timestamp fraction must be between 0 and 1.")
         }
+        val fractionalSecond = BigDecimal.valueOf(unscaledValue.toLong(), NANOSECOND_SCALE)
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
     }
 

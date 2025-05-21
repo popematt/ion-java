@@ -11,8 +11,7 @@ private val ION_1_1_SYMBOL_TABLE = SystemSymbols_1_1.allSymbolTexts().toTypedArr
 
 class StreamReaderImpl internal constructor(
     source: ByteBuffer,
-): ValueReaderBase(source, ResourcePool(source.asReadOnlyBuffer())), StreamReader {
-
+): ValueReaderBase(source, ResourcePool(source.asReadOnlyBuffer(), ION_1_1_SYMBOL_TABLE, emptyArray()), ION_1_1_SYMBOL_TABLE, emptyArray()), StreamReader {
     override fun close() {
         pool.close()
     }
