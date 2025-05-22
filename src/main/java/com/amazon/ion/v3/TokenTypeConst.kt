@@ -33,6 +33,8 @@ object TokenTypeConst {
     const val EXPRESSION_GROUP = 21
     const val EMPTY_ARGUMENT = 22
 
+    // TODO: Do we need END_OF_INVOCATION, or could we just re-use END?
+    const val END_OF_INVOCATION = 23
 
     operator fun invoke(i: Int) : String {
         return when (i) {

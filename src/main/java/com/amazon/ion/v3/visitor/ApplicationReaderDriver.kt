@@ -45,15 +45,22 @@ class ApplicationReaderDriver(
         internal const val ION_1_1 = 0x0101
     }
 
-    private lateinit var _ion10Reader: ValueReader
-    private val ion10Reader: ValueReader
+    private lateinit var _templateReaderPool: TemplateResourcePool
+    private val templateReaderPool: TemplateResourcePool
+        get() {
+            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool(ion11Reader.symbolTable, macroTable)
+            return _templateReaderPool
+        }
+
+    private lateinit var _ion10Reader: StreamReader_1_0
+    private val ion10Reader: StreamReader_1_0
         get() {
             if (! ::_ion10Reader.isInitialized) _ion10Reader = StreamReader_1_0(source)
             return _ion10Reader
         }
 
-    private lateinit var _ion11Reader: ValueReader
-    private val ion11Reader: ValueReader
+    private lateinit var _ion11Reader: ValueReaderBase
+    private val ion11Reader: ValueReaderBase
         get() {
             if (!::_ion11Reader.isInitialized) _ion11Reader = StreamReaderImpl(source).also {
                 it.initTables(ION_1_1_SYSTEM_SYMBOLS, ION_1_1_SYSTEM_MACROS)
@@ -62,94 +69,43 @@ class ApplicationReaderDriver(
             return _ion11Reader
         }
 
-    private var reader: ValueReader = if (source.getInt(0).toUInt() == 0xE00101EAu) {
+    private var topLevelReader: ValueReader = if (source.getInt(0).toUInt() == 0xE00101EAu) {
         ion11Reader
     } else {
         ion10Reader
     }
 
-    private var symbolTable: Array<String?> = ION_1_0_SYMBOL_TABLE
-        set(value) {
-            check(value[0] == null)
-            field = value
-        }
+    // TODO: Remove the macro table?
     private var macroTable: Array<Macro> = emptyArray()
+
     private val moduleReader = ModuleReader()
     private val availableModules = mutableMapOf<String, ModuleReader.Module>()
     private val activeModules = mutableListOf<ModuleReader.Module>()
 
     private fun addOrSetSymbols(argReader: EExpArgumentReader, append: Boolean) {
-        val newSymbols = if (append) symbolTable.toMutableList() else mutableListOf<String?>(null)
+        val r = ion11Reader
+        val newSymbols = if (append) r.symbolTable.toMutableList() else mutableListOf<String?>(null)
         argReader.nextToken()
         argReader.expressionGroup().use { sl -> moduleReader.readSymbolsList(sl, newSymbols) }
         availableModules["_"]!!.symbols = newSymbols
         // TODO: Fix this to use proper encoding module sequence.
-        symbolTable = newSymbols.toTypedArray()
+        val symbolTable = newSymbols.toTypedArray()
         // TODO: Clean this up:
-        val r = (reader as ValueReaderBase)
         r.initTables(symbolTable, macroTable)
         r.pool.symbolTable = symbolTable
         r.pool.macroTable = macroTable
     }
 
-    private fun lookupSid(sid: Int) : String? {
-        try {
-            return (reader as? com.amazon.ion.v3.impl_1_0.ValueReaderBase)
-                ?.let { it.symbolTable[sid] }
-                ?: symbolTable[sid]
-        } catch (t: Throwable) {
-
-            println("""
-                \nReader Version: ${reader.getIonVersion().toString(16)}
-                Symbol Table Size: ${symbolTable.size}
-                Symbol Table: ${symbolTable.contentToString()}
-            """.trimIndent())
-
-
-            throw t
-        }
+    fun readAll(visitor: VisitingReaderCallback) {
+        readTopLevelValues(topLevelReader, visitor)
     }
 
-    fun readAll(visitor: VisitingReaderCallback) {
-        while (readTopLevelValue(reader, visitor)) {
-        }
+    fun readN(n: Int, visitor: VisitingReaderCallback) {
+        readTopLevelValues(topLevelReader, visitor, n)
     }
 
     fun read(visitor: VisitingReaderCallback) {
-        readTopLevelValue(reader, visitor)
-    }
-
-    private fun handleTopLevelIvm() {
-        val currentVersion = reader.getIonVersion().toInt()
-        val version = reader.ivm().toInt()
-        // If the version is the same, then we know it's a valid version, and we can skip validation
-        if (version != currentVersion) {
-            val position = reader.position()
-            reader = when (version) {
-                ION_1_0 -> ion10Reader
-                ION_1_1 -> ion11Reader
-                else -> throw IonException("Unknown Ion Version ${version ushr 8}.${version and 0xFF}")
-            }
-            reader.seekTo(position)
-        }
-
-        if (version == ION_1_1) {
-//            println("Updating symbol table to Ion 1.1")
-            // FIXME: Update this so that the default module is empty, and the active modules contains
-            //        the default module followed by the system module.
-            availableModules.clear()
-            availableModules["_"] =
-                ModuleReader.Module("_", SystemSymbols_1_1.allSymbolTexts().toMutableList(), mutableListOf())
-
-            // TODO: Add macros to the system module
-            availableModules["\$ion"] = ION_1_1_SYSTEM_MODULE
-            activeModules.clear()
-            activeModules.add(availableModules["_"]!!)
-            macroTable = ION_1_1_SYSTEM_MACROS
-            symbolTable = ION_1_1_SYSTEM_SYMBOLS
-        } else {
-            symbolTable = ION_1_0_SYMBOL_TABLE
-        }
+        readTopLevelValues(topLevelReader, visitor, 1)
     }
 
     private fun maybeVisitNull(reader: ValueReader, visitor: VisitingReaderCallback) {
@@ -174,96 +130,173 @@ class ApplicationReaderDriver(
         }
     }
 
-    private fun readTopLevelValue(initialReader: ValueReader, visitor: VisitingReaderCallback): Boolean {
-        var reader = initialReader
-        val token = reader.nextToken()
-        when (token) {
-            TokenTypeConst.IVM -> {
-                handleTopLevelIvm()
-                return readTopLevelValue(this.reader, visitor)
-            }
-            TokenTypeConst.NULL -> maybeVisitNull(reader, visitor)
-            TokenTypeConst.BOOL -> visitor.onValue(TokenType.BOOL)?.onBoolean(reader.booleanValue()) ?: reader.skip()
-            TokenTypeConst.INT -> visitor.onValue(TokenType.INT)?.onLongInt(reader.longValue()) ?: reader.skip()
-            TokenTypeConst.FLOAT -> visitor.onValue(TokenType.FLOAT)?.onFloat(reader.doubleValue()) ?: reader.skip()
-            TokenTypeConst.DECIMAL -> visitor.onValue(TokenType.DECIMAL)?.onDecimal(reader.decimalValue()) ?: reader.skip()
-            TokenTypeConst.TIMESTAMP -> visitor.onValue(TokenType.TIMESTAMP)?.onTimestamp(reader.timestampValue()) ?: reader.skip()
-            TokenTypeConst.STRING -> visitor.onValue(TokenType.STRING)?.onString(reader.stringValue()) ?: reader.skip()
-            TokenTypeConst.SYMBOL -> visitor.onValue(TokenType.SYMBOL)?.let {
-                val sid = reader.symbolValueSid()
-                val text = if (sid < 0) {
-                    reader.symbolValue()
-                } else {
-                    lookupSid(sid)
-                }
-                it.onSymbol(text, sid)
-            } ?: reader.skip()
-            TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)?.onClob(reader.clobValue()) ?: reader.skip()
-            TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)?.onBlob(reader.blobValue()) ?: reader.skip()
-            // IMPLEMENTATION NOTE:
-            //     For containers, we're going to step in, and then immediately step out if we need to skip.
-            //     This might be slightly less efficient, but it works for both delimited and prefixed containers.
-            TokenTypeConst.LIST ->
-                visitor.onValue(TokenType.LIST)?.let { v ->
-                    v.onListStart()
-                    reader.listValue().use { r -> readAllValues(r, v) }
-                    v.onListEnd()
-                } ?: reader.skip()
-            TokenTypeConst.SEXP ->
-                visitor.onValue(TokenType.SEXP)?.let { v ->
-                    v.onSexpStart()
-                    reader.sexpValue().use { r -> readAllValues(r, v) }
-                    v.onSexpEnd()
-                } ?: reader.skip()
-            TokenTypeConst.STRUCT -> {
-                val v = visitor.onValue(TokenType.STRUCT)
-                if (v != null) {
-                    v.onStructStart()
-                    reader.structValue().use { r -> readAllStructFields(r, v) }
-                    v.onStructEnd()
-                } else {
-                    reader.skip()
-                }
-            }
-            TokenTypeConst.ANNOTATIONS -> reader.annotations().use { a ->
-                val isSystemValue = handlePossibleSystemValue(a)
-                if (!isSystemValue) {
-                    visitor.onAnnotation(a)?.let { v -> readValue(reader, v) } ?: reader.skip()
-                }
-            }
-            TokenTypeConst.END -> return false
-            TokenTypeConst.EEXP -> {
-                val macroId = reader.eexpValue()
-                val macro = if (macroId < 0) {
-                    if (macroId == -1) {
-                        TODO("Look up textual macro addresses")
-                    } else {
-                        // Could be a system macro id
-                        SystemMacro[macroId and Integer.MAX_VALUE]!!
+    /**
+     * Returns the number of application values that were read.
+     *
+     * TODO: This is the way to go to avoid making a method call in a tight loop, However, this seems to have some
+     *       trouble with IVMs.
+     */
+    private fun readTopLevelValues(originalReader: ValueReader, originalVisitor: VisitingReaderCallback, max: Int = Int.MAX_VALUE): Int {
+        var reader = originalReader
+        var annotatedValueVisitor: VisitingReaderCallback? = null
+        var i = 0
+        while (i++ < max) {
+
+            val visitor = annotatedValueVisitor ?: originalVisitor
+            val token = reader.nextToken()
+
+            when (token) {
+                TokenTypeConst.IVM -> {
+                    i-- // Since an IVM doesn't count as a value.
+
+                    val currentVersion = reader.getIonVersion().toInt()
+                    val version = reader.ivm().toInt()
+                    // If the version is the same, then we know it's a valid version, and we can skip validation
+                    if (version != currentVersion) {
+                        val position = reader.position()
+                        reader = when (version) {
+                            ION_1_0 -> ion10Reader
+                            ION_1_1 -> ion11Reader
+                            else -> throw IonException("Unknown Ion Version ${version ushr 8}.${version and 0xFF}")
+                        }
+                        reader.seekTo(position)
+                        topLevelReader = reader
                     }
-                } else {
-                    macroTable[macroId]
+
+                    if (version == ION_1_1) {
+                        // FIXME: Update this so that the default module is empty, and the active modules contains
+                        //        the default module followed by the system module.
+                        availableModules.clear()
+                        availableModules["_"] =
+                            ModuleReader.Module("_", SystemSymbols_1_1.allSymbolTexts().toMutableList(), mutableListOf())
+
+                        // TODO: Add macros to the system module
+                        availableModules["\$ion"] = ION_1_1_SYSTEM_MODULE
+                        activeModules.clear()
+                        activeModules.add(availableModules["_"]!!)
+                        macroTable = ION_1_1_SYSTEM_MACROS
+                        ion11Reader.symbolTable = ION_1_1_SYSTEM_SYMBOLS
+                    } else {
+                        ion10Reader.symbolTable = ION_1_0_SYMBOL_TABLE
+                    }
+                    continue
                 }
-                // TODO: Check for macros that could produce system values
-                when (macro) {
-                    SystemMacro.SetSymbols -> reader.eexpArgs(macro.signature).use { addOrSetSymbols(it, append = false) }
-                    SystemMacro.AddSymbols -> reader.eexpArgs(macro.signature).use { addOrSetSymbols(it, append = true) }
-                    SystemMacro.Use -> TODO()
-                    SystemMacro.AddMacros -> TODO()
-                    SystemMacro.SetMacros -> TODO()
-                    else -> {
-                        val macroVisitor = visitor.onEExpression(macro)
-                        if (macroVisitor != null) {
-                            reader.eexpArgs(macro.signature).use { r -> while (readValue(r, macroVisitor)); }
+                TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue()) ?: reader.skip()
+                TokenTypeConst.BOOL -> visitor.onValue(TokenType.BOOL)?.onBoolean(reader.booleanValue()) ?: reader.skip()
+                TokenTypeConst.INT -> visitor.onValue(TokenType.INT)?.onLongInt(reader.longValue()) ?: reader.skip()
+                TokenTypeConst.FLOAT -> visitor.onValue(TokenType.FLOAT)?.onFloat(reader.doubleValue()) ?: reader.skip()
+                TokenTypeConst.DECIMAL -> visitor.onValue(TokenType.DECIMAL)?.onDecimal(reader.decimalValue()) ?: reader.skip()
+                TokenTypeConst.TIMESTAMP -> visitor.onValue(TokenType.TIMESTAMP)?.onTimestamp(reader.timestampValue()) ?: reader.skip()
+                TokenTypeConst.STRING -> {
+                    val v = visitor.onValue(TokenType.STRING)
+                    if (v != null) {
+                        v.onString(reader.stringValue())
+                    } else {
+                        reader.skip()
+                    }
+                }
+                TokenTypeConst.SYMBOL -> visitor.onValue(TokenType.SYMBOL)?.let {
+                    val sid = reader.symbolValueSid()
+                    val text = if (sid < 0) {
+                        reader.symbolValue()
+                    } else {
+                        reader.lookupSid(sid)
+                    }
+                    it.onSymbol(text, sid)
+                } ?: reader.skip()
+                TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)?.onClob(reader.clobValue()) ?: reader.skip()
+                TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)?.onBlob(reader.blobValue()) ?: reader.skip()
+                TokenTypeConst.LIST ->{
+                    val v = visitor.onValue(TokenType.LIST)
+                    if (v != null) {
+                        v.onListStart()
+                        reader.listValue().use { r -> readAllValues(r, v) }
+                        v.onListEnd()
+                    } else {
+                        reader.skip()
+                    }
+                }
+                TokenTypeConst.SEXP -> {
+                    val v = visitor.onValue(TokenType.SEXP)
+                    if (v != null) {
+                        v.onSexpStart()
+                        reader.sexpValue().use { r -> readAllValues(r, v) }
+                        v.onSexpEnd()
+                    } else {
+                        reader.skip()
+                    }
+                }
+                TokenTypeConst.STRUCT -> {
+                    val v = visitor.onValue(TokenType.STRUCT)
+                    if (v != null) {
+                        v.onStructStart()
+                        reader.structValue().use { r -> readAllStructFields(r, v) }
+                        v.onStructEnd()
+                    } else {
+                        reader.skip()
+                    }
+                }
+                TokenTypeConst.ANNOTATIONS -> {
+                    val annotationIterator = handlePossibleSystemValue(reader)
+                    if (annotationIterator != null) {
+                        val v = visitor.onAnnotation(annotationIterator)
+                        if (v != null) {
+                            // Annotations do not count towards the total
+                            i--
+                            annotatedValueVisitor = v
+                            continue
                         } else {
-                            TODO("Use the macro evaluator")
+                            // But if they are skipping the value, we'll count it anyway, so we won't decrement.
+                            reader.skip()
+                        }
+                    } else {
+                        // System values should not be counted.
+                        i--
+                    }
+                }
+                TokenTypeConst.EEXP -> {
+                    val macroId = reader.eexpValue()
+                    val macro = if (macroId < 0) {
+                        if (macroId == -1) {
+                            TODO("Look up textual macro addresses")
+                        } else {
+                            // Could be a system macro id
+                            SystemMacro[macroId and Integer.MAX_VALUE]!!
+                        }
+                    } else {
+                        macroTable[macroId]
+                    }
+                    // TODO: Check for macros that could produce system values
+                    // TODO: When there's a system value, decrement i
+                    when (macro) {
+                        SystemMacro.SetSymbols -> reader.eexpArgs(macro.signature).use { addOrSetSymbols(it, append = false) }
+                        SystemMacro.AddSymbols -> reader.eexpArgs(macro.signature).use { addOrSetSymbols(it, append = true) }
+                        SystemMacro.Use -> TODO()
+                        SystemMacro.AddMacros -> TODO()
+                        SystemMacro.SetMacros -> TODO()
+                        else -> {
+                            val macroVisitor = visitor.onEExpression(macro)
+                            if (macroVisitor != null) {
+                                reader.eexpArgs(macro.signature).use { r -> readAllValues(r, macroVisitor) }
+                            } else {
+                                // TODO: Since we're at the top level, we need to read top-level values in case a directive
+                                //       is produced.
+                                // Start a macro evaluation session
+                                reader.eexpArgs(macro.signature).use { args ->
+                                    templateReaderPool.startEvaluation(macro, args).use { macroInvocation ->
+                                        i += readTopLevelValues(macroInvocation, visitor)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+                TokenTypeConst.END_OF_INVOCATION,
+                TokenTypeConst.END -> return i
+                else -> TODO("Unreachable: ${TokenTypeConst(token)}")
             }
-            else -> TODO("Unreachable: ${TokenTypeConst(token)}")
         }
-        return true
+        return i
     }
 
     private fun readValue(reader: ValueReader, visitor: VisitingReaderCallback): Boolean {
@@ -282,7 +315,7 @@ class ApplicationReaderDriver(
                 val text = if (sid < 0) {
                     reader.symbolValue()
                 } else {
-                    lookupSid(sid)
+                    reader.lookupSid(sid)
                 }
                 it.onSymbol(text, sid)
             } ?: reader.skip()
@@ -376,7 +409,7 @@ class ApplicationReaderDriver(
                     val text = if (sid < 0) {
                         reader.symbolValue()
                     } else {
-                        lookupSid(sid)
+                        reader.lookupSid(sid)
                     }
                     it.onSymbol(text, sid)
                 } ?: reader.skip()
@@ -438,7 +471,11 @@ class ApplicationReaderDriver(
                     if (macroVisitor != null) {
                         reader.eexpArgs(macro.signature).use { r -> readAllValues(r, macroVisitor) }
                     } else {
-                        TODO("Use the macro evaluator")
+                        reader.eexpArgs(macro.signature).use { args ->
+                            templateReaderPool.startEvaluation(macro, args).use { macroInvocation ->
+                                readAllValues(macroInvocation, visitor)
+                            }
+                        }
                     }
                 }
                 TokenTypeConst.END -> return
@@ -456,7 +493,7 @@ class ApplicationReaderDriver(
             val text = if (sid < 0) {
                 reader.fieldName()
             } else {
-                lookupSid(sid)
+                reader.lookupSid(sid)
             }
 
             val fieldVisitor = visitor.onField(text, sid)
@@ -471,7 +508,14 @@ class ApplicationReaderDriver(
         }
     }
 
-    private fun handlePossibleSystemValue(a: AnnotationIterator): Boolean {
+    /**
+     * Reader should be positioned on a top-level annotations token.
+     *
+     * Returns the annotation iterator iff this is not a system value.
+     * Reader will be ready for `nextToken()` when this function returns.
+     */
+    private fun handlePossibleSystemValue(reader: ValueReader): AnnotationIterator? {
+        val a = reader.annotations()
         (a as PrivateAnnotationIterator).peek()
         var isSystemValue = false
         val position = reader.position()
@@ -480,10 +524,10 @@ class ApplicationReaderDriver(
         if (reader.getIonVersion().toInt() == ION_1_0) {
             if (sid == SystemSymbols.ION_SYMBOL_TABLE_SID && reader.nextToken() == TokenTypeConst.STRUCT) {
                 isSystemValue = true
-                symbolTable = reader.structValue().use { readSymbolTable10(it) }
+                ion10Reader.symbolTable = reader.structValue().use { readSymbolTable10(it) }
             }
         } else {
-            val text = if (sid < 0) a.getText() else lookupSid(sid)
+            val text = if (sid < 0) a.getText() else reader.lookupSid(sid)
             val nt = reader.nextToken()
             // Is it a `$ion::(..)`
             if (text == "\$ion" && nt == TokenTypeConst.SEXP) {
@@ -492,22 +536,30 @@ class ApplicationReaderDriver(
             } else if (text == "\$ion_symbol_table" && nt == TokenTypeConst.STRUCT) {
                 // Is it a legacy symbol table?
                 isSystemValue = true
-                symbolTable = reader.structValue().use { readLegacySymbolTable11(it) }
+                val symbolTable = reader.structValue().use { readLegacySymbolTable11(it) }
                 // TODO: Clean this up
-                val r = (reader as ValueReaderBase)
+                val r = ion11Reader
                 r.initTables(symbolTable, ION_1_1_SYSTEM_MACROS)
                 r.pool.symbolTable = symbolTable
                 r.pool.macroTable = ION_1_1_SYSTEM_MACROS
+            } else if (text == "\$ion_literal") {
+                reader.seekTo(position)
+                // advance the annotations iterator to skip the `$ion_literal` annotation.
+                a.next()
+                return a
             }
         }
-        if (!isSystemValue) {
+        return if (!isSystemValue) {
             reader.seekTo(position)
+            a
+        } else {
+            a.close()
+            null
         }
-        return isSystemValue
     }
 
+
     private fun readSymbolTable10(structReader: StructReader): Array<String?> {
-//        println("Reading Ion 1.0 symbol table.")
         val newSymbols = ArrayList<String?>()
         var isLstAppend = false
         while (true) {
@@ -549,7 +601,9 @@ class ApplicationReaderDriver(
                 else -> {}
             }
         }
-        val startOfNewSymbolTable = if (isLstAppend) symbolTable else ION_1_0_SYMBOL_TABLE
+
+        val r = ion10Reader
+        val startOfNewSymbolTable = if (isLstAppend) r.symbolTable else ION_1_0_SYMBOL_TABLE
         val newSymbolTable = Array<String?>(newSymbols.size + startOfNewSymbolTable.size) { null }
         System.arraycopy(startOfNewSymbolTable, 0, newSymbolTable, 0, startOfNewSymbolTable.size)
         System.arraycopy(newSymbols.toArray(), 0, newSymbolTable, startOfNewSymbolTable.size, newSymbols.size)
@@ -570,7 +624,7 @@ class ApplicationReaderDriver(
             val fieldName = if (fieldNameSid < 0) {
                 structReader.fieldName()
             } else {
-                lookupSid(fieldNameSid)
+                structReader.lookupSid(fieldNameSid)
             }
             when (fieldName) {
                 SystemSymbols.IMPORTS -> {
@@ -581,7 +635,7 @@ class ApplicationReaderDriver(
                             val text = if (sid < 0) {
                                 structReader.symbolValue()
                             } else {
-                                lookupSid(sid)
+                                structReader.lookupSid(sid)
                             }
                             if (text == SystemSymbols.ION_SYMBOL_TABLE) {
                                 isLstAppend = true
@@ -611,7 +665,8 @@ class ApplicationReaderDriver(
                 else -> {}
             }
         }
-        val startOfNewSymbolTable = if (isLstAppend) symbolTable else arrayOf<String?>(null)
+        val r = ion11Reader
+        val startOfNewSymbolTable = if (isLstAppend) r.symbolTable else arrayOf<String?>(null)
         val newSymbolTable = Array<String?>(newSymbols.size + startOfNewSymbolTable.size) { null }
         System.arraycopy(startOfNewSymbolTable, 0, newSymbolTable, 0, startOfNewSymbolTable.size)
         System.arraycopy(newSymbols.toArray(), 0, newSymbolTable, startOfNewSymbolTable.size, newSymbols.size)
@@ -630,7 +685,7 @@ class ApplicationReaderDriver(
                 val module = moduleReader.readModule(sexp, availableModules)
                 availableModules[module.name] = module
                 if (module.name == "_") {
-                    symbolTable = module.symbols.toTypedArray()
+                    ion11Reader.symbolTable = module.symbols.toTypedArray()
                 }
             }
             "import" -> {
@@ -644,7 +699,6 @@ class ApplicationReaderDriver(
     override fun close() {
         if (::_ion10Reader.isInitialized) _ion10Reader.close()
         if (::_ion11Reader.isInitialized) _ion11Reader.close()
-        symbolTable = arrayOf(null)
         macroTable = emptyArray()
     }
 }

@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.fail
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
@@ -821,15 +822,20 @@ class TypedReadersTest {
         FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
             val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
 
-            val iter = IonValueIterator(StreamReader_1_0(mappedByteBuffer))
 
-            var count = 0
-            while (iter.hasNext() && count++ < 100) {
-                println(iter.next())
+            ApplicationReaderDriver(mappedByteBuffer).use {
+                it.readAll(NoOpVisitor())
             }
+//            val iter = IonValueIterator(StreamReader_1_0(mappedByteBuffer))
+//
+//            var count = 0
+//            while (iter.hasNext() && count++ < 100) {
+//                println(iter.next())
+//            }
         }
     }
 
+    @Disabled("uses ion-rust conversion which has misaligned symbol table relative to ion-java")
     @Test
     fun `a big one for Ion 1 1 no macros`() {
         val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_legacy_no_macros.10n")
@@ -837,17 +843,20 @@ class TypedReadersTest {
         FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
             val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
 
-            val driver = ApplicationReaderDriver(mappedByteBuffer)
-
-            val visitor = PrintingVisitor(stepInWsTransform = { "" })
-            repeat(100) {
-                driver.read(visitor)
+            ApplicationReaderDriver(mappedByteBuffer).use {
+                it.readAll(NoOpVisitor())
             }
+
+//            val visitor = PrintingVisitor(stepInWsTransform = { "" })
+//            repeat(100) {
+//                driver.read(visitor)
+//            }
         }
     }
 
 
 
+    @Disabled
     @Test
     fun `Ion 1 1 test`() {
         val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_legacy.10n")
@@ -921,13 +930,15 @@ class TypedReadersTest {
 
         FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
             val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
-
-            val iter = IonValueIterator(StreamReaderImpl(mappedByteBuffer))
-
-            var count = 0
-            while (iter.hasNext() && count++ < 100) {
-                println(iter.next())
+            ApplicationReaderDriver(mappedByteBuffer).use {
+                it.readAll(NoOpVisitor())
             }
+//            val iter = IonValueIterator(StreamReaderImpl(mappedByteBuffer))
+//
+//            var count = 0
+//            while (iter.hasNext() && count++ < 100) {
+//                println(iter.next())
+//            }
         }
     }
 

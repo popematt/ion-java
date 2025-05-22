@@ -2,6 +2,7 @@ package com.amazon.ion.v3
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
+import java.math.BigDecimal
 import java.nio.ByteBuffer
 
 /**

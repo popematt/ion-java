@@ -34,11 +34,6 @@ internal object FlexSymHelper {
         } else {
             destination._sid = -1
             val length = -flexSym
-//            val position = source.position()
-//            val scratchBuffer = pool.scratchBuffer
-//            scratchBuffer.limit(position + length)
-//            scratchBuffer.position(position)
-            // source.position(position + length)
             destination._text = pool.utf8Decoder.decode(source, length)
         }
     }

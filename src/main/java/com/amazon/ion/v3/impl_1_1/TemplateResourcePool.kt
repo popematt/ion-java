@@ -1,0 +1,80 @@
+package com.amazon.ion.v3.impl_1_1
+
+import com.amazon.ion.SymbolToken
+import com.amazon.ion.impl.macro.*
+import com.amazon.ion.v3.*
+import java.io.Closeable
+
+class TemplateResourcePool(
+    // TODO: Do we even need these?
+    var symbolTable: Array<String?>,
+    var macroTable: Array<Macro>,
+): Closeable {
+
+    interface TemplateInvocationInfo {
+        val source: List<Expression.TemplateBodyExpression>
+        val signature: List<Macro.Parameter>
+        val arguments: EExpArgumentReader
+    }
+    private class TemplateInvocationInfoImpl(
+        override var source: List<Expression.TemplateBodyExpression>,
+        override var signature: List<Macro.Parameter>,
+        override var arguments: EExpArgumentReader,
+    ): TemplateInvocationInfo
+
+    val invocations = ArrayList<MacroInvocationReader>(8)
+    val structs = ArrayList<StructReaderImpl>(32)
+    val sequences = ArrayList<TemplateSequenceReaderImpl>(32)
+    val annotations = ArrayList<AnnotationIterator>(8)
+
+    fun startEvaluation(macro: Macro, arguments: EExpArgumentReader): TemplateSequenceReaderImpl {
+        if (macro is TemplateMacro) {
+            val reader = sequences.removeLastOrNull()
+            if (reader != null) {
+                reader.init(TemplateInvocationInfoImpl(macro.body, macro.signature, arguments), 0, macro.body.size)
+                return reader
+            } else {
+                return TemplateSequenceReaderImpl(this, TemplateInvocationInfoImpl(macro.body, macro.signature, arguments), 0, macro.body.size)
+            }
+        } else {
+            TODO("System macros")
+        }
+    }
+
+    fun getSequence(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): TemplateSequenceReaderImpl {
+        val reader = sequences.removeLastOrNull()
+        if (reader != null) {
+            reader.init(info, startInclusive, endExclusive)
+            return reader
+        } else {
+            return TemplateSequenceReaderImpl(this, info, startInclusive, endExclusive)
+        }
+    }
+
+    fun getAnnotations(annotationSymbols: List<SymbolToken>): AnnotationIterator {
+        val reader = annotations.removeLastOrNull() as TemplateAnnotationIteratorImpl?
+        if (reader != null) {
+            reader.init(annotationSymbols)
+            return reader
+        } else {
+            return TemplateAnnotationIteratorImpl(annotationSymbols, this)
+        }
+    }
+
+//    fun getStruct(start: Int, length: Int): StructReaderImpl {
+//        val reader = structs.removeLastOrNull()
+//        if (reader != null) {
+//            reader.init(start, length)
+//            reader.initTables(symbolTable, macroTable)
+//            return reader
+//        } else {
+//            return StructReaderImpl(newSlice(start, length), this, symbolTable, macroTable)
+//        }
+//    }
+
+    override fun close() {
+        annotations.clear()
+        sequences.clear()
+        structs.clear()
+    }
+}
