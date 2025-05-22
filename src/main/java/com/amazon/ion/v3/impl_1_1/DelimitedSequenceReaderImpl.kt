@@ -4,6 +4,9 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
+/**
+ * TODO: Combine this with [SeqReaderImpl]
+ */
 class DelimitedSequenceReaderImpl(
     source: ByteBuffer,
     pool: ResourcePool,

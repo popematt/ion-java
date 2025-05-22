@@ -15,6 +15,14 @@ import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.util.Date
 
+/**
+ * A wrapper for [StreamReader] that implements [IonReader].
+ *
+ * TODO: This class has an object layout of exactly 64 bytes, which is a typical size for a cache line.
+ *       If we want to add any more fields, we should consider creating an `AnnotationsHelper` class
+ *       that can encapsulate all of the state needed for annotations. (Currently it is 16 bytes, or
+ *       25% of the total object size.)
+ */
 class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
 
     private lateinit var _ion10Reader: ValueReader
@@ -56,7 +64,6 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
     private var stackSize: Int = 0
 
     private var type: IonType? = null
-    // private lateinit var reader: ValueReader
     private var fieldName: String? = null
     private var fieldNameSid: Int = -1
 

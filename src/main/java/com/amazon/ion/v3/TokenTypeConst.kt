@@ -22,9 +22,12 @@ object TokenTypeConst {
     const val ANNOTATIONS = 13
     const val FIELD_NAME = 14
     const val NOP = 15
-    const val UNSET = 16 // TODO: Change to UNKNOWN and/or UNSET
+    /** There is no current Token Type */
+    const val UNSET = 16
+    /** End of a container */
     const val END = 17
     const val IVM = 18
+    /** Reader is positioned on a TypeId or Opcode that is reserved. This should be an error. */
     const val RESERVED = 19
     const val EEXP = 20
     const val EXPRESSION_GROUP = 21

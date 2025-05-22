@@ -9,6 +9,9 @@ import com.amazon.ion.v3.TokenType
 import java.math.BigInteger
 import java.nio.ByteBuffer
 
+/**
+ * A visitor that writes everything to an [IonWriter].
+ */
 class TranscoderVisitor(private val writer: IonWriter): VisitingReaderCallback {
     override fun onAnnotation(annotations: AnnotationIterator) = apply {
         while (annotations.hasNext()) {

@@ -11,6 +11,14 @@ import java.nio.ByteBuffer
 
 // TODO: Make sure we can unify this over text and binary
 //       Or have subclasses that are Text vs Binary.
+/**
+ * This is incomplete.
+ *
+ * The intention is that there's a "driver" for visitors that visits at the "system" level.
+ * I.e. it exposes system values and may or may not (TBD) resolve symbol IDs.
+ *
+ *
+ */
 class SystemReaderDriver(
     source: ByteBuffer,
     // TODO: options?

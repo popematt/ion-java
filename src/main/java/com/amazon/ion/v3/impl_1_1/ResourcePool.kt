@@ -73,6 +73,7 @@ class ResourcePool(
         if (reader != null) {
             reader.init(start, maxLength)
             reader.initTables(symbolTable, macroTable)
+            reader.parent = parent
             return reader
         } else {
             return DelimitedSequenceReaderImpl(newSlice(start, maxLength), this, parent, symbolTable, macroTable)

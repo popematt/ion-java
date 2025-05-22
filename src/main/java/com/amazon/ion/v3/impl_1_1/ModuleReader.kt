@@ -6,6 +6,9 @@ import com.amazon.ion.impl.macro.MacroCompiler
 import com.amazon.ion.impl.macro.ReaderAdapterIonReader
 import com.amazon.ion.v3.*
 
+/**
+ * Work in progress class that can read module definitions.
+ */
 internal class ModuleReader() {
 //    private val macroCompiler = MacroCompiler(
 //        getMacro = this::getMacro,

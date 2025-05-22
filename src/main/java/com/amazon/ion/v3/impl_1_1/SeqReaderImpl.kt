@@ -14,5 +14,4 @@ class SeqReaderImpl internal constructor(
     override fun close() {
         pool.lists.add(this)
     }
-
 }

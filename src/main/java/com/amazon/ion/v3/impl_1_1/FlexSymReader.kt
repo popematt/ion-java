@@ -5,8 +5,8 @@ import java.nio.ByteBuffer
 
 internal object FlexSymHelper {
     internal interface FlexSymDestination {
-        var text: String?
-        var sid: Int
+        var _text: String?
+        var _sid: Int
     }
 
     @JvmStatic
@@ -26,20 +26,20 @@ internal object FlexSymHelper {
         val flexSym = IntHelper.readFlexIntAsLong(source).toInt()
         if (flexSym == 0) {
             val systemSid = (source.get().toInt() and 0xFF) - 0x60
-            destination.sid = if (systemSid == 0) 0 else -1
-            destination.text = SystemSymbols_1_1[systemSid]?.text
+            destination._sid = if (systemSid == 0) 0 else -1
+            destination._text = SystemSymbols_1_1[systemSid]?.text
         } else if (flexSym > 0) {
-            destination.sid = flexSym
-            destination.text = symbolTable[flexSym]
+            destination._sid = flexSym
+            destination._text = symbolTable[flexSym]
         } else {
-            destination.sid = -1
+            destination._sid = -1
             val length = -flexSym
-            val position = source.position()
-            val scratchBuffer = pool.scratchBuffer
-            scratchBuffer.limit(position + length)
-            scratchBuffer.position(position)
-            source.position(position + length)
-            destination.text = pool.utf8Decoder.decode(scratchBuffer, length)
+//            val position = source.position()
+//            val scratchBuffer = pool.scratchBuffer
+//            scratchBuffer.limit(position + length)
+//            scratchBuffer.position(position)
+            // source.position(position + length)
+            destination._text = pool.utf8Decoder.decode(source, length)
         }
     }
 }
@@ -64,12 +64,12 @@ class FlexSymReader(private val pool: ResourcePool) {
         } else {
             sid = -1
             val length = -flexSym
-            val position = source.position()
-            val scratchBuffer = pool.scratchBuffer
-            scratchBuffer.limit(position + length)
-            scratchBuffer.position(position)
-            source.position(position + length)
-            text = pool.utf8Decoder.decode(scratchBuffer, length)
+//            val position = source.position()
+//            val scratchBuffer = pool.scratchBuffer
+//            scratchBuffer.limit(position + length)
+//            scratchBuffer.position(position)
+//            source.position(position + length)
+            text = pool.utf8Decoder.decode(source, length)
         }
     }
 }

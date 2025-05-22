@@ -10,10 +10,14 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 abstract class ValueReaderBase(
+    @JvmField
     internal var source: ByteBuffer,
+    @JvmField
     internal var pool: ResourcePool,
     // TODO: Fully integrate these.
+    @JvmField
     internal var symbolTable: Array<String?>,
+    @JvmField
     internal var macroTable: Array<Macro>,
 ): ValueReader {
 
@@ -214,6 +218,7 @@ abstract class ValueReaderBase(
             throw IonException("Not positioned on a string")
         }
         val position = source.position()
+        // Why do we need scratchBuffer here?
         val scratchBuffer = pool.scratchBuffer
         scratchBuffer.limit(position + length)
         scratchBuffer.position(position)

@@ -8,8 +8,13 @@ import java.math.BigDecimal
 import java.nio.ByteBuffer
 
 /**
+ * Helper class containing static methods for reading timestamps.
+ *
  * TODO: See if there's any performance benefit to using the second option. There might be a benefit
  *       to shifting and converting so that the remaining operations can be int ops instead of long ops.
+ *       Because ints require only one slot in the JVM operand stack whereas longs require two slots in
+ *       the operand stack. This may not be as relevant for 64-bit architectures, but it is not completely
+ *       irrelevant because Java bytecodes still treat longs as double-wide values.
  * ```
  * val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
  * ```
@@ -25,7 +30,7 @@ object TimestampHelper {
         // Often, the data for an application will use a lot of timestamps with similar precisions. For example, logging
         // might use mostly millisecond-precision timestamps with UTC offsets, or a calendar application might use
         // minute precision with an offset for representing calendar events.
-        // Because of this, aach case is handled in a separate method so that the JVM can inline the cases that are most
+        // Because of this, each case is handled in a separate method so that the JVM can inline the cases that are most
         // commonly used in any given application.
         return when (opcode) {
             0x80 -> readTimestamp0x80(source)
@@ -253,11 +258,14 @@ object TimestampHelper {
         return (offsetBits - S_O_TIMESTAMP_OFFSET_BIAS) * S_O_TIMESTAMP_OFFSET_INCREMENT
     }
 
+    /**
+     * Reads `n` bytes as the least significant bytes of a Long.
+     */
     @JvmStatic
-    private fun readBytes(bytes: Int, source: ByteBuffer): Long {
+    private fun readBytes(n: Int, source: ByteBuffer): Long {
         val position = source.position()
-        source.position(position + bytes)
-        return source.getLong(position - 8 + bytes) ushr (64 - bytes * 8)
+        source.position(position + n)
+        return source.getLong(position - 8 + n) ushr (64 - n * 8)
     }
 
     @JvmStatic

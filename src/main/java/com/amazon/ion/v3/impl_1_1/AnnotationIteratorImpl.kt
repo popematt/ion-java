@@ -16,10 +16,12 @@ import java.nio.ByteBuffer
  */
 internal class AnnotationIteratorImpl(
     private var opcode: Int,
+    @JvmField
     var source: ByteBuffer,
+    @JvmField
     val pool: ResourcePool,
     private var symbolTable: Array<String?>,
-): AnnotationIterator, PrivateAnnotationIterator {
+): AnnotationIterator, PrivateAnnotationIterator, FlexSymHelper.FlexSymDestination {
 
     override fun clone(): AnnotationIterator {
         val start = source.position()
@@ -70,8 +72,8 @@ internal class AnnotationIteratorImpl(
         }
     }
 
-    private var sid = -1
-    private var text: String? = null
+    override var _sid = -1
+    override var _text: String? = null
 
     override fun hasNext(): Boolean = opcode != END
     override fun next() {
@@ -79,22 +81,26 @@ internal class AnnotationIteratorImpl(
 
         opcode = when (opcode) {
             0xE4 -> {
-                sid = IntHelper.readFlexUInt(source)
-                text = symbolTable[sid]
+                val sid = IntHelper.readFlexUInt(source)
+                _sid = sid
+                _text = symbolTable[sid]
                 END
             }
             0xE5 -> {
-                sid = IntHelper.readFlexUInt(source)
-                text = symbolTable[sid]
+                val sid = IntHelper.readFlexUInt(source)
+                _sid = sid
+                _text = symbolTable[sid]
                 0xE5
             }
             0xE6 -> {
-                sid = IntHelper.readFlexUInt(source)
-                text = symbolTable[sid]
+                val sid = IntHelper.readFlexUInt(source)
+                _sid = sid
+                _text = symbolTable[sid]
                 if (source.hasRemaining()) 0xE6 else END
             }
             0xE7 -> {
-                readFlexSym()
+                FlexSymHelper.readFlexSym(source, this, pool, symbolTable)
+                // readFlexSym()
                 END
             }
             0xE8 -> {
@@ -114,25 +120,25 @@ internal class AnnotationIteratorImpl(
 
         if (flexSym == 0) {
             val systemSid = (source.get().toInt() and 0xFF) - 0x60
-            sid = if (systemSid == 0) 0 else -1
-            text = SystemSymbols_1_1[systemSid]?.text
+            _sid = if (systemSid == 0) 0 else -1
+            _text = SystemSymbols_1_1[systemSid]?.text
         } else if (flexSym > 0) {
-            sid = flexSym
-            text = symbolTable[sid]
+            _sid = flexSym
+            _text = symbolTable[_sid]
         } else {
-            sid = -1
+            _sid = -1
             val length = -flexSym
-            val position = source.position()
-            source.position(position + length)
-            val scratchBuffer = pool.scratchBuffer
-            scratchBuffer.limit(position + length)
-            scratchBuffer.position(position)
-            text = pool.utf8Decoder.decode(scratchBuffer, length)
+//            val position = source.position()
+//            source.position(position + length)
+//            val scratchBuffer = pool.scratchBuffer
+//            scratchBuffer.limit(position + length)
+//            scratchBuffer.position(position)
+            _text = pool.utf8Decoder.decode(source, length)
         }
     }
 
-    override fun getSid(): Int = sid
-    override fun getText(): String? = text
+    override fun getSid(): Int = _sid
+    override fun getText(): String? = _text
 
     override fun close() {
         pool.annotations.add(this)
@@ -142,8 +148,8 @@ internal class AnnotationIteratorImpl(
         this.opcode = opcode
         source.limit(start + length)
         source.position(start)
-        sid = -1
-        text = null
+        _sid = -1
+        _text = null
         this.symbolTable = symbolTable
     }
 
@@ -157,7 +163,7 @@ internal class AnnotationIteratorImpl(
         val strings = ArrayList<String?>(4)
         while (this.hasNext()) {
             next()
-            strings.add(getText())
+            strings.add(_text)
         }
         return strings.toTypedArray()
     }

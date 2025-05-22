@@ -4,6 +4,9 @@ import com.amazon.ion.*
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
+/**
+ * Helper class containing info about Ion 1.1 opcodes.
+ */
 object IdMappings {
     @JvmStatic
     val TOKEN_TYPE_FOR_OPCODE = IntArray(256) { i -> tokenTypeForOpCode(i) }

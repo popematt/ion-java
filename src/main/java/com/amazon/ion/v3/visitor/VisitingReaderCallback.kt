@@ -9,16 +9,40 @@ import com.amazon.ion.v3.TokenType
 import java.math.BigInteger
 import java.nio.ByteBuffer
 
-// TODO: System-level visitor?
-//       Or perhaps the symbol table management should move into the visitor driver?
+/**
+ *
+ *
+ * TODO: Naming. Perhaps "ReadingVisitor"?
+ *
+ * TODO: How do we step out early? Can we? We could have a singleton/sentinel instance of VisitingReaderCallback that
+ *       signals to the "driver" to step out of a container early.
+ *
+ * TODO: Should there be a separate System-level visitor interface, or can we make this one work for both
+ * [ApplicationReaderDriver] and [SystemReaderDriver]?
+ */
 interface VisitingReaderCallback {
 
-    // Return a [ReaderCallback] that should be used to read the value.
-    // If null, then skip the value.
-    fun onAnnotation(annotations: AnnotationIterator) : VisitingReaderCallback?
-    fun onField(fieldName: String?, fieldSid: Int) : VisitingReaderCallback?
-    fun onValue(type: TokenType) : VisitingReaderCallback?
+    /**
+     * Return a [VisitingReaderCallback] that should be used to read the value.
+     * If null, then skip the value.
+     */
+    fun onAnnotation(annotations: AnnotationIterator) : VisitingReaderCallback? = this
 
+    /**
+     * Return a [VisitingReaderCallback] that should be used to read the value.
+     * If null, then skip the value.
+     */
+    fun onField(fieldName: String?, fieldSid: Int) : VisitingReaderCallback? = this
+
+    /**
+     * Return a [VisitingReaderCallback] that should be used to read the value.
+     * If null, then skip the value.
+     */
+    fun onValue(type: TokenType) : VisitingReaderCallback? = this
+
+    /**
+     * Exposes that an IVM has been encountered.
+     */
     fun onIVM(major: Int, minor: Int): Unit = Unit
 
     fun onListStart()
@@ -45,5 +69,7 @@ interface VisitingReaderCallback {
      */
     fun onEExpression(macro: Macro): VisitingReaderCallback? = null
 
-    // TODO: How do we step out early? Can we? We could have a singleton instance of ReaderCallback that allows early return.
+    // TODO: ?
+    //  fun onEExpressionArgument(name: String): VisitingReaderCallback? = null
+
 }

@@ -4,6 +4,18 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
+/**
+ * Implementation of delimited structs.
+ *
+ * TODO: See if we can combine the delimited and length prefixed implementations.
+ *       There may be a slight performance benefit because calls to `StructReader`
+ *       could be optimized more if there are fewer implementations to choose from.
+ *       See https://shipilev.net/blog/2015/black-magic-method-dispatch/
+ *
+ * To combine them, we probably just need to add a "isDelimited" flag, make sure
+ * that `flexSymMode` is always enabled for delimited structs, and check for the
+ * delimited end marker.
+ */
 class DelimitedStructReaderImpl internal constructor(
     source: ByteBuffer,
     pool: ResourcePool,
