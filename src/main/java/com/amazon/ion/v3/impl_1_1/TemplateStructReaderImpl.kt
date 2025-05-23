@@ -6,19 +6,22 @@ import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
-class MacroInvocationReader(
+class TemplateStructReaderImpl(
     val pool: TemplateResourcePool,
     // TODO: consider flattening this
     var info: TemplateResourcePool.TemplateInvocationInfo,
     var startInclusive: Int,
     var endExclusive: Int,
+//    var signature: List<Macro.Parameter>,
+//    var arguments: EExpressionArgsReader,
     // TODO: Can we manage the expansion limit through the template resource pool?
+    //       Or better yet, perhaps through the visitor API.
     var expansionLimit: Int = 1_000_000,
     // Available modules? No. That's already resolved in the compiler.
     // Macro table? No. That's already resolved in the compiler.
-): ValueReader, SequenceReader {
+): ValueReader, StructReader {
 
-    var i = 0
+    var i = startInclusive
     var currentExpression: Expression? = null
 
     fun init(
@@ -29,24 +32,20 @@ class MacroInvocationReader(
         this.info = templateInvocationInfo
         this.startInclusive = startInclusive
         this.endExclusive = endExclusive
-        i = 0
+        i = startInclusive
         currentExpression = null
     }
 
     override fun nextToken(): Int {
         if (i >= endExclusive) {
-            return TokenTypeConst.END_OF_INVOCATION
+            return TokenTypeConst.END
         }
         if (currentExpression == null) {
             val expr = info.source[i++]
             if (expr is HasStartAndEnd) i = expr.endExclusive
             currentExpression = expr
         }
-        if (currentExpression is VariableRef) {
-            return TokenTypeConst.VARIABLE_REF
-        } else {
-            return currentExpression!!.tokenType
-        }
+        return currentExpression!!.tokenType
     }
 
     // TODO: Make sure that this also returns END when at the end of the input.
@@ -66,13 +65,6 @@ class MacroInvocationReader(
         currentExpression = null
     }
 
-    fun variableValue(): ValueReader {
-        val expr = takeCurrentExpression<VariableRef>()
-        info.arguments.seekToArgument(expr.signatureIndex)
-        info.arguments.seekTo(info.arguments.position() - 1)
-        return info.arguments
-    }
-
     private inline fun <reified T: Expression> takeCurrentExpression(): T {
         val expr = currentExpression
         currentExpression = null
@@ -81,6 +73,14 @@ class MacroInvocationReader(
         } else {
             throw IonException("Not positioned on a ${T::class.simpleName}")
         }
+    }
+
+    // The text should have been resolved when the macro was compiled. Even if there is a SID,
+    // it doesn't necessarily correspond to the current symbol table.
+    override fun fieldNameSid(): Int = -1
+
+    override fun fieldName(): String? {
+        return takeCurrentExpression<FieldName>().value.text
     }
 
     override fun nullValue(): IonType = takeCurrentExpression<NullValue>().type
@@ -120,8 +120,7 @@ class MacroInvocationReader(
     }
 
     override fun structValue(): StructReader {
-        val expr = takeCurrentExpression<StructValue>()
-        return pool.getStruct(info, expr.startInclusive, expr.endExclusive)
+        TODO("Not yet implemented")
     }
 
     override fun annotations(): AnnotationIterator {
@@ -139,7 +138,6 @@ class MacroInvocationReader(
     override fun position(): Int  = TODO("This method only applies to raw readers.")
 
     override fun close() {
-        pool.invocations.add(this)
+        pool.structs.add(this)
     }
-
 }

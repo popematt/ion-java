@@ -20,7 +20,7 @@ class TemplateSequenceReaderImpl(
     // Macro table? No. That's already resolved in the compiler.
 ): ValueReader, ListReader, SexpReader {
 
-    var i = 0
+    var i = startInclusive
     var currentExpression: Expression? = null
 
     fun init(
@@ -35,7 +35,7 @@ class TemplateSequenceReaderImpl(
         this.endExclusive = endExclusive
 //        this.signature = signature
 //        this.arguments = arguments
-        i = 0
+        i = startInclusive
         currentExpression = null
     }
 

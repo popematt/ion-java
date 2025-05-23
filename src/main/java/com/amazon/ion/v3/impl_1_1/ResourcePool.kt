@@ -18,6 +18,7 @@ import java.nio.ByteOrder
  */
 class ResourcePool(
     private val source: ByteBuffer,
+    // TODO: Correctness -- Maybe these shouldn't be here, and should be passed as function parameters instead.
     var symbolTable: Array<String?>,
     var macroTable: Array<Macro>,
 ): Closeable {

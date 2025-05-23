@@ -10,8 +10,9 @@ import com.amazon.ion.v3.impl_1_1.ValueReaderBase
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
-class ApplicationReaderDriver(
+class ApplicationReaderDriver @JvmOverloads constructor(
     private val source: ByteBuffer,
+    private val additionalMacros: List<Macro> = emptyList()
     // TODO: Catalog, options?
 ): AutoCloseable {
     constructor(outputStream: ByteArrayOutputStream): this(ByteBuffer.wrap(outputStream.toByteArray()))
@@ -82,7 +83,7 @@ class ApplicationReaderDriver(
     private val availableModules = mutableMapOf<String, ModuleReader.Module>()
     private val activeModules = mutableListOf<ModuleReader.Module>()
 
-    private fun addOrSetSymbols(argReader: EExpArgumentReader, append: Boolean) {
+    private fun addOrSetSymbols(argReader: ArgumentReader, append: Boolean) {
         val r = ion11Reader
         val newSymbols = if (append) r.symbolTable.toMutableList() else mutableListOf<String?>(null)
         argReader.nextToken()
@@ -175,7 +176,17 @@ class ApplicationReaderDriver(
                         activeModules.clear()
                         activeModules.add(availableModules["_"]!!)
                         macroTable = ION_1_1_SYSTEM_MACROS
-                        ion11Reader.symbolTable = ION_1_1_SYSTEM_SYMBOLS
+                        if (additionalMacros.isNotEmpty()) {
+                            macroTable = Array(ION_1_1_SYSTEM_MACROS.size + additionalMacros.size) { i ->
+                                if (i < ION_1_1_SYSTEM_MACROS.size) {
+                                    ION_1_1_SYSTEM_MACROS[i]
+                                } else {
+                                    additionalMacros[i - ION_1_1_SYSTEM_MACROS.size]
+                                }
+                            }
+                        }
+                        // ion11Reader.symbolTable = ION_1_1_SYSTEM_SYMBOLS
+                        ion11Reader.initTables(ION_1_1_SYSTEM_SYMBOLS, macroTable)
                     } else {
                         ion10Reader.symbolTable = ION_1_0_SYMBOL_TABLE
                     }
@@ -279,13 +290,16 @@ class ApplicationReaderDriver(
                             if (macroVisitor != null) {
                                 reader.eexpArgs(macro.signature).use { r -> readAllValues(r, macroVisitor) }
                             } else {
-                                // TODO: Since we're at the top level, we need to read top-level values in case a directive
+                                // TODO: Since we're at the top level, we need to read as top-level values in case a directive
                                 //       is produced.
                                 // Start a macro evaluation session
                                 reader.eexpArgs(macro.signature).use { args ->
-                                    templateReaderPool.startEvaluation(macro, args).use { macroInvocation ->
-                                        i += readTopLevelValues(macroInvocation, visitor)
-                                    }
+                                    templateReaderPool
+                                        .startEvaluation(macro, args)
+                                        .use { macroInvocation ->
+                                            println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
+                                            i += readTopLevelValues(macroInvocation, visitor)
+                                        }
                                 }
                             }
                         }
@@ -293,6 +307,11 @@ class ApplicationReaderDriver(
                 }
                 TokenTypeConst.END_OF_INVOCATION,
                 TokenTypeConst.END -> return i
+                TokenTypeConst.VARIABLE_REF -> {
+                    (reader as MacroInvocationReader).variableValue().use { variable ->
+                        readTopLevelValues(variable, visitor)
+                    }
+                }
                 else -> TODO("Unreachable: ${TokenTypeConst(token)}")
             }
         }
@@ -328,7 +347,11 @@ class ApplicationReaderDriver(
                 visitor.onValue(TokenType.LIST)?.let { v ->
                     v.onListStart()
                     // TODO: Switch to a read all method so that we aren't calling `readValue` in a tight loop
-                    reader.listValue().use { r -> readAllValues(r, v) }
+                    reader
+                        .listValue()
+                        .use { r ->
+                            readAllValues(r, v)
+                        }
                     v.onListEnd()
                 } ?: reader.skip()
 
@@ -373,7 +396,13 @@ class ApplicationReaderDriver(
                     TODO("Use the macro evaluator")
                 }
             }
+            TokenTypeConst.END_OF_INVOCATION,
             TokenTypeConst.END -> return false
+            TokenTypeConst.VARIABLE_REF -> {
+                (reader as MacroInvocationReader).variableValue().use { variable ->
+                    readValue(variable, visitor)
+                }
+            }
             else -> TODO("Unreachable: ${TokenTypeConst(token)}")
         }
         return true
@@ -478,7 +507,13 @@ class ApplicationReaderDriver(
                         }
                     }
                 }
+                TokenTypeConst.END_OF_INVOCATION,
                 TokenTypeConst.END -> return
+                TokenTypeConst.VARIABLE_REF -> {
+                    (reader as MacroInvocationReader).variableValue().use { variable ->
+                        readAllValues(variable, visitor)
+                    }
+                }
                 else -> TODO("Unreachable: ${TokenTypeConst(token)}")
             }
         }

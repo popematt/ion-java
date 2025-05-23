@@ -2,6 +2,7 @@ package com.amazon.ion.v3
 
 import com.amazon.ion.*
 import com.amazon.ion.TestUtils.*
+import com.amazon.ion.impl.macro.*
 import com.amazon.ion.system.IonReaderBuilder
 import com.amazon.ion.system.IonSystemBuilder
 import com.amazon.ion.util.*
@@ -667,6 +668,161 @@ class TypedReadersTest {
         }
 
         @Test
+        fun constantScalarTemplateMacro() {
+            val macro = TemplateMacro(
+                signature = listOf(),
+                body = ExpressionBuilderDsl.templateBody {
+                    int(1)
+                }
+            )
+            val data = toByteBuffer("""
+            E0 01 01 EA
+            60
+            18
+            61 02
+        """)
+
+            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                driver.readAll(
+                    expect(
+                        Expectation.IntValue(0),
+                        Expectation.IntValue(1),
+                        Expectation.IntValue(2),
+                    )
+                )
+            }
+        }
+
+        @Test
+        fun constantListTemplateMacro() {
+            val macro = TemplateMacro(
+                signature = listOf(),
+                body = ExpressionBuilderDsl.templateBody {
+                    list {
+                        int(1)
+                        int(2)
+                    }
+                }
+            )
+            val data = toByteBuffer("""
+            E0 01 01 EA
+            60
+            18
+            61 03
+        """)
+
+            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                driver.readAll(
+                    expect(
+                        Expectation.IntValue(0),
+                        Expectation.ListStart,
+                        Expectation.IntValue(1),
+                        Expectation.IntValue(2),
+                        Expectation.End,
+                        Expectation.IntValue(3),
+                    )
+                )
+            }
+        }
+
+        @Test
+        fun constantSexpTemplateMacro() {
+            val macro = TemplateMacro(
+                signature = listOf(),
+                body = ExpressionBuilderDsl.templateBody {
+                    sexp {
+                        int(1)
+                        int(2)
+                    }
+                }
+            )
+            val data = toByteBuffer("""
+            E0 01 01 EA
+            60
+            18
+            61 03
+        """)
+
+            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                driver.readAll(
+                    expect(
+                        Expectation.IntValue(0),
+                        Expectation.SexpStart,
+                        Expectation.IntValue(1),
+                        Expectation.IntValue(2),
+                        Expectation.End,
+                        Expectation.IntValue(3),
+                    )
+                )
+            }
+        }
+
+        @Test
+        fun constantStructTemplateMacro() {
+            val macro = TemplateMacro(
+                signature = listOf(),
+                body = ExpressionBuilderDsl.templateBody {
+                    struct {
+                        fieldName("foo")
+                        int(1)
+                        fieldName("bar")
+                        int(2)
+                    }
+                }
+            )
+            val data = toByteBuffer("""
+            E0 01 01 EA
+            60
+            18
+            61 03
+        """)
+
+            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                driver.readAll(
+                    expect(
+                        Expectation.IntValue(0),
+                        Expectation.StructStart,
+                        Expectation.FieldName("foo"),
+                        Expectation.IntValue(1),
+                        Expectation.FieldName("bar"),
+                        Expectation.IntValue(2),
+                        Expectation.End,
+                        Expectation.IntValue(3),
+                    )
+                )
+            }
+        }
+
+
+        @Test
+        fun templateMacroWithOneVariable() {
+            val macro = TemplateMacro(
+                signature = listOf(
+                    Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
+                ),
+                body = ExpressionBuilderDsl.templateBody {
+                    variable(0)
+                }
+            )
+            val data = toByteBuffer("""
+            E0 01 01 EA
+            60
+            18 61 01
+            61 02
+        """)
+
+            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                driver.readAll(
+                    expect(
+                        Expectation.IntValue(0),
+                        Expectation.IntValue(1),
+                        Expectation.IntValue(2),
+                    )
+                )
+            }
+        }
+
+        @Test
         fun strings() {
             val data = toByteBuffer("""
             E0 01 01 EA
@@ -753,22 +909,6 @@ class TypedReadersTest {
         }
 
 
-        val test = """
-            E0 01 01 EA
-            E0 01 01 EA
-            E7 01 63      | System Annotation 63
-            FD            | Delimited Struct
-            42 8C 01 01   66 EE 03 01   67 FB 1A 8C   98 24 69 6F   6E 5F 6C 6F
-            67 99 53 74   61 72 74 54   69 6D 65 9B   4D 61 72 6B   65 74 70 6C   61 63 65 97   50 72 6F 67   72 61 6D 94
-            54 69 6D 65   99 4F 70 65   72 61 74 69   6F 6E 99 41   63 63 6F 75   6E 74 49 64   9E 41 77 73   41 63 63 65
-            73 73 4B 65   79 49 64 9C   41 77 73 41   63 63 6F 75   6E 74 49 64   F9 25 41 77   73 43 61 6C   6C 65 72 50
-            72 69 6E 63   69 70 61 6C   9A 41 77 73   55 73 65 72   41 72 6E F9   21 41 77 73   55 73 65 72   50 72 69 6E
-            63 69 70 61   6C 97 43 68   61 69 6E 49   64 97 49 6E   73 74 61 6E   74 97 45 6E   64 54 69 6D   65 93 50 49
-            44 9F 52 65   6D 6F 74 65   49 70 41 64   64 72 65 73   73 F9 2F 52   65 6D 6F 74   65 49 70 41   64 64 72 65
-            73 73 53 65   71 75 65 6E   63 65 9C 52   65 6D 6F 74   65 53 6F 63   6B 65 74 99   52 65 71 75   65 73 74 49
-            64 92 53 4E   97 53 68 61   72 64 49 64   94 53 69 7A   65 9A 53 74   72 65 61 6D   4E 61 6D 65   99 54 68 72
-            6F 74 74 6C   65 72 99 55   73 65 72 41   67 65 6E 74   F9 2B 61 6D   7A 2D 73 64   6B 2D 69 6E   76 6F 63 61
-        """.trimIndent()
         @Test
         fun `a big one for Ion 1 1 conversion using IonJavaBenchmarkCli`() {
             val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy_1_1.10n")
@@ -826,12 +966,6 @@ class TypedReadersTest {
             ApplicationReaderDriver(mappedByteBuffer).use {
                 it.readAll(NoOpVisitor())
             }
-//            val iter = IonValueIterator(StreamReader_1_0(mappedByteBuffer))
-//
-//            var count = 0
-//            while (iter.hasNext() && count++ < 100) {
-//                println(iter.next())
-//            }
         }
     }
 
@@ -846,11 +980,6 @@ class TypedReadersTest {
             ApplicationReaderDriver(mappedByteBuffer).use {
                 it.readAll(NoOpVisitor())
             }
-
-//            val visitor = PrintingVisitor(stepInWsTransform = { "" })
-//            repeat(100) {
-//                driver.read(visitor)
-//            }
         }
     }
 
@@ -933,161 +1062,7 @@ class TypedReadersTest {
             ApplicationReaderDriver(mappedByteBuffer).use {
                 it.readAll(NoOpVisitor())
             }
-//            val iter = IonValueIterator(StreamReaderImpl(mappedByteBuffer))
-//
-//            var count = 0
-//            while (iter.hasNext() && count++ < 100) {
-//                println(iter.next())
-//            }
         }
-    }
-
-    class PrintingVisitor(
-        private val whiteSpace: String = "",
-        private val separator: String = "\n",
-        private var isPendingWhitespace: Boolean = false,
-        private val stepInWsTransform: (String) -> String = { "$it  " }
-    ): VisitingReaderCallback {
-        private var isPendingSeparator = false
-
-        private fun printSeparator() {
-            if (isPendingWhitespace) {
-                print(whiteSpace)
-                isPendingWhitespace = false
-            }
-            if (isPendingSeparator) {
-                print(separator)
-                isPendingSeparator = false
-            }
-        }
-        private fun afterValue() {
-            isPendingSeparator = true
-            isPendingWhitespace = true
-        }
-
-        override fun onAnnotation(annotations: AnnotationIterator): VisitingReaderCallback {
-            printSeparator()
-            while (annotations.hasNext()) {
-                annotations.next()
-                val text = annotations.getText() ?: "$${annotations.getSid()}"
-                print(text)
-                print("::")
-            }
-            return this
-        }
-
-        override fun onField(fieldName: String?, fieldSid: Int): VisitingReaderCallback? {
-            printSeparator()
-            val text = fieldName ?: "$$fieldSid"
-            print(text)
-            print(":")
-            return this
-        }
-
-        override fun onListStart() {
-            printSeparator()
-            print("[")
-        }
-
-        override fun onListEnd() {
-            printSeparator()
-            print("]")
-            afterValue()
-        }
-
-        override fun onSexpStart() {
-            printSeparator()
-            print("(")
-        }
-
-        override fun onSexpEnd() {
-            printSeparator()
-            print(")")
-            afterValue()
-        }
-
-        override fun onStructStart() {
-            printSeparator()
-            print("{")
-        }
-
-        override fun onStructEnd() {
-            printSeparator()
-            print("}")
-            afterValue()
-        }
-
-        override fun onValue(type: TokenType): VisitingReaderCallback? {
-            printSeparator()
-            return when (type) {
-                TokenType.LIST ->
-                    PrintingVisitor(stepInWsTransform(whiteSpace), ", ", isPendingWhitespace = true, stepInWsTransform = stepInWsTransform)
-                TokenType.SEXP ->
-                    PrintingVisitor(stepInWsTransform(whiteSpace), " ", isPendingWhitespace = true, stepInWsTransform = stepInWsTransform)
-                TokenType.STRUCT ->
-                    PrintingVisitor(stepInWsTransform(whiteSpace), ", ", isPendingWhitespace = true, stepInWsTransform = stepInWsTransform)
-                else -> this
-            }
-        }
-
-        override fun onNull(value: IonType) {
-            print("null")
-            if (value != IonType.NULL) {
-                print(".${value.toString().lowercase()}")
-            }
-            afterValue()
-        }
-
-        override fun onBoolean(value: Boolean) {
-            print(value.toString())
-            afterValue()
-        }
-
-        override fun onLongInt(value: Long) {
-            print(value.toString())
-            afterValue()
-        }
-
-        override fun onBigInt(value: BigInteger) {
-            print(value.toString())
-            afterValue()
-        }
-
-        override fun onFloat(value: Double) {
-            print(value.toString())
-            afterValue()
-        }
-
-        override fun onDecimal(value: Decimal) {
-            print(value.toString())
-            afterValue()
-        }
-
-        override fun onTimestamp(value: Timestamp) {
-            print(value.toString())
-            afterValue()
-        }
-
-        override fun onString(value: String) {
-            print("\"$value\"")
-            afterValue()
-        }
-
-        override fun onSymbol(value: String?, sid: Int) {
-            print(value ?: "$$sid")
-            afterValue()
-        }
-
-        override fun onClob(value: ByteBuffer) {
-            print("{{ /* CLOB */ }}")
-            afterValue()
-        }
-
-        override fun onBlob(value: ByteBuffer) {
-            print("{{ /* BLOB */ }}")
-            afterValue()
-        }
-
     }
 
     @Test

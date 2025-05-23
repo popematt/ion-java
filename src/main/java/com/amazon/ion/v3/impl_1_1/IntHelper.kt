@@ -103,16 +103,16 @@ object IntHelper {
         val position = source.position()
         // TODO: Rewrite this as a relative get() so that we don't have to set the position
         //       again in the 1-byte case.
-        val firstByte = source.get(position)
+        val firstByte = source.get()
         val numBytes = firstByte.countTrailingZeroBits() + 1
-        if (source.remaining() < numBytes) throw IonException("Incomplete data")
-        source.position(position + numBytes)
+        if (source.remaining() < (numBytes - 1)) throw IonException("Incomplete data")
         when (numBytes) {
             1 -> {
-                source.position(position + 1)
+//                source.position(position + 1)
                 return ((firstByte.toInt() and 0xFF) ushr 1).toLong()
             }
             2, 3, 4 -> {
+                source.position(position + numBytes)
                 // TODO: We could probably simplify some of these calculations.
                 val backtrack = 4 - numBytes
                 val data = source.getInt(position - backtrack)
@@ -120,6 +120,7 @@ object IntHelper {
                 return (data ushr shiftAmount).toLong()
             }
             5, 6, 7, 8 -> {
+                source.position(position + numBytes)
                 val backtrack = 8 - numBytes
                 val data = source.getLong(position - backtrack)
                 return data ushr (8 * backtrack + numBytes)

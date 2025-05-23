@@ -13,7 +13,7 @@ class EExpArgumentReaderImpl(
     pool: ResourcePool,
     symbolTable: Array<String?>,
     macroTable: Array<Macro>,
-): ValueReaderBase(source, pool, symbolTable, macroTable), EExpArgumentReader {
+): ValueReaderBase(source, pool, symbolTable, macroTable), ArgumentReader {
 
     private var signature: List<Macro.Parameter> = emptyList()
 

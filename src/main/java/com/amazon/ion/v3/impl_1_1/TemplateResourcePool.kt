@@ -14,27 +14,28 @@ class TemplateResourcePool(
     interface TemplateInvocationInfo {
         val source: List<Expression.TemplateBodyExpression>
         val signature: List<Macro.Parameter>
-        val arguments: EExpArgumentReader
+        val arguments: ArgumentReader
     }
     private class TemplateInvocationInfoImpl(
         override var source: List<Expression.TemplateBodyExpression>,
         override var signature: List<Macro.Parameter>,
-        override var arguments: EExpArgumentReader,
+        override var arguments: ArgumentReader,
     ): TemplateInvocationInfo
 
     val invocations = ArrayList<MacroInvocationReader>(8)
-    val structs = ArrayList<StructReaderImpl>(32)
-    val sequences = ArrayList<TemplateSequenceReaderImpl>(32)
+    val structs = ArrayList<TemplateStructReaderImpl>(8)
+    val sequences = ArrayList<TemplateSequenceReaderImpl>(8)
     val annotations = ArrayList<AnnotationIterator>(8)
+    val variables = ArrayList<TemplateVariableReaderImpl>(8)
 
-    fun startEvaluation(macro: Macro, arguments: EExpArgumentReader): TemplateSequenceReaderImpl {
+    fun startEvaluation(macro: Macro, arguments: ArgumentReader): MacroInvocationReader {
         if (macro is TemplateMacro) {
-            val reader = sequences.removeLastOrNull()
+            val reader = invocations.removeLastOrNull()
             if (reader != null) {
                 reader.init(TemplateInvocationInfoImpl(macro.body, macro.signature, arguments), 0, macro.body.size)
                 return reader
             } else {
-                return TemplateSequenceReaderImpl(this, TemplateInvocationInfoImpl(macro.body, macro.signature, arguments), 0, macro.body.size)
+                return MacroInvocationReader(this, TemplateInvocationInfoImpl(macro.body, macro.signature, arguments), 0, macro.body.size)
             }
         } else {
             TODO("System macros")
@@ -48,6 +49,16 @@ class TemplateResourcePool(
             return reader
         } else {
             return TemplateSequenceReaderImpl(this, info, startInclusive, endExclusive)
+        }
+    }
+
+    fun getStruct(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): TemplateStructReaderImpl {
+        val reader = structs.removeLastOrNull()
+        if (reader != null) {
+            reader.init(info, startInclusive, endExclusive)
+            return reader
+        } else {
+            return TemplateStructReaderImpl(this, info, startInclusive, endExclusive)
         }
     }
 

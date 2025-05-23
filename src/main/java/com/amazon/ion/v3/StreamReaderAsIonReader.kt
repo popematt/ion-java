@@ -83,8 +83,7 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
         reset()
     }
 
-    private fun storeAnnotations() {
-        val annotationsIterator = reader.annotations()
+    private fun storeAnnotations(annotationsIterator: AnnotationIterator) {
         var annotationCount = 0
         while (annotationsIterator.hasNext()) {
             if (annotationCount >= annotations.size) {
@@ -161,7 +160,7 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
                 }
             }
             TokenTypeConst.ANNOTATIONS -> {
-                storeAnnotations()
+                reader.annotations().use { storeAnnotations(it) }
                 null
             }
             TokenTypeConst.FIELD_NAME -> {

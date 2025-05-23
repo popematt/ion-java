@@ -32,9 +32,10 @@ object TokenTypeConst {
     const val EEXP = 20
     const val EXPRESSION_GROUP = 21
     const val EMPTY_ARGUMENT = 22
+    const val VARIABLE_REF = 23
 
     // TODO: Do we need END_OF_INVOCATION, or could we just re-use END?
-    const val END_OF_INVOCATION = 23
+    const val END_OF_INVOCATION = 24
 
     operator fun invoke(i: Int) : String {
         return when (i) {
@@ -61,6 +62,8 @@ object TokenTypeConst {
             20 -> "EEXP"
             21 -> "EXPRESSION_GROUP"
             22 -> "EMPTY_ARGUMENT"
+            23 -> "VARIABLE_REF"
+            24 -> "END_OF_INVOCATION"
             else -> "UNKNOWN"
         } + "($i)"
     }

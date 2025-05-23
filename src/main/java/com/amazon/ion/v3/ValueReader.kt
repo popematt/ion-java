@@ -2,7 +2,6 @@ package com.amazon.ion.v3
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
-import java.math.BigDecimal
 import java.nio.ByteBuffer
 
 /**
@@ -147,7 +146,7 @@ interface ValueReader: AutoCloseable {
      * For example, you would use this for transcoding E-expressions between text and binary or
      * for hydrating a POJO with a known macro definition without using the evaluator.
      */
-    fun eexpArgs(signature: List<Macro.Parameter>): EExpArgumentReader = TODO()
+    fun eexpArgs(signature: List<Macro.Parameter>): ArgumentReader = TODO()
 
     /**
      * Returns the major/minor version of the current IVM as two bytes in a short.
@@ -198,7 +197,7 @@ interface ExpressionGroupReader: SequenceReader, ValueReader {
     // Encoding Type?
 }
 
-interface EExpArgumentReader: ValueReader {
+interface ArgumentReader: ValueReader {
     /**
      * Like [nextToken], but allows seeking to arbitrary arguments of an E-Expression.
      *
@@ -229,4 +228,7 @@ interface StructReader: ValueReader {
 
 interface StreamReader: ValueReader
 
+interface TemplateReader: ValueReader {
+    fun variableValue(): ValueReader
+}
 
