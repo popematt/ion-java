@@ -6,7 +6,7 @@ import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
-class MacroInvocationReader(
+abstract class TemplateReaderBase(
     val pool: TemplateResourcePool,
     // TODO: consider flattening this
     var info: TemplateResourcePool.TemplateInvocationInfo,
@@ -16,9 +16,9 @@ class MacroInvocationReader(
     var expansionLimit: Int = 1_000_000,
     // Available modules? No. That's already resolved in the compiler.
     // Macro table? No. That's already resolved in the compiler.
-): ValueReader, SequenceReader {
+): ValueReader, TemplateReader {
 
-    var i = 0
+    var i = startInclusive
     var currentExpression: Expression? = null
 
     fun init(
@@ -29,13 +29,13 @@ class MacroInvocationReader(
         this.info = templateInvocationInfo
         this.startInclusive = startInclusive
         this.endExclusive = endExclusive
-        i = 0
+        i = startInclusive
         currentExpression = null
     }
 
     override fun nextToken(): Int {
         if (i >= endExclusive) {
-            return TokenTypeConst.END_OF_INVOCATION
+            return TokenTypeConst.END
         }
         if (currentExpression == null) {
             val expr = info.source[i++]
@@ -62,12 +62,12 @@ class MacroInvocationReader(
         currentExpression = null
     }
 
-    fun variableValue(): ValueReader {
+    override fun variableValue(): ValueReader {
         val expr = takeCurrentExpression<VariableRef>()
         return pool.getVariable(info.arguments, expr.signatureIndex)
     }
 
-    private inline fun <reified T: Expression> takeCurrentExpression(): T {
+    protected inline fun <reified T: Expression> takeCurrentExpression(): T {
         val expr = currentExpression
         currentExpression = null
         if (expr is T) {
@@ -83,15 +83,9 @@ class MacroInvocationReader(
     override fun stringValue(): String = takeCurrentExpression<StringValue>().value
     override fun symbolValue(): String? = takeCurrentExpression<SymbolValue>().value.text
 
-    override fun symbolValueSid(): Int {
-        val expr = takeCurrentExpression<SymbolValue>()
-        if (expr.value.sid < 0) {
-            currentExpression = expr
-            return -1
-        } else {
-            return expr.value.sid
-        }
-    }
+    // The text should have been resolved when the macro was compiled. Even if there is a SID,
+    // it doesn't necessarily correspond to the current symbol table.
+    override fun symbolValueSid(): Int = -1
 
     override fun lookupSid(sid: Int): String? {
         return pool.symbolTable[sid]
@@ -131,9 +125,4 @@ class MacroInvocationReader(
 
     override fun seekTo(position: Int) = TODO("This method only applies to raw readers.")
     override fun position(): Int  = TODO("This method only applies to raw readers.")
-
-    override fun close() {
-        pool.invocations.add(this)
-    }
-
 }

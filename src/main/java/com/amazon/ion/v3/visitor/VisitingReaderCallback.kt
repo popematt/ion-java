@@ -31,6 +31,10 @@ interface VisitingReaderCallback {
     /**
      * Return a [VisitingReaderCallback] that should be used to read the value.
      * If null, then skip the value.
+     *
+     * (TODO: What do we think of this caveat?)
+     * NOTE—this may be followed by 0 values or more than one value for the
+     * given field name. It may also be called more than once with the same field name.
      */
     fun onField(fieldName: String?, fieldSid: Int) : VisitingReaderCallback? = this
 

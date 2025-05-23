@@ -35,6 +35,7 @@ object TokenTypeConst {
     const val VARIABLE_REF = 23
 
     // TODO: Do we need END_OF_INVOCATION, or could we just re-use END?
+    //       We will just use `END`, and add a "requiresStepOut" flag to readers if we need to.
     const val END_OF_INVOCATION = 24
 
     operator fun invoke(i: Int) : String {

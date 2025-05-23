@@ -23,7 +23,9 @@ internal class TemplateAnnotationIteratorImpl(
         currentAnnotation = annotations[i++]
     }
 
-    override fun getSid(): Int = currentAnnotation.sid
+    // The text should have been resolved when the macro was compiled. Even if there is a SID,
+    // it doesn't necessarily correspond to the current symbol table.
+    override fun getSid(): Int = -1
     override fun getText(): String? = currentAnnotation.text
 
     override fun close() {

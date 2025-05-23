@@ -6,7 +6,17 @@ import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
-class MacroInvocationReader(
+/**
+ * This attempts to abstract the variable resolution away from consumers so that it's
+ * all handled within the reader. This appears to be a bit of a dead-end approach because
+ * of the complexity involved with a variable resolving to more than one Token—specifically
+ * because of annotations.
+ *
+ * If we make it so that `FIELD_NAME` and `ANNOTATIONS` are not separate tokens, then
+ * this becomes much easier in many ways, and it simplifies other edge cases, such
+ * as a field name followed by a `NOP`.
+ */
+abstract class TemplateValueReaderBase(
     val pool: TemplateResourcePool,
     // TODO: consider flattening this
     var info: TemplateResourcePool.TemplateInvocationInfo,
@@ -20,12 +30,13 @@ class MacroInvocationReader(
 
     var i = 0
     var currentExpression: Expression? = null
+    var currentArgumentIndex: Int = -1
 
     fun init(
         templateInvocationInfo: TemplateResourcePool.TemplateInvocationInfo,
         startInclusive: Int,
         endExclusive: Int,
-     ) {
+    ) {
         this.info = templateInvocationInfo
         this.startInclusive = startInclusive
         this.endExclusive = endExclusive
@@ -35,14 +46,26 @@ class MacroInvocationReader(
 
     override fun nextToken(): Int {
         if (i >= endExclusive) {
-            return TokenTypeConst.END_OF_INVOCATION
+            return TokenTypeConst.END
         }
-        if (currentExpression == null) {
+        if (currentExpression == null && currentArgumentIndex < 0) {
             val expr = info.source[i++]
             if (expr is HasStartAndEnd) i = expr.endExclusive
             currentExpression = expr
         }
-        return currentExpression!!.tokenType
+        if (currentExpression is VariableRef) {
+            currentArgumentIndex = takeCurrentExpression<VariableRef>().signatureIndex
+            val token = info.arguments.seekToArgument(currentArgumentIndex)
+
+            if (token == TokenTypeConst.ANNOTATIONS) {
+                TODO("slurp the annotations up into an AnnotationsExpression.")
+            } else {
+                // Set up the value to be read?
+            }
+            return token
+        } else {
+            return currentExpression!!.tokenType
+        }
     }
 
     // TODO: Make sure that this also returns END when at the end of the input.
@@ -64,7 +87,9 @@ class MacroInvocationReader(
 
     fun variableValue(): ValueReader {
         val expr = takeCurrentExpression<VariableRef>()
-        return pool.getVariable(info.arguments, expr.signatureIndex)
+        info.arguments.seekToArgument(expr.signatureIndex)
+        info.arguments.seekTo(info.arguments.position() - 1)
+        return info.arguments
     }
 
     private inline fun <reified T: Expression> takeCurrentExpression(): T {
@@ -119,6 +144,7 @@ class MacroInvocationReader(
     }
 
     override fun annotations(): AnnotationIterator {
+        // Actually, we just need synergy between `Expression` and `TokenType`.
         TODO("Annotations should be their own expression type.")
     }
 
@@ -131,9 +157,5 @@ class MacroInvocationReader(
 
     override fun seekTo(position: Int) = TODO("This method only applies to raw readers.")
     override fun position(): Int  = TODO("This method only applies to raw readers.")
-
-    override fun close() {
-        pool.invocations.add(this)
-    }
-
 }
+

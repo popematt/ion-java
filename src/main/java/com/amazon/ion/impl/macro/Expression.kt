@@ -239,7 +239,7 @@ sealed interface Expression {
     /**
      * A reference to a variable that needs to be expanded.
      */
-    data class VariableRef(val signatureIndex: Int) : TemplateBodyExpression, ExpressionBase(TokenTypeConst.UNSET)
+    data class VariableRef(val signatureIndex: Int) : TemplateBodyExpression, ExpressionBase(TokenTypeConst.VARIABLE_REF)
 
     sealed interface InvokableExpression : HasStartAndEnd, Expression {
         val macro: Macro

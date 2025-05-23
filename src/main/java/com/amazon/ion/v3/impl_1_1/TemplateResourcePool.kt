@@ -72,16 +72,15 @@ class TemplateResourcePool(
         }
     }
 
-//    fun getStruct(start: Int, length: Int): StructReaderImpl {
-//        val reader = structs.removeLastOrNull()
-//        if (reader != null) {
-//            reader.init(start, length)
-//            reader.initTables(symbolTable, macroTable)
-//            return reader
-//        } else {
-//            return StructReaderImpl(newSlice(start, length), this, symbolTable, macroTable)
-//        }
-//    }
+    fun getVariable(argReader: ArgumentReader, index: Int): TemplateVariableReaderImpl {
+        val reader = variables.removeLastOrNull()
+        if (reader != null) {
+            reader.init(index, argReader)
+            return reader
+        } else {
+            return TemplateVariableReaderImpl(this, index, argReader)
+        }
+    }
 
     override fun close() {
         annotations.clear()
