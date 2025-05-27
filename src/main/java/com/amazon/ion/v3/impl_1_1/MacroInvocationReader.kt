@@ -35,7 +35,7 @@ class MacroInvocationReader(
 
     override fun nextToken(): Int {
         if (i >= endExclusive) {
-            return TokenTypeConst.END_OF_INVOCATION
+            return TokenTypeConst.END
         }
         if (currentExpression == null) {
             val expr = info.source[i++]

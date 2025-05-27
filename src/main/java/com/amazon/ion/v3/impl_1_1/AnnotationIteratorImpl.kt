@@ -78,7 +78,6 @@ internal class AnnotationIteratorImpl(
     override fun hasNext(): Boolean = opcode != END
     override fun next() {
         if (!hasNext()) throw NoSuchElementException()
-
         opcode = when (opcode) {
             0xE4 -> {
                 val sid = IntHelper.readFlexUInt(source)
@@ -90,7 +89,7 @@ internal class AnnotationIteratorImpl(
                 val sid = IntHelper.readFlexUInt(source)
                 _sid = sid
                 _text = symbolTable[sid]
-                0xE5
+                0xE4
             }
             0xE6 -> {
                 val sid = IntHelper.readFlexUInt(source)

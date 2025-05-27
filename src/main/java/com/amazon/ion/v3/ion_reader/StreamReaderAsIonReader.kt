@@ -1,15 +1,27 @@
-package com.amazon.ion.v3
+package com.amazon.ion.v3.ion_reader
 
-import com.amazon.ion.*
-import com.amazon.ion.impl.*
-import com.amazon.ion.v3.impl_1_0.*
-import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.Decimal
+import com.amazon.ion.IntegerSize
+import com.amazon.ion.IonException
+import com.amazon.ion.IonReader
+import com.amazon.ion.IonType
+import com.amazon.ion.SymbolTable
+import com.amazon.ion.SymbolToken
+import com.amazon.ion.SystemSymbols
+import com.amazon.ion.Timestamp
+import com.amazon.ion.impl._Private_Utils
+import com.amazon.ion.impl.macro.*
+import com.amazon.ion.v3.StructReader
+import com.amazon.ion.v3.TokenTypeConst
+import com.amazon.ion.v3.ValueReader
+import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
+import com.amazon.ion.v3.impl_1_1.StreamReaderImpl
+import com.amazon.ion.v3.impl_1_1.TemplateResourcePool
 import com.amazon.ion.v3.impl_1_1.ValueReaderBase
-import com.amazon.ion.v3.visitor.*
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.*
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_0
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_0_SYMBOL_TABLE
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -18,12 +30,10 @@ import java.util.Date
 /**
  * A wrapper for [StreamReader] that implements [IonReader].
  *
- * TODO: This class has an object layout of exactly 64 bytes, which is a typical size for a cache line.
- *       If we want to add any more fields, we should consider creating an `AnnotationsHelper` class
- *       that can encapsulate all of the state needed for annotations. (Currently it is 16 bytes, or
- *       25% of the total object size.)
+ * TODO: We can move infrequently use fields, such as `_ion10reader` and `_ion11Reader` into a helper class in order to
+ *       keep this class below 64 bytes (the size of a typical cache line).
  */
-class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
+class StreamReaderAsIonReader(private val source: ByteBuffer, private val additionalMacros: List<Macro> = emptyList()): IonReader {
 
     private lateinit var _ion10Reader: ValueReader
     private val ion10Reader: ValueReader
@@ -32,88 +42,55 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
             return _ion10Reader
         }
 
-    private lateinit var _ion11Reader: ValueReader
-    private val ion11Reader: ValueReader
+    private lateinit var _ion11Reader: ValueReaderBase
+    internal val ion11Reader: ValueReaderBase
         get() {
             if (!::_ion11Reader.isInitialized) _ion11Reader = StreamReaderImpl(source)
             return _ion11Reader
         }
 
-    private inline fun <reified T> Array<T?>.grow(): Array<T?> {
-        val newSize = this.size * 2
-        val newArray = arrayOfNulls<T>(newSize)
-        this.copyInto(newArray)
-        return newArray
-    }
-
-    private fun IntArray.grow(): IntArray {
-        val newSize = this.size * 2
-        val newArray = IntArray(newSize)
-        this.copyInto(newArray)
-        return newArray
-    }
-
-    private fun pushContainer(reader: ValueReader) {
-        if (stackSize >= stack.size) {
-            stack = stack.grow()
+    private lateinit var _templateReaderPool: TemplateResourcePool
+    private val templateReaderPool: TemplateResourcePool
+        get() {
+            if (! ::_templateReaderPool.isInitialized) _templateReaderPool =
+                TemplateResourcePool(ion11Reader.symbolTable, ion11Reader.macroTable)
+            return _templateReaderPool
         }
-        stack[stackSize++] = reader
-    }
-
-    private var stack = arrayOfNulls<ValueReader>(32)
-    private var stackSize: Int = 0
 
     private var type: IonType? = null
     private var fieldName: String? = null
     private var fieldNameSid: Int = -1
 
-    private var annotations: Array<String?> = arrayOfNulls(8)
-    private var annotationsSids = IntArray(8) { -1 }
-    private var annotationsSize = 0
 
+    private val annotationState = Annotations()
+
+    private var symbolTable: Array<String?>
 
     private var reader: ValueReader = if (source.getInt(0).toUInt() == 0xE00101EAu) {
+        symbolTable = ion11Reader.symbolTable
         ion11Reader
     } else {
+        symbolTable = ION_1_0_SYMBOL_TABLE
         ion10Reader
     }
 
-    init {
-        stackSize = 0
-        reset()
-    }
 
-    private fun storeAnnotations(annotationsIterator: AnnotationIterator) {
-        var annotationCount = 0
-        while (annotationsIterator.hasNext()) {
-            if (annotationCount >= annotations.size) {
-                annotations = annotations.grow()
-                annotationsSids = annotationsSids.grow()
-            }
-            annotationsIterator.next()
-            val sid = annotationsIterator.getSid()
-            annotationsSids[annotationCount] = sid
-            if (sid < 0) {
-                annotations[annotationCount] = annotationsIterator.getText()
-            } else {
-                annotations[annotationCount] = reader.lookupSid(sid)
-            }
-            annotationCount++
-        }
-        annotationsSize = annotationCount
+    private val readerManager = ReaderManager()
+
+    init {
+        readerManager.pushReader(reader)
+        reset()
     }
 
     private fun reset() {
         type = null
         fieldName = null
         fieldNameSid = -1
-        annotationsSize = 0
+        annotationState.annotationsSize = 0
     }
 
     override fun close() {
-        reader.close()
-        stack.iterator().forEach { it?.close() }
-        stackSize = 0
+        readerManager.close()
     }
 
     override fun <T : Any?> asFacet(facetType: Class<T>?): T {
@@ -126,6 +103,9 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
 
     override fun next(): IonType? {
         reset()
+        if (reader.currentToken() != TokenTypeConst.UNSET) {
+            reader.skip()
+        }
         return _next()
     }
 
@@ -147,12 +127,13 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
             TokenTypeConst.LIST -> IonType.LIST
             TokenTypeConst.SEXP -> IonType.SEXP
             TokenTypeConst.STRUCT -> {
-                if (annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotations[0] == "\$ion_symbol_table") {
+                if (annotationState.annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion_symbol_table") {
                     val newSymbols = reader.structValue().use { readLegacySymbolTable11(it) }
                     val r = (reader as ValueReaderBase)
-                    r.initTables(newSymbols, ION_1_1_SYSTEM_MACROS)
+                    r.initTables(newSymbols, ApplicationReaderDriver.ION_1_1_SYSTEM_MACROS)
+                    this.symbolTable = newSymbols
                     r.pool.symbolTable = newSymbols
-                    r.pool.macroTable = ION_1_1_SYSTEM_MACROS
+                    r.pool.macroTable = ApplicationReaderDriver.ION_1_1_SYSTEM_MACROS
                     reset()
                     null
                 } else {
@@ -160,7 +141,7 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
                 }
             }
             TokenTypeConst.ANNOTATIONS -> {
-                reader.annotations().use { storeAnnotations(it) }
+                reader.annotations().use { annotationState.storeAnnotations(it, reader) }
                 null
             }
             TokenTypeConst.FIELD_NAME -> {
@@ -172,9 +153,28 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
                 }
                 null
             }
-            TokenTypeConst.END -> return null
+            TokenTypeConst.END -> {
+                if (readerManager.isTopAContainer()) {
+                    return null
+                } else if (readerManager.readerDepth == 1) {
+                    return null
+                } else {
+                    reader = readerManager.popReader()!!
+                    null
+                }
+            }
             TokenTypeConst.IVM -> {
                 handleTopLevelIvm()
+                null
+            }
+            TokenTypeConst.EEXP -> {
+                val macroId = reader.eexpValue()
+                val macro = ion11Reader.macroTable[macroId]
+                val args = reader.eexpArgs(macro.signature)
+                val eexp = templateReaderPool.startEvaluation(macro, args)
+                readerManager.pushReader(eexp)
+                reader = eexp
+                type = null
                 null
             }
             else -> TODO("Unreachable: ${TokenTypeConst(token)}")
@@ -191,13 +191,31 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
         val version = reader.ivm().toInt()
         // If the version is the same, then we know it's a valid version, and we can skip validation
         if (version != currentVersion) {
+            println("Changing Ion version...")
             val position = reader.position()
+            readerManager.popReader()
             reader = when (version) {
-                ION_1_0 -> ion10Reader
-                ION_1_1 -> ion11Reader
+                ApplicationReaderDriver.ION_1_0 -> ion10Reader
+                ApplicationReaderDriver.ION_1_1 -> ion11Reader
                 else -> throw IonException("Unknown Ion Version ${version ushr 8}.${version and 0xFF}")
             }
+            readerManager.pushReader(reader)
             reader.seekTo(position)
+        }
+
+        if (version == 0x0101) {
+            val macroTable = if (additionalMacros.isNotEmpty()) {
+                Array(ION_1_1_SYSTEM_MACROS.size + additionalMacros.size) { i ->
+                    if (i < ION_1_1_SYSTEM_MACROS.size) {
+                        ION_1_1_SYSTEM_MACROS[i]
+                    } else {
+                        additionalMacros[i - ION_1_1_SYSTEM_MACROS.size]
+                    }
+                }
+            } else {
+                ION_1_1_SYSTEM_MACROS
+            }
+            ion11Reader.initTables(ION_1_1_SYSTEM_SYMBOLS, macroTable)
         }
     }
 
@@ -265,7 +283,6 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
         return newSymbolTable
     }
 
-
     override fun stepIn() {
         val child = when (reader.currentToken()) {
             TokenTypeConst.NULL -> throw IonException("Cannot step into a null value")
@@ -274,7 +291,7 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
             TokenTypeConst.STRUCT -> reader.structValue()
             else -> throw IonException("Cannot step in unless positioned on a container")
         }
-        pushContainer(reader)
+        readerManager.pushContainer(child)
         reader = child
         type = null
         fieldName = null
@@ -282,109 +299,17 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
     }
 
     override fun stepOut() {
-        if (stackSize == 0) {
-            throw IonException("Nothing to step out of.")
-        }
-        val parent = stack[--stackSize]!!
-        reader.close()
-        reader = parent
+        reader = readerManager.popContainer()
     }
 
-    override fun getDepth(): Int = stack.size
+    override fun getDepth(): Int = readerManager.containerDepth
 
     override fun getSymbolTable(): SymbolTable {
         return when (reader.getIonVersion().toInt()) {
-            0x0100 -> LstSnapshot((reader as com.amazon.ion.v3.impl_1_0.ValueReaderBase).symbolTable)
-            0x0101 -> LstSnapshot((reader as ValueReaderBase).symbolTable)
+            0x0100 -> ArrayBackedLstSnapshot((reader as com.amazon.ion.v3.impl_1_0.ValueReaderBase).symbolTable)
+            0x0101 -> ArrayBackedLstSnapshot(symbolTable)
             else -> throw IllegalStateException("Unknown Ion version ${reader.getIonVersion()}")
         }
-    }
-
-    private class LstSnapshot(private val symbolText: Array<String?>): _Private_LocalSymbolTable {
-        override fun getName(): String {
-            TODO("Not yet implemented")
-        }
-
-        override fun getVersion(): Int {
-            TODO("Not yet implemented")
-        }
-
-        override fun isLocalTable(): Boolean {
-            TODO("Not yet implemented")
-        }
-
-        override fun isSharedTable(): Boolean {
-            TODO("Not yet implemented")
-        }
-
-        override fun isSubstitute(): Boolean {
-            TODO("Not yet implemented")
-        }
-
-        override fun isSystemTable(): Boolean {
-            TODO("Not yet implemented")
-        }
-
-        override fun isReadOnly(): Boolean {
-            TODO("Not yet implemented")
-        }
-
-        override fun makeReadOnly() {
-            TODO("Not yet implemented")
-        }
-
-        override fun getSystemSymbolTable(): SymbolTable {
-            TODO("Not yet implemented")
-        }
-
-        override fun getIonVersionId(): String {
-            TODO("Not yet implemented")
-        }
-
-        override fun getImportedTables(): Array<SymbolTable> {
-            TODO("Not yet implemented")
-        }
-
-        override fun getImportedMaxId(): Int {
-            TODO("Not yet implemented")
-        }
-
-        override fun getMaxId(): Int {
-            TODO("Not yet implemented")
-        }
-
-        override fun intern(text: String?): SymbolToken {
-            TODO("Not yet implemented")
-        }
-
-        override fun find(text: String?): SymbolToken {
-            TODO("Not yet implemented")
-        }
-
-        override fun findSymbol(name: String?): Int {
-            TODO("Not yet implemented")
-        }
-
-        override fun findKnownSymbol(id: Int): String {
-            TODO("Not yet implemented")
-        }
-
-        override fun iterateDeclaredSymbolNames(): MutableIterator<String> {
-            TODO("Not yet implemented")
-        }
-
-        override fun writeTo(writer: IonWriter?) {
-            TODO("Not yet implemented")
-        }
-
-        override fun makeCopy(): _Private_LocalSymbolTable {
-            TODO("Not yet implemented")
-        }
-
-        override fun getImportedTablesNoCopy(): Array<SymbolTable> {
-            TODO("Not yet implemented")
-        }
-
     }
 
     override fun getType(): IonType? = type
@@ -399,32 +324,9 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
         }
     }
 
-    override fun getTypeAnnotations(): Array<String?> = annotations.copyOf(annotationsSize)
-
-    override fun getTypeAnnotationSymbols(): Array<SymbolToken> {
-        return Array(annotationsSize) { i ->
-            _Private_Utils.newSymbolToken(annotations[i], annotationsSids[i]) as SymbolToken
-        }
-    }
-
-    override fun iterateTypeAnnotations(): Iterator<String?> = annotationIterator.also { it.reset() }
-
-    private val annotationIterator: TypeAnnotationsIterator = TypeAnnotationsIterator(this)
-
-    class TypeAnnotationsIterator(val reader: StreamReaderAsIonReader) : Iterator<String?> {
-        fun reset() {
-            i = 0
-        }
-
-        var i = 0
-        override fun hasNext(): Boolean = i < reader.annotationsSize
-
-        override fun next(): String? {
-            if (!hasNext()) throw NoSuchElementException()
-            return reader.annotations[i++]
-        }
-    }
-
+    override fun getTypeAnnotations(): Array<String?> = annotationState.getTypeAnnotations()
+    override fun getTypeAnnotationSymbols(): Array<SymbolToken> = annotationState.getTypeAnnotationSymbols()
+    override fun iterateTypeAnnotations(): Iterator<String?> = annotationState.iterateTypeAnnotations()
 
     override fun getFieldId(): Int = fieldNameSid
 
@@ -434,6 +336,7 @@ class StreamReaderAsIonReader(private val source: ByteBuffer): IonReader {
 
     override fun isNullValue(): Boolean = reader.currentToken() == TokenTypeConst.NULL
 
+    // TODO: This will not work once we have macros. It's possible that there's a `make_string` inside of a struct.
     override fun isInStruct(): Boolean = reader is StructReader
 
     override fun booleanValue(): Boolean = reader.booleanValue()

@@ -5,11 +5,12 @@ import com.amazon.ion.TestUtils.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.system.IonReaderBuilder
 import com.amazon.ion.system.IonSystemBuilder
-import com.amazon.ion.util.*
 import com.amazon.ion.v3.TypedReadersTest.TestExpectationVisitor.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.StreamReaderImpl
+import com.amazon.ion.v3.ion_reader.*
 import com.amazon.ion.v3.visitor.*
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
 import java.io.ByteArrayOutputStream
 import java.lang.StringBuilder
 import java.math.BigDecimal
@@ -21,9 +22,10 @@ import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.util.*
 import kotlin.NoSuchElementException
-import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Nested
@@ -435,9 +437,11 @@ class TypedReadersTest {
             }
         }
 
-        @Test
-        fun prefixedList() {
-            val data = toByteBuffer("""
+        @Nested
+        inner class VisitingReaderTests {
+            @Test
+            fun prefixedList() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             B4                   | List
@@ -448,27 +452,27 @@ class TypedReadersTest {
                61 04             | Int 4
         """)
 
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(
-                    TestExpectationVisitor(mutableListOf(
-                        Expectation.IntValue(0),
-                        Expectation.ListStart,
-                        Expectation.IntValue(1),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.ListStart,
-                        Expectation.IntValue(3),
-                        Expectation.IntValue(4),
-                        Expectation.End,
-                        Expectation.End,
-                    ))
-                )
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(
+                        TestExpectationVisitor(mutableListOf(
+                            Expectation.IntValue(0),
+                            Expectation.ListStart,
+                            Expectation.IntValue(1),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.ListStart,
+                            Expectation.IntValue(3),
+                            Expectation.IntValue(4),
+                            Expectation.End,
+                            Expectation.End,
+                        ))
+                    )
+                }
             }
-        }
 
-        @Test
-        fun delimitedList() {
-            val data = toByteBuffer("""
+            @Test
+            fun delimitedList() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             F1                   | List
@@ -481,27 +485,27 @@ class TypedReadersTest {
             F0
         """)
 
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(
-                    TestExpectationVisitor(mutableListOf(
-                        Expectation.IntValue(0),
-                        Expectation.ListStart,
-                        Expectation.IntValue(1),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.ListStart,
-                        Expectation.IntValue(3),
-                        Expectation.IntValue(4),
-                        Expectation.End,
-                        Expectation.End,
-                    ))
-                )
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(
+                        TestExpectationVisitor(mutableListOf(
+                            Expectation.IntValue(0),
+                            Expectation.ListStart,
+                            Expectation.IntValue(1),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.ListStart,
+                            Expectation.IntValue(3),
+                            Expectation.IntValue(4),
+                            Expectation.End,
+                            Expectation.End,
+                        ))
+                    )
+                }
             }
-        }
 
-        @Test
-        fun prefixedSexp() {
-            val data = toByteBuffer("""
+            @Test
+            fun prefixedSexp() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             C4                   | Sexp
@@ -512,27 +516,27 @@ class TypedReadersTest {
                61 04             | Int 4
         """)
 
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(
-                    TestExpectationVisitor(mutableListOf(
-                        Expectation.IntValue(0),
-                        Expectation.SexpStart,
-                        Expectation.IntValue(1),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.SexpStart,
-                        Expectation.IntValue(3),
-                        Expectation.IntValue(4),
-                        Expectation.End,
-                        Expectation.End,
-                    ))
-                )
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(
+                        TestExpectationVisitor(mutableListOf(
+                            Expectation.IntValue(0),
+                            Expectation.SexpStart,
+                            Expectation.IntValue(1),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.SexpStart,
+                            Expectation.IntValue(3),
+                            Expectation.IntValue(4),
+                            Expectation.End,
+                            Expectation.End,
+                        ))
+                    )
+                }
             }
-        }
 
-        @Test
-        fun delimitedSexp() {
-            val data = toByteBuffer("""
+            @Test
+            fun delimitedSexp() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             F2                   | Sexp
@@ -545,27 +549,27 @@ class TypedReadersTest {
             F0
         """)
 
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(
-                    TestExpectationVisitor(mutableListOf(
-                        Expectation.IntValue(0),
-                        Expectation.SexpStart,
-                        Expectation.IntValue(1),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.SexpStart,
-                        Expectation.IntValue(3),
-                        Expectation.IntValue(4),
-                        Expectation.End,
-                        Expectation.End,
-                    ))
-                )
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(
+                        TestExpectationVisitor(mutableListOf(
+                            Expectation.IntValue(0),
+                            Expectation.SexpStart,
+                            Expectation.IntValue(1),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.SexpStart,
+                            Expectation.IntValue(3),
+                            Expectation.IntValue(4),
+                            Expectation.End,
+                            Expectation.End,
+                        ))
+                    )
+                }
             }
-        }
 
-        @Test
-        fun prefixedStruct() {
-            val data = toByteBuffer("""
+            @Test
+            fun prefixedStruct() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             D6                   | Struct
@@ -580,31 +584,31 @@ class TypedReadersTest {
                61 04             | Int 4
         """)
 
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(
-                    TestExpectationVisitor(mutableListOf(
-                        Expectation.IntValue(0),
-                        Expectation.StructStart,
-                        Expectation.FieldName("\$ion", 1),
-                        Expectation.IntValue(1),
-                        Expectation.FieldName(sid = 2),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.StructStart,
-                        Expectation.FieldName(sid = 3),
-                        Expectation.IntValue(3),
-                        Expectation.FieldName(sid = 4),
-                        Expectation.IntValue(4),
-                        Expectation.End,
-                        Expectation.End,
-                    ))
-                )
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(
+                        TestExpectationVisitor(mutableListOf(
+                            Expectation.IntValue(0),
+                            Expectation.StructStart,
+                            Expectation.FieldName("\$ion", 1),
+                            Expectation.IntValue(1),
+                            Expectation.FieldName(sid = 2),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.StructStart,
+                            Expectation.FieldName(sid = 3),
+                            Expectation.IntValue(3),
+                            Expectation.FieldName(sid = 4),
+                            Expectation.IntValue(4),
+                            Expectation.End,
+                            Expectation.End,
+                        ))
+                    )
+                }
             }
-        }
 
-        @Test
-        fun delimitedStruct() {
-            val data = toByteBuffer("""
+            @Test
+            fun delimitedStruct() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             F3                   | Struct
@@ -621,210 +625,210 @@ class TypedReadersTest {
                01 F0
         """)
 
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(
-                    TestExpectationVisitor(mutableListOf(
-                        Expectation.IntValue(0),
-                        Expectation.StructStart,
-                        Expectation.FieldName("\$ion", 1),
-                        Expectation.IntValue(1),
-                        Expectation.FieldName(sid = 2),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.StructStart,
-                        Expectation.FieldName(sid = 3),
-                        Expectation.IntValue(3),
-                        Expectation.FieldName(sid = 4),
-                        Expectation.IntValue(4),
-                        Expectation.End,
-                        Expectation.End,
-                    ))
-                )
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(
+                        TestExpectationVisitor(mutableListOf(
+                            Expectation.IntValue(0),
+                            Expectation.StructStart,
+                            Expectation.FieldName("\$ion", 1),
+                            Expectation.IntValue(1),
+                            Expectation.FieldName(sid = 2),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.StructStart,
+                            Expectation.FieldName(sid = 3),
+                            Expectation.IntValue(3),
+                            Expectation.FieldName(sid = 4),
+                            Expectation.IntValue(4),
+                            Expectation.End,
+                            Expectation.End,
+                        ))
+                    )
+                }
             }
-        }
 
-        @Test
-        fun oneSidAnnotation() {
-            val data = toByteBuffer("""
+            @Test
+            fun oneSidAnnotation() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             E4 03        | $ ion ::
             60           | 0
         """)
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(expect("\$ion::0"))
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(expect("\$ion::0"))
+                }
             }
-        }
 
-        @Test
-        fun twoSidAnnotations() {
-            val data = toByteBuffer("""
+            @Test
+            fun twoSidAnnotations() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             E5 03 05     | $ ion :: $ ion_1_1
             60           | 0
         """)
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(expect("\$ion::\$ion_1_1::0"))
-            }
-        }
-
-        @Test
-        fun constantScalarTemplateMacro() {
-            val macro = TemplateMacro(
-                signature = listOf(),
-                body = ExpressionBuilderDsl.templateBody {
-                    int(1)
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(expect("\$ion::\$ion_1_1::0"))
                 }
-            )
-            val data = toByteBuffer("""
+            }
+
+            @Test
+            fun constantScalarTemplateMacro() {
+                val macro = TemplateMacro(
+                    signature = listOf(),
+                    body = ExpressionBuilderDsl.templateBody {
+                        int(1)
+                    }
+                )
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             18
             61 02
         """)
 
-            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
-                driver.readAll(
-                    expect(
-                        Expectation.IntValue(0),
-                        Expectation.IntValue(1),
-                        Expectation.IntValue(2),
+                ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                    driver.readAll(
+                        expect(
+                            Expectation.IntValue(0),
+                            Expectation.IntValue(1),
+                            Expectation.IntValue(2),
+                        )
                     )
-                )
-            }
-        }
-
-        @Test
-        fun constantListTemplateMacro() {
-            val macro = TemplateMacro(
-                signature = listOf(),
-                body = ExpressionBuilderDsl.templateBody {
-                    list {
-                        int(1)
-                        int(2)
-                    }
                 }
-            )
-            val data = toByteBuffer("""
+            }
+
+            @Test
+            fun constantListTemplateMacro() {
+                val macro = TemplateMacro(
+                    signature = listOf(),
+                    body = ExpressionBuilderDsl.templateBody {
+                        list {
+                            int(1)
+                            int(2)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             18
             61 03
         """)
 
-            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
-                driver.readAll(
-                    expect(
-                        Expectation.IntValue(0),
-                        Expectation.ListStart,
-                        Expectation.IntValue(1),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.IntValue(3),
+                ApplicationReaderDriver(data.asReadOnlyBuffer(), listOf(macro)).use { driver ->
+                    driver.readAll(
+                        expect(
+                            Expectation.IntValue(0),
+                            Expectation.ListStart,
+                            Expectation.IntValue(1),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.IntValue(3),
+                        )
                     )
-                )
-            }
-        }
-
-        @Test
-        fun constantSexpTemplateMacro() {
-            val macro = TemplateMacro(
-                signature = listOf(),
-                body = ExpressionBuilderDsl.templateBody {
-                    sexp {
-                        int(1)
-                        int(2)
-                    }
                 }
-            )
-            val data = toByteBuffer("""
+            }
+
+            @Test
+            fun constantSexpTemplateMacro() {
+                val macro = TemplateMacro(
+                    signature = listOf(),
+                    body = ExpressionBuilderDsl.templateBody {
+                        sexp {
+                            int(1)
+                            int(2)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             18
             61 03
         """)
 
-            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
-                driver.readAll(
-                    expect(
-                        Expectation.IntValue(0),
-                        Expectation.SexpStart,
-                        Expectation.IntValue(1),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.IntValue(3),
+                ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                    driver.readAll(
+                        expect(
+                            Expectation.IntValue(0),
+                            Expectation.SexpStart,
+                            Expectation.IntValue(1),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.IntValue(3),
+                        )
                     )
-                )
-            }
-        }
-
-        @Test
-        fun constantStructTemplateMacro() {
-            val macro = TemplateMacro(
-                signature = listOf(),
-                body = ExpressionBuilderDsl.templateBody {
-                    struct {
-                        fieldName("foo")
-                        int(1)
-                        fieldName("bar")
-                        int(2)
-                    }
                 }
-            )
-            val data = toByteBuffer("""
+            }
+
+            @Test
+            fun constantStructTemplateMacro() {
+                val macro = TemplateMacro(
+                    signature = listOf(),
+                    body = ExpressionBuilderDsl.templateBody {
+                        struct {
+                            fieldName("foo")
+                            int(1)
+                            fieldName("bar")
+                            int(2)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             18
             61 03
         """)
 
-            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
-                driver.readAll(
-                    expect(
-                        Expectation.IntValue(0),
-                        Expectation.StructStart,
-                        Expectation.FieldName("foo"),
-                        Expectation.IntValue(1),
-                        Expectation.FieldName("bar"),
-                        Expectation.IntValue(2),
-                        Expectation.End,
-                        Expectation.IntValue(3),
+                ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                    driver.readAll(
+                        expect(
+                            Expectation.IntValue(0),
+                            Expectation.StructStart,
+                            Expectation.FieldName("foo"),
+                            Expectation.IntValue(1),
+                            Expectation.FieldName("bar"),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.IntValue(3),
+                        )
                     )
-                )
-            }
-        }
-
-
-        @Test
-        fun templateMacroWithOneVariable() {
-            val macro = TemplateMacro(
-                signature = listOf(
-                    Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
-                ),
-                body = ExpressionBuilderDsl.templateBody {
-                    variable(0)
                 }
-            )
-            val data = toByteBuffer("""
+            }
+
+
+            @Test
+            fun templateMacroWithOneVariable() {
+                val macro = TemplateMacro(
+                    signature = listOf(
+                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
+                    ),
+                    body = ExpressionBuilderDsl.templateBody {
+                        variable(0)
+                    }
+                )
+                val data = toByteBuffer("""
             E0 01 01 EA
             60
             18 61 01
             61 02
         """)
 
-            ApplicationReaderDriver(data, listOf(macro)).use { driver ->
-                driver.readAll(
-                    expect(
-                        Expectation.IntValue(0),
-                        Expectation.IntValue(1),
-                        Expectation.IntValue(2),
+                ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                    driver.readAll(
+                        expect(
+                            Expectation.IntValue(0),
+                            Expectation.IntValue(1),
+                            Expectation.IntValue(2),
+                        )
                     )
-                )
+                }
             }
-        }
 
-        @Test
-        fun strings() {
-            val data = toByteBuffer("""
+            @Test
+            fun strings() {
+                val data = toByteBuffer("""
             E0 01 01 EA
             93 66 6F 6F        | "foo"
             F9 1F
@@ -833,17 +837,17 @@ class TypedReadersTest {
                66 6F 6F 6F 6F
         """)
 
-            ApplicationReaderDriver(data).use { driver ->
-                driver.readAll(
-                    TestExpectationVisitor(mutableListOf(
-                        Expectation.StringValue("foo"),
-                        Expectation.StringValue("foooofoooofoooo")
-                    ))
-                )
+                ApplicationReaderDriver(data).use { driver ->
+                    driver.readAll(
+                        TestExpectationVisitor(mutableListOf(
+                            Expectation.StringValue("foo"),
+                            Expectation.StringValue("foooofoooofoooo")
+                        ))
+                    )
+                }
             }
-        }
 
-        val smallLog = "$" + """ion_log::"ServiceQueryLog_1_0"
+            val smallLog = "$" + """ion_log::"ServiceQueryLog_1_0"
         {
                   StartTime:2018-08-06T23:59:59.897Z,
                   Marketplace:"us-west-2",
@@ -874,72 +878,333 @@ class TypedReadersTest {
         }
     """
 
-        @Test
-        fun `small log file no macros`() {
-            val reader = IonReaderBuilder.standard().build(smallLog)
-            val baos = ByteArrayOutputStream()
-            val binaryWriter = IonEncodingVersion.ION_1_1.binaryWriterBuilder().build(baos)
-            transfer(reader, binaryWriter)
-            reader.close()
-            binaryWriter.close()
+            @Test
+            fun `small log file no macros`() {
+                val reader = IonReaderBuilder.standard().build(smallLog)
+                val baos = ByteArrayOutputStream()
+                val binaryWriter = IonEncodingVersion.ION_1_1.binaryWriterBuilder().build(baos)
+                transfer(reader, binaryWriter)
+                reader.close()
+                binaryWriter.close()
 
-            val bytes = baos.toByteArray()
+                val bytes = baos.toByteArray()
 
-            ApplicationReaderDriver(ByteBuffer.wrap(bytes)).use { driver ->
-                driver.readAll(expect(smallLog))
-            }
-        }
-
-        @Test
-        fun `a big one for Ion 1 1 no macros and conversion using IonJava`() {
-            val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_legacy.10n")
-            val baos = ByteArrayOutputStream()
-
-            FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
-                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
-                ApplicationReaderDriver(mappedByteBuffer).use {
-                    val binaryWriter = IonEncodingVersion.ION_1_1.binaryWriterBuilder().build(baos)
-                    repeat(10) { _ -> it.read(TranscoderVisitor(binaryWriter)) }
-                    binaryWriter.close()
+                ApplicationReaderDriver(ByteBuffer.wrap(bytes)).use { driver ->
+                    driver.readAll(expect(smallLog))
                 }
             }
-            val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
 
-            ApplicationReaderDriver(baos).use { driver -> driver.readAll(expected) }
-        }
+            @Test
+            fun `a big one for Ion 1 1 no macros and conversion using IonJava`() {
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_legacy.10n")
+                val baos = ByteArrayOutputStream()
 
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    ApplicationReaderDriver(mappedByteBuffer).use {
+                        val binaryWriter = IonEncodingVersion.ION_1_1.binaryWriterBuilder().build(baos)
+                        repeat(10) { _ -> it.read(TranscoderVisitor(binaryWriter)) }
+                        binaryWriter.close()
+                    }
+                }
+                val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
 
-        @Test
-        fun `a big one for Ion 1 1 conversion using IonJavaBenchmarkCli`() {
-            val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy_1_1.10n")
-
-            val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
-            FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
-                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
-
-                ApplicationReaderDriver(mappedByteBuffer).use { driver -> driver.readAll(NoOpVisitor()) }
+                ApplicationReaderDriver(baos).use { driver -> driver.readAll(expected) }
             }
 
+
+            @Test
+            fun `a big one for Ion 1 1 conversion using IonJavaBenchmarkCli`() {
+                val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy_1_1.10n")
+
+                val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+
+                    ApplicationReaderDriver(mappedByteBuffer).use { driver -> driver.readAll(NoOpVisitor()) }
+                }
+            }
         }
 
-        @Test
-        fun `a big one for Ion 1 1 conversion using IonJavaBenchmarkCli and the IonReader API`() {
-            val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy_1_1.10n")
+        @Nested
+        inner class IonReaderTests {
 
-            val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
-            FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+            val ION = IonSystemBuilder.standard().build()
 
-                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
-                val ION = IonSystemBuilder.standard().build()
-                StreamReaderAsIonReader(mappedByteBuffer).use {
-                    val iter = ION.iterate(it)
-                    while (iter.hasNext()) {
-                        iter.next()
+            @Test
+            fun `test read null`() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+
+                    EA      | null.null
+                """)
+
+                StreamReaderAsIonReader(data).use { reader ->
+                    val iter = ION.iterate(reader)
+                    assertTrue(iter.hasNext())
+                    val value0 = iter.next()
+                    println(value0)
+                    assertEquals(ION.newNull(), value0)
+                    assertFalse(iter.hasNext())
+                }
+            }
+
+            @Test
+            fun `test read typed null`() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+
+                    EB 00   | null.bool
+                """)
+
+                StreamReaderAsIonReader(data).use { reader ->
+                    val iter = ION.iterate(reader)
+                    assertTrue(iter.hasNext())
+                    val value1 = iter.next()
+                    println(value1)
+                    assertEquals(ION.newNull(IonType.BOOL), value1)
+                    assertFalse(iter.hasNext())
+                }
+            }
+
+
+            @Test
+            fun `test read integers`() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+
+                    60      | 0
+                    61 01   | 1
+                """)
+
+                StreamReaderAsIonReader(data).use { reader ->
+                    val iter = ION.iterate(reader)
+                    assertTrue(iter.hasNext())
+                    val value0 = iter.next()
+                    println(value0)
+                    assertEquals(ION.newInt(0), value0)
+                    assertTrue(iter.hasNext())
+                    val value1 = iter.next()
+                    println(value1)
+                    assertEquals(ION.newInt(1), value1)
+                    assertFalse(iter.hasNext())
+                }
+            }
+
+            @Test
+            fun prefixedList() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    B4                   | List
+                       61 01             | Int 1
+                       61 02             | Int 2
+                    B4
+                       61 03
+                       61 04             | Int 4
+                """)
+
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    value("[1, 2]")
+                    value("[3, 4]")
+                }
+            }
+
+            @Test
+            fun delimitedList() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    F1                   | List
+                       61 01             | Int 1
+                       61 02             | Int 2
+                    F0
+                    F1
+                       61 03
+                       61 04             | Int 4
+                    F0
+                """)
+
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    value("[1, 2]")
+                    value("[3, 4]")
+                }
+            }
+
+            @Test
+            fun prefixedSexp() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    C4                   | Sexp
+                       61 01             | Int 1
+                       61 02             | Int 2
+                    C4
+                       61 03
+                       61 04             | Int 4
+                """)
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    value("(1 2)")
+                    value("(3 4)")
+                }
+            }
+
+            @Test
+            fun delimitedSexp() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    F2                   | Sexp
+                       61 01             | Int 1
+                       61 02             | Int 2
+                    F0
+                    F2
+                       61 03
+                       61 04             | Int 4
+                    F0
+                """)
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    value("(1 2)")
+                    value("(3 4)")
+                }
+            }
+
+            @Test
+            fun prefixedStruct() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    D6                   | Struct
+                       03
+                       61 01             | Int 1
+                       05
+                       61 02             | Int 2
+                    D6
+                       07
+                       61 03
+                       09
+                       61 04             | Int 4
+                """)
+                StreamReaderAsIonReader(data).use {
+                    StreamReaderAsIonReader(data).expect {
+                        value("0")
+                        value("{ $1: 1, $2: 2 }")
+                        value("{ $3: 3, $4: 4 }")
                     }
                 }
             }
 
+            @Test
+            fun delimitedStruct() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    F3                   | Struct
+                       03                | FlexSym SID 1
+                       61 01             | Int 1
+                       05                | FlexSym SID 2
+                       61 02             | Int 2
+                       01 F0
+                    F3
+                       07                | FlexSym SID 3
+                       61 03             | Int 3
+                       09                | FlexSym SID 4
+                       61 04             | Int 4
+                       01 F0
+                """)
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    value("{ $1: 1, $2: 2 }")
+                    value("{ $3: 3, $4: 4 }")
+                }
+            }
+
+            @Test
+            fun oneSidAnnotation() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    E4 03        | $ ion ::
+                    60           | 0
+                """)
+                StreamReaderAsIonReader(data).expect {
+                    value("\$ion::0")
+                }
+            }
+
+            @Test
+            fun twoSidAnnotations() {
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    E5 03 05     | $ ion :: $ ion_1_0
+                    60           | 0
+                """)
+                StreamReaderAsIonReader(data).expect {
+                    value("\$ion::\$ion_1_0::0")
+                }
+            }
+
+            @Test
+            fun `a big one for Ion 1 1 conversion using IonJavaBenchmarkCli and the IonReader API`() {
+                val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy_1_1.10n")
+
+                val expected = expect(IonReaderBuilder.standard().build(path.toFile().inputStream()), 10000)
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    StreamReaderAsIonReader(mappedByteBuffer).use {
+                        val iter = ION.iterate(it)
+                        while (iter.hasNext()) {
+                            iter.next()
+                        }
+                    }
+                }
+            }
+
+            @Test
+            fun constantListTemplateMacro() {
+                val macro = TemplateMacro(
+                    signature = listOf(),
+                    body = ExpressionBuilderDsl.templateBody {
+                        list {
+                            int(1)
+                            int(2)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 03
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).use {
+                    val iter = ION.iterate(it)
+                    while (iter.hasNext()) {
+                        println(iter.next())
+                    }
+                }
+            }
+
+            fun StreamReaderAsIonReader.expect(block: Iterator<IonValue>.() -> Unit) {
+                use {
+                    val iter = ION.iterate(this)
+                    iter.block()
+                }
+            }
+
+            fun Iterator<IonValue>.value(ion: String) {
+                assertTrue(hasNext())
+                val value = next()
+                println(value)
+                assertEquals(ION.singleValue(ion), value)
+            }
         }
+
 
     }
 
@@ -1551,7 +1816,7 @@ class TypedReadersTest {
 
     private class TestExpectationVisitor(
         val expectations: MutableList<Expectation>,
-        val assertionsEnabled: Boolean = true
+        var assertionsEnabled: Boolean = true
     ): VisitingReaderCallback {
         private val results = mutableListOf<String>()
 

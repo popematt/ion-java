@@ -29,8 +29,7 @@ class TemplateVariableReaderImpl(
         val i = signatureIndex
         // TODO: Is this the correct order?
         if (i < 0) {
-            // TODO: Should this be something else?
-            return TokenTypeConst.END_OF_INVOCATION
+            return TokenTypeConst.END
         }
         if (!hasAnnotations) {
             val token = arguments.seekToArgument(i)

@@ -98,7 +98,46 @@ abstract class ValueReaderBase(
     override fun currentToken(): Int = type(opcode.toInt())
 
     override fun ionType(): IonType? {
-        TODO("Not yet implemented")
+        val opcode = opcode.toInt()
+        return when (type(opcode)) {
+            TokenTypeConst.NULL -> {
+                if (opcode == 0xEA) {
+                    IonType.NULL
+                } else {
+                    source.mark()
+                    val type = when (source.get().toInt()) {
+                        0x00 -> IonType.BOOL
+                        0x01 -> IonType.INT
+                        0x02 -> IonType.FLOAT
+                        0x03 -> IonType.DECIMAL
+                        0x04 -> IonType.TIMESTAMP
+                        0x05 -> IonType.STRING
+                        0x06 -> IonType.SYMBOL
+                        0x07 -> IonType.BLOB
+                        0x08 -> IonType.CLOB
+                        0x09 -> IonType.LIST
+                        0x0A -> IonType.SEXP
+                        0x0B -> IonType.STRUCT
+                        else -> throw IonException("Not a valid null value")
+                    }
+                    source.reset()
+                    type
+                }
+            }
+            TokenTypeConst.BOOL -> IonType.BOOL
+            TokenTypeConst.INT -> IonType.INT
+            TokenTypeConst.FLOAT -> IonType.FLOAT
+            TokenTypeConst.DECIMAL -> IonType.DECIMAL
+            TokenTypeConst.TIMESTAMP -> IonType.TIMESTAMP
+            TokenTypeConst.SYMBOL -> IonType.SYMBOL
+            TokenTypeConst.STRING -> IonType.STRING
+            TokenTypeConst.CLOB -> IonType.CLOB
+            TokenTypeConst.BLOB -> IonType.BLOB
+            TokenTypeConst.LIST -> IonType.LIST
+            TokenTypeConst.SEXP -> IonType.SEXP
+            TokenTypeConst.STRUCT -> IonType.STRUCT
+            else -> null
+        }
     }
 
     override fun valueSize(): Int {
@@ -179,7 +218,7 @@ abstract class ValueReaderBase(
         val bool = when (opcode) {
             0x6E -> true
             0x6F -> false
-            else -> throw IonException("Not positioned on a boolean")
+            else -> throw IonException("Not positioned on a boolean: ${opcode.toString(16)}")
         }
         return bool
     }
@@ -326,6 +365,8 @@ abstract class ValueReaderBase(
     }
 
     override fun sexpValue(): SexpReader {
+        val opcode = opcode.toInt()
+        this.opcode = TID_UNSET
         val length = IdMappings.length(opcode.toInt(), source)
         if (length < 0) {
             // Delimited container
@@ -336,7 +377,6 @@ abstract class ValueReaderBase(
             // Length prefixed container
             val start = source.position()
             source.position(start + length)
-            opcode = TID_UNSET
             return pool.getPrefixedSexp(start, length)
                 .also { initTables(symbolTable, macroTable) }
         }

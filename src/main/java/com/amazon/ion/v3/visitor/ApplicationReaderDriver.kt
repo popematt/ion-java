@@ -10,6 +10,11 @@ import com.amazon.ion.v3.impl_1_1.ValueReaderBase
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
+/**
+ *
+ * TODO: I think we can abstract some of the common functionality, such as managing multiple readers,
+ *       into a common base class.
+ */
 class ApplicationReaderDriver @JvmOverloads constructor(
     private val source: ByteBuffer,
     private val additionalMacros: List<Macro> = emptyList()
@@ -305,7 +310,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                         }
                     }
                 }
-                TokenTypeConst.END_OF_INVOCATION,
                 TokenTypeConst.END -> return i
                 TokenTypeConst.VARIABLE_REF -> {
                     (reader as MacroInvocationReader).variableValue().use { variable ->
@@ -396,7 +400,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     TODO("Use the macro evaluator")
                 }
             }
-            TokenTypeConst.END_OF_INVOCATION,
             TokenTypeConst.END -> return false
             TokenTypeConst.VARIABLE_REF -> {
                 (reader as MacroInvocationReader).variableValue().use { variable ->
@@ -507,7 +510,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                         }
                     }
                 }
-                TokenTypeConst.END_OF_INVOCATION,
                 TokenTypeConst.END -> return
                 TokenTypeConst.VARIABLE_REF -> {
                     (reader as MacroInvocationReader).variableValue().use { variable ->

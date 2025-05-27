@@ -20,6 +20,11 @@ import java.nio.ByteBuffer
  * or [ApplicationReaderDriver][com.amazon.ion.v3.visitor.ApplicationReaderDriver] for a modern,
  * high-performance API.
  *
+ * [ValueReader] implementations MUST have a copy of their own symbol/macro tables, but MUST NOT
+ * have any special logic for interpreting system values (other than IVMs, which are not strictly values).
+ * The abstraction on top of a top-level value reader is responsible for reading the system values and
+ * calling `initTables` on the top-level reader.
+ *
  * TODO: Rename this to "TokenReader" or "ExpressionReader" or similar.
  *
  * TODO: Consider adding a reader config option that determines whether to...
@@ -226,7 +231,9 @@ interface StructReader: ValueReader {
     fun fieldName() : String?
 }
 
-interface StreamReader: ValueReader
+interface StreamReader: ValueReader {
+    // fun initTables()
+}
 
 interface TemplateReader: ValueReader {
     fun variableValue(): ValueReader
