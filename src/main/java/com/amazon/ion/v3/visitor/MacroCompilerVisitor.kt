@@ -207,6 +207,23 @@ class MacroCompilerVisitor : VisitingReaderCallbackBase() {
             body.add(Expression.SExpValue(annotationSymbols(), startInclusive, -1))
         }
 
+        override fun onClause(symbolText: String?, sid: Int): VisitingReaderCallback {
+            when (symbolText) {
+                "." -> {
+                    TODO("Macros")
+                }
+                ".." -> {
+                    TODO("Expression groups")
+                }
+                "%" -> {
+                    TODO("variable")
+                }
+                else -> {
+                    TODO()
+                }
+            }
+        }
+
         override fun onSexpEnd() {
             val endExclusive = body.size
             val pendingContainerIndex = pendingContainers.removeLast()
@@ -278,7 +295,7 @@ class MacroCompilerVisitor : VisitingReaderCallbackBase() {
         }
     }
 
-    abstract class LiteralBodyVisitor(val body: MutableList<Expression.TemplateBodyExpression>) : VisitingReaderCallbackBase() {
+    class TemplateBodyVisitor(val body: MutableList<Expression.TemplateBodyExpression>) : VisitingReaderCallbackBase() {
 
         companion object {
             private val EMPTY_ARRAY = emptyArray<String?>()
@@ -293,6 +310,15 @@ class MacroCompilerVisitor : VisitingReaderCallbackBase() {
             val a = annotations.map { _Private_Utils.newSymbolToken(it) }
             annotations = EMPTY_ARRAY
             return a
+        }
+
+        override fun onValue(type: TokenType): VisitingReaderCallback? {
+            if (type == TokenType.SEXP && annotations.isEmpty()) {
+                // It might be a special form, variable, macro invocation, or expression group.
+                return TemplateBodyVisitor(body)
+            } else {
+                return this
+            }
         }
 
         override fun onAnnotation(annotations: AnnotationIterator): VisitingReaderCallback {

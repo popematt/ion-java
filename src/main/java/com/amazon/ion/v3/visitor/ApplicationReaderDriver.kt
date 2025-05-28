@@ -7,6 +7,7 @@ import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.*
 import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.ValueReaderBase
+import com.amazon.ion.v3.ion_reader.*
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
@@ -30,8 +31,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             .toMutableList()
             .also { it.add(0, null) }
             .toTypedArray()
-        @JvmStatic
-        private val ION_1_1_SYSTEM_MODULE = ModuleReader.Module("\$ion", SystemSymbols_1_1.allSymbolTexts().toMutableList(), mutableListOf())
+
 
         @JvmStatic
         internal val ION_1_0_SYMBOL_TABLE = arrayOf(
@@ -54,7 +54,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     private lateinit var _templateReaderPool: TemplateResourcePool
     private val templateReaderPool: TemplateResourcePool
         get() {
-            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool(ion11Reader.symbolTable, macroTable)
+            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool()
             return _templateReaderPool
         }
 
@@ -84,23 +84,9 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     // TODO: Remove the macro table?
     private var macroTable: Array<Macro> = emptyArray()
 
-    private val moduleReader = ModuleReader()
-    private val availableModules = mutableMapOf<String, ModuleReader.Module>()
-    private val activeModules = mutableListOf<ModuleReader.Module>()
+    private val ionReaderShim = StreamWrappingIonReader()
 
-    private fun addOrSetSymbols(argReader: ArgumentReader, append: Boolean) {
-        val r = ion11Reader
-        val newSymbols = if (append) r.symbolTable.toMutableList() else mutableListOf<String?>(null)
-        argReader.nextToken()
-        argReader.expressionGroup().use { sl -> moduleReader.readSymbolsList(sl, newSymbols) }
-        availableModules["_"]!!.symbols = newSymbols
-        // TODO: Fix this to use proper encoding module sequence.
-        val symbolTable = newSymbols.toTypedArray()
-        // TODO: Clean this up:
-        r.initTables(symbolTable, macroTable)
-        r.pool.symbolTable = symbolTable
-        r.pool.macroTable = macroTable
-    }
+    private val encodingContextManager = EncodingContextManager(ionReaderShim)
 
     fun readAll(visitor: VisitingReaderCallback) {
         readTopLevelValues(topLevelReader, visitor)
@@ -157,8 +143,19 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     private fun maybeVisitSexp(reader: ValueReader, visitor: VisitingReaderCallback) {
         val v = visitor.onValue(TokenType.LIST)
         if (v != null) {
-            v.onSexpStart()
-            reader.sexpValue().use { r -> readAllValues(r, v) }
+            reader.sexpValue().use { r ->
+                val nextToken = r.nextToken()
+                val tailVisitor = if (nextToken == TokenTypeConst.SYMBOL) {
+                    val sid = r.symbolValueSid()
+                    val text = if (sid < 0) r.symbolValue() else r.lookupSid(sid)
+                    v.onClause(text, sid)
+                } else {
+                    v.onSexpStart()
+                    readValue(r, v, alreadyOnToken = true)
+                    v
+                }
+                readAllValues(r, tailVisitor)
+            }
             v.onSexpEnd()
         } else {
             reader.skip()
@@ -189,9 +186,8 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         while (i++ < max) {
 
             val visitor = annotatedValueVisitor ?: originalVisitor
-            val token = reader.nextToken()
 
-            when (token) {
+            when (val token = reader.nextToken()) {
                 TokenTypeConst.IVM -> {
                     i-- // Since an IVM doesn't count as a value.
 
@@ -210,27 +206,8 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     }
 
                     if (version == ION_1_1) {
-                        // FIXME: Update this so that the default module is empty, and the active modules contains
-                        //        the default module followed by the system module.
-                        availableModules.clear()
-                        availableModules["_"] =
-                            ModuleReader.Module("_", SystemSymbols_1_1.allSymbolTexts().toMutableList(), mutableListOf())
-
-                        // TODO: Add macros to the system module
-                        availableModules["\$ion"] = ION_1_1_SYSTEM_MODULE
-                        activeModules.clear()
-                        activeModules.add(availableModules["_"]!!)
-                        macroTable = ION_1_1_SYSTEM_MACROS
-                        if (additionalMacros.isNotEmpty()) {
-                            macroTable = Array(ION_1_1_SYSTEM_MACROS.size + additionalMacros.size) { i ->
-                                if (i < ION_1_1_SYSTEM_MACROS.size) {
-                                    ION_1_1_SYSTEM_MACROS[i]
-                                } else {
-                                    additionalMacros[i - ION_1_1_SYSTEM_MACROS.size]
-                                }
-                            }
-                        }
-                        ion11Reader.initTables(ION_1_1_SYSTEM_SYMBOLS, macroTable)
+                        encodingContextManager.ivm()
+                        encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
                     } else {
                         ion10Reader.symbolTable = ION_1_0_SYMBOL_TABLE
                     }
@@ -292,16 +269,31 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                             SystemMacro[macroId and Integer.MAX_VALUE]!!
                         }
                     } else {
-                        macroTable[macroId]
+                        ion11Reader.macroTable[macroId]
                     }
                     // TODO: Check for macros that could produce system values
                     // TODO: When there's a system value, decrement i
                     when (macro) {
-                        SystemMacro.SetSymbols -> reader.eexpArgs(macro.signature).use { addOrSetSymbols(it, append = false) }
-                        SystemMacro.AddSymbols -> reader.eexpArgs(macro.signature).use { addOrSetSymbols(it, append = true) }
-                        SystemMacro.Use -> TODO()
-                        SystemMacro.AddMacros -> TODO()
-                        SystemMacro.SetMacros -> TODO()
+                        SystemMacro.SetSymbols -> reader.eexpArgs(macro.signature).use {
+                            encodingContextManager.addOrSetSymbols(it, append = false)
+                            encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                        }
+                        SystemMacro.AddSymbols -> reader.eexpArgs(macro.signature).use {
+                            encodingContextManager.addOrSetSymbols(it, append = true)
+                            encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                        }
+                        SystemMacro.SetMacros -> reader.eexpArgs(macro.signature).use {
+                            encodingContextManager.addOrSetMacros(it, append = false)
+                            encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                        }
+                        SystemMacro.AddMacros -> reader.eexpArgs(macro.signature).use {
+                            encodingContextManager.addOrSetMacros(it, append = true)
+                            encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                        }
+                        SystemMacro.Use -> reader.eexpArgs(macro.signature).use {
+                            encodingContextManager.invokeUse(it)
+                            encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                        }
                         else -> {
                             val macroVisitor = visitor.onEExpression(macro)
                             if (macroVisitor != null) {
@@ -334,8 +326,8 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         return i
     }
 
-    private fun readValue(reader: ValueReader, visitor: VisitingReaderCallback): Boolean {
-        val token = reader.nextToken()
+    private fun readValue(reader: ValueReader, visitor: VisitingReaderCallback, alreadyOnToken: Boolean): Boolean {
+        val token = if (alreadyOnToken) reader.currentToken() else reader.nextToken()
 
         when (token) {
             TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue()) ?: reader.skip()
@@ -365,7 +357,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             TokenTypeConst.ANNOTATIONS -> reader.annotations().use { a ->
                 val v = visitor.onAnnotation(a)
                 if (v != null) {
-                    readValue(reader, v)
+                    readValue(reader, v, alreadyOnToken = false)
                 } else {
                     reader.nextToken()
                     reader.skip()
@@ -376,12 +368,12 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 val macro = if (macroId < 0) {
                     TODO("Look up textual macro addresses")
                 } else {
-                    macroTable[macroId]
+                    ion11Reader.macroTable[macroId]
                 }
                 val macroVisitor = visitor.onEExpression(macro)
                 if (macroVisitor != null) {
                     reader.eexpArgs(macro.signature).use { r ->
-                        while (readValue(r, macroVisitor));
+                        while (readValue(r, macroVisitor, alreadyOnToken = false));
                     }
                 } else {
                     TODO("Use the macro evaluator")
@@ -390,7 +382,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             TokenTypeConst.END -> return false
             TokenTypeConst.VARIABLE_REF -> {
                 (reader as TemplateReader).variableValue().use { variable ->
-                    readValue(variable, visitor)
+                    readValue(variable, visitor, alreadyOnToken = false)
                 }
             }
             else -> TODO("Unreachable: ${TokenTypeConst(token)}")
@@ -407,7 +399,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 } else {
                     r.lookupSid(sid)
                 }
-                val vTail = v.onSexpStart(text, sid)
+                val vTail = v.onClause(text, sid)
                 readAllValues(r, vTail)
             } else {
                 v.onSexpStart()
@@ -476,7 +468,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     val macro = if (macroId < 0) {
                         TODO("Look up textual macro addresses")
                     } else {
-                        macroTable[macroId]
+                        ion11Reader.macroTable[macroId]
                     }
                     val macroVisitor = visitor.onEExpression(macro)
                     if (macroVisitor != null) {
@@ -515,7 +507,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             val fieldVisitor = visitor.onField(text, sid)
 
             if (fieldVisitor != null) {
-                readValue(reader, fieldVisitor)
+                readValue(reader, fieldVisitor, alreadyOnToken = false)
             } else {
                 // We might need to skip annotations.
                 if (reader.nextToken() == TokenTypeConst.ANNOTATIONS) reader.nextToken()
@@ -548,16 +540,15 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             // Is it a `$ion::(..)`
             if (text == "\$ion" && nt == TokenTypeConst.SEXP) {
                 isSystemValue = true
-                reader.sexpValue().use(this::readDirective)
+                reader.sexpValue().use(encodingContextManager::readDirective)
+                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
             } else if (text == "\$ion_symbol_table" && nt == TokenTypeConst.STRUCT) {
                 // Is it a legacy symbol table?
                 isSystemValue = true
-                val symbolTable = reader.structValue().use { readLegacySymbolTable11(it) }
-                // TODO: Clean this up
-                val r = ion11Reader
-                r.initTables(symbolTable, ION_1_1_SYSTEM_MACROS)
-                r.pool.symbolTable = symbolTable
-                r.pool.macroTable = ION_1_1_SYSTEM_MACROS
+                reader.structValue().use {
+                    encodingContextManager.readLegacySymbolTable11(it)
+                    encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                }
             } else if (text == "\$ion_literal") {
                 reader.seekTo(position)
                 // advance the annotations iterator to skip the `$ion_literal` annotation.
@@ -626,97 +617,8 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         return newSymbolTable
     }
 
-    private fun readLegacySymbolTable11(structReader: StructReader): Array<String?> {
-        val newSymbols = ArrayList<String?>()
-        var isLstAppend = false
-        while (true) {
-            val token = structReader.nextToken()
-            if (token == TokenTypeConst.END) {
-                break
-            } else if (token != TokenTypeConst.FIELD_NAME) {
-                throw IllegalStateException("Unexpected token type: ${TokenTypeConst(token)}")
-            }
-            val fieldNameSid = structReader.fieldNameSid()
-            val fieldName = if (fieldNameSid < 0) {
-                structReader.fieldName()
-            } else {
-                structReader.lookupSid(fieldNameSid)
-            }
-            when (fieldName) {
-                SystemSymbols.IMPORTS -> {
-                    val importsToken = structReader.nextToken()
-                    when (importsToken) {
-                        TokenTypeConst.SYMBOL -> {
-                            val sid = structReader.symbolValueSid()
-                            val text = if (sid < 0) {
-                                structReader.symbolValue()
-                            } else {
-                                structReader.lookupSid(sid)
-                            }
-                            if (text == SystemSymbols.ION_SYMBOL_TABLE) {
-                                isLstAppend = true
-                            }
-                        }
-                        TokenTypeConst.LIST -> {
-                            TODO("Imports not supported yet.")
-                        }
-                        else -> {
-                            // TODO: Should this be an error?
-                        }
-                    }
-                }
-                SystemSymbols.SYMBOLS -> {
-                    structReader.nextToken()
-                    structReader.listValue().use { listReader ->
-                        while (true) {
-                            when (val t = listReader.nextToken()) {
-                                TokenTypeConst.END -> break
-                                TokenTypeConst.STRING -> newSymbols.add(listReader.stringValue())
-                                TokenTypeConst.NULL -> newSymbols.add(null)
-                                else -> throw IonException("Unexpected token type in symbols list: $t")
-                            }
-                        }
-                    }
-                }
-                else -> {}
-            }
-        }
-        val r = ion11Reader
-        val startOfNewSymbolTable = if (isLstAppend) r.symbolTable else arrayOf<String?>(null)
-        val newSymbolTable = Array<String?>(newSymbols.size + startOfNewSymbolTable.size) { null }
-        System.arraycopy(startOfNewSymbolTable, 0, newSymbolTable, 0, startOfNewSymbolTable.size)
-        System.arraycopy(newSymbols.toArray(), 0, newSymbolTable, startOfNewSymbolTable.size, newSymbols.size)
-        return newSymbolTable
-    }
-
-    private fun readDirective(sexp: SexpReader) {
-        // TODO: Handle macros that could be in the directive
-
-        sexp.nextToken()
-        val directiveKind = sexp.symbolValue()
-
-        when (directiveKind) {
-            "encoding" -> TODO("'encoding' directives not implemented yet")
-            "module" -> {
-                val module = moduleReader.readModule(sexp, availableModules)
-                availableModules[module.name] = module
-                if (module.name == "_") {
-                    ion11Reader.symbolTable = module.symbols.toTypedArray()
-                }
-            }
-            "import" -> {
-                val module = moduleReader.readImport(sexp)
-                availableModules[module.name] = module
-            }
-            else -> throw IonException("Unknown directive: $directiveKind")
-        }
-    }
-
     override fun close() {
         if (::_ion10Reader.isInitialized) _ion10Reader.close()
         if (::_ion11Reader.isInitialized) _ion11Reader.close()
-        macroTable = emptyArray()
     }
-
-
 }

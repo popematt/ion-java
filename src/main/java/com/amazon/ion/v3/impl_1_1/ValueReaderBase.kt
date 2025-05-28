@@ -269,6 +269,7 @@ abstract class ValueReaderBase(
         try {
             return symbolTable[sid]
         } catch (t: Throwable) {
+            println("Failed SID Lookup")
             println(sid)
             println(symbolTable.contentToString())
             throw t
@@ -353,15 +354,13 @@ abstract class ValueReaderBase(
             IntHelper.readFlexUInt(source)
         } else if (opcode == 0xF1) {
             val start = source.position()
-            return pool.getDelimitedList(start, source.limit() - start, this)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getDelimitedList(start, source.limit() - start, this, symbolTable, macroTable)
         } else {
             throw IonException("Not positioned on a list")
         }
         val start = source.position()
         source.position(start + length)
-        return pool.getList(start, length)
-            .also { initTables(symbolTable, macroTable) }
+        return pool.getList(start, length, symbolTable, macroTable)
     }
 
     override fun sexpValue(): SexpReader {
@@ -371,14 +370,12 @@ abstract class ValueReaderBase(
         if (length < 0) {
             // Delimited container
             val start = source.position()
-            return pool.getDelimitedSexp(start, this)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getDelimitedSexp(start, this, symbolTable, macroTable)
         } else {
             // Length prefixed container
             val start = source.position()
             source.position(start + length)
-            return pool.getPrefixedSexp(start, length)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getPrefixedSexp(start, length, symbolTable, macroTable)
         }
     }
 
@@ -390,8 +387,7 @@ abstract class ValueReaderBase(
             val start = source.position()
             this.opcode = TID_UNSET
 
-            val sacrificialReader = pool.getDelimitedStruct(start)
-                .also { initTables(symbolTable, macroTable) }
+            val sacrificialReader = pool.getDelimitedStruct(start, symbolTable, macroTable)
             while (true) {
                 val next = sacrificialReader.nextToken()
                 if (next == TokenTypeConst.END) break
@@ -403,15 +399,13 @@ abstract class ValueReaderBase(
             sacrificialReader.close()
             source.position(endPosition)
 
-            return pool.getDelimitedStruct(start)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getDelimitedStruct(start, symbolTable, macroTable)
         } else {
             // Length prefixed container
             val start = source.position()
             source.position(start + length)
             this.opcode = TID_UNSET
-            return pool.getStruct(start, length)
-                .also { initTables(symbolTable, macroTable) }
+            return pool.getStruct(start, length, symbolTable, macroTable)
         }
     }
 
@@ -469,8 +463,7 @@ abstract class ValueReaderBase(
             // TODO: Calculate end position more efficiently.
             val maxPossibleLength = source.limit() - position
 
-            val sacrificialReader = pool.getEExpArgs(position, maxPossibleLength, signature)
-                .also { initTables(symbolTable, macroTable) }
+            val sacrificialReader = pool.getEExpArgs(position, maxPossibleLength, signature, symbolTable, macroTable)
             while (sacrificialReader.nextToken() != TokenTypeConst.END) {
                 sacrificialReader.skip()
             }
@@ -478,12 +471,10 @@ abstract class ValueReaderBase(
             val newPosition = sacrificialReader.position()
 
             source.position(newPosition)
-            pool.getEExpArgs(position, maxPossibleLength, signature)
-                .also { initTables(symbolTable, macroTable) }
+            pool.getEExpArgs(position, maxPossibleLength, signature, symbolTable, macroTable)
         } else {
             source.position(position + length)
-            pool.getEExpArgs(position, position + length, signature)
-                .also { initTables(symbolTable, macroTable) }
+            pool.getEExpArgs(position, position + length, signature, symbolTable, macroTable)
         }
         return reader
     }

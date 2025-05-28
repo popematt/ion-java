@@ -84,17 +84,19 @@ class MacroInvocationReader(
     override fun symbolValue(): String? = takeCurrentExpression<SymbolValue>().value.text
 
     override fun symbolValueSid(): Int {
-        val expr = takeCurrentExpression<SymbolValue>()
-        if (expr.value.sid < 0) {
-            currentExpression = expr
-            return -1
-        } else {
-            return expr.value.sid
-        }
+//        val expr = takeCurrentExpression<SymbolValue>()
+//        if (expr.value.sid < 0) {
+//            currentExpression = expr
+//            return -1
+//        } else {
+//            return expr.value.sid
+//        }
+        return -1
     }
 
     override fun lookupSid(sid: Int): String? {
-        return pool.symbolTable[sid]
+        TODO("Macro evaluator has only resolved symbol text")
+        // return pool.symbolTable[sid]
     }
 
     override fun timestampValue(): Timestamp = takeCurrentExpression<TimestampValue>().value

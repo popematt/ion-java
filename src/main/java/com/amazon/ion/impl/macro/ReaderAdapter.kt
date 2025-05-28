@@ -17,6 +17,11 @@ internal interface ReaderAdapter {
     fun fieldNameSymbol(): SymbolToken
     fun encodingType(): IonType?
 
+    fun nextEncodingType(): IonType? {
+        nextValue()
+        return encodingType()
+    }
+
     /** Returns true if positioned on a value; false if at container or stream end. */
     fun nextValue(): Boolean
     fun getDepth(): Int

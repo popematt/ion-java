@@ -12,28 +12,17 @@ internal class ArrayBackedLstSnapshot(private val symbolText: Array<String?>): _
         TODO("Not yet implemented")
     }
 
-    override fun isLocalTable(): Boolean {
-        TODO("Not yet implemented")
-    }
+    override fun isLocalTable(): Boolean = false
 
-    override fun isSharedTable(): Boolean {
-        TODO("Not yet implemented")
-    }
+    override fun isSharedTable(): Boolean = false
 
-    override fun isSubstitute(): Boolean {
-        TODO("Not yet implemented")
-    }
+    override fun isSubstitute(): Boolean = false
 
-    override fun isSystemTable(): Boolean {
-        TODO("Not yet implemented")
-    }
+    override fun isSystemTable(): Boolean = false
 
-    override fun isReadOnly(): Boolean {
-        TODO("Not yet implemented")
-    }
+    override fun isReadOnly(): Boolean = true
 
     override fun makeReadOnly() {
-        TODO("Not yet implemented")
     }
 
     override fun getSystemSymbolTable(): SymbolTable {

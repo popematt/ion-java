@@ -88,7 +88,7 @@ abstract class TemplateReaderBase(
     override fun symbolValueSid(): Int = -1
 
     override fun lookupSid(sid: Int): String? {
-        return pool.symbolTable[sid]
+        TODO("Macro evaluator has only resolved symbol text")
     }
 
     override fun timestampValue(): Timestamp = takeCurrentExpression<TimestampValue>().value

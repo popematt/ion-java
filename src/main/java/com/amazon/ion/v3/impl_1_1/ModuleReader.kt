@@ -9,9 +9,13 @@ import com.amazon.ion.v3.ion_reader.*
 
 /**
  * Work in progress class that can read module definitions.
+ *
+ * This does not support e-expressions in the module definition.
  */
-internal class ModuleReader {
-
+internal class ModuleReader(
+    private val readerAdapter: ReaderAdapter,
+    private val macroCompiler: MacroCompiler,
+) {
     var symbolTable: (Int) -> String? = { null }
 
     // TODO: Add a proper `Module` abstraction. For now, we'll use this.

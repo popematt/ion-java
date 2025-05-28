@@ -5,11 +5,7 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import java.io.Closeable
 
-class TemplateResourcePool(
-    // TODO: Do we even need these?
-    var symbolTable: Array<String?>,
-    var macroTable: Array<Macro>,
-): Closeable {
+class TemplateResourcePool: Closeable {
 
     interface TemplateInvocationInfo {
         val source: List<Expression.TemplateBodyExpression>

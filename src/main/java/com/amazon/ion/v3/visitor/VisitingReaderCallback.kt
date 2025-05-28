@@ -9,6 +9,42 @@ import com.amazon.ion.v3.TokenType
 import java.math.BigInteger
 import java.nio.ByteBuffer
 
+
+interface ComplicatedVisitor {
+
+    fun onAnnotation(annotations: AnnotationIterator) : ComplicatedVisitor?
+    fun onField(fieldName: String?, fieldSid: Int) : ComplicatedVisitor?
+    fun onValue(type: TokenType) : ComplicatedVisitor?
+    fun onIVM(major: Int, minor: Int): ComplicatedVisitor = this
+
+    fun onListStart(): ComplicatedVisitor?
+    fun onListEnd(): ComplicatedVisitor?
+    fun onSexpStart(): ComplicatedVisitor?
+    fun onSexpEnd(): ComplicatedVisitor?
+    fun onStructStart(): ComplicatedVisitor?
+    fun onStructEnd(): ComplicatedVisitor?
+    fun onNull(value: IonType): ComplicatedVisitor?
+    fun onBoolean(value: Boolean): ComplicatedVisitor?
+    fun onLongInt(value: Long): ComplicatedVisitor?
+    fun onBigInt(value: BigInteger): ComplicatedVisitor?
+    fun onFloat(value: Double): ComplicatedVisitor?
+    fun onDecimal(value: Decimal): ComplicatedVisitor?
+    fun onTimestamp(value: Timestamp): ComplicatedVisitor?
+    fun onString(value: String): ComplicatedVisitor?
+    fun onSymbol(value: String?, sid: Int): ComplicatedVisitor?
+    fun onClob(value: ByteBuffer): ComplicatedVisitor?
+    fun onBlob(value: ByteBuffer): ComplicatedVisitor?
+
+    /**
+     * Only implement this method if you want to bypass the macro evaluation
+     */
+    fun onEExpression(macro: Macro): ComplicatedVisitor? = null
+
+    // TODO: For bypassing macro evaluation?
+    //  fun onEExpressionArgument(name: String): VisitingReaderCallback? = null
+}
+
+
 /**
  *
  *
@@ -57,7 +93,7 @@ interface VisitingReaderCallback {
      * Start reading an s-expression.
      * Return the visitor that should be used for the tail of the s-expression.
      */
-    fun onSexpStart(symbolText: String?, sid: Int): VisitingReaderCallback {
+    fun onClause(symbolText: String?, sid: Int): VisitingReaderCallback {
         onSexpStart()
         onValue(TokenType.SYMBOL)?.onSymbol(symbolText, sid)
         return this
@@ -84,7 +120,7 @@ interface VisitingReaderCallback {
      */
     fun onEExpression(macro: Macro): VisitingReaderCallback? = null
 
-    // TODO: ?
+    // TODO: For bypassing macro evaluation?
     //  fun onEExpressionArgument(name: String): VisitingReaderCallback? = null
 
 }

@@ -343,66 +343,6 @@ class TypedReadersTest {
             }
         }
 
-        @Test
-        fun `add_symbols Ion 1 1 test`() {
-            val bytes = hexStringToByteArray(cleanCommentedHexBytes("""
-            E0 01 01 EA
-            EF                 | System E-Expression
-               14              | (:add_symbols
-               02              | Presence Bits: argument is an expression group
-               01              | expression group length = DELIMITED
-               93 66 6F 6F     | "foo"
-               93 62 61 72     | "bar"
-               F0              |      )
-            | TODO: Change these when we fix the ordering for "append"
-            E1 3F              | foo
-            B2                 | [
-            E1 40              | bar]
-            E1 01              | $ ion
-        """))
-
-            ApplicationReaderDriver(ByteBuffer.wrap(bytes)).use {
-                it.readAll(
-                    expect(
-                        Expectation.Symbol(text = "foo"),
-                        Expectation.ListStart,
-                        Expectation.Symbol(text = "bar"),
-                        Expectation.End,
-                        Expectation.Symbol(text = "\$ion"),
-                    )
-                )
-            }
-        }
-
-        @Test
-        fun `set_symbols Ion 1 1 test`() {
-            val bytes = hexStringToByteArray(cleanCommentedHexBytes("""
-                E0 01 01 EA
-                EF                 | System E-Expression
-                   13              | (:set_symbols
-                   02              | Presence Bits: argument is an expression group
-                   01              | expression group length = DELIMITED
-                   93 66 6F 6F     | "foo"
-                   93 62 61 72     | "bar"
-                   F0              |      )
-                E1 01              | foo
-                B2                 | [
-                E1 02              | bar]
-            """))
-
-            ApplicationReaderDriver(ByteBuffer.wrap(bytes)).use {
-                it.readAll(
-                    expect(
-                        Expectation.Symbol(text = "foo"),
-                        Expectation.ListStart,
-                        Expectation.Symbol(text = "bar"),
-                        Expectation.End
-                    )
-                )
-            }
-        }
-
-
         @CsvSource(
             "2024T,                               80 36",
             "2023-10T,                            81 35 05",
@@ -667,6 +607,65 @@ class TypedReadersTest {
         """)
                 ApplicationReaderDriver(data).use { driver ->
                     driver.readAll(expect("\$ion::\$ion_1_1::0"))
+                }
+            }
+
+            @Test
+            fun `add_symbols Ion 1 1 test`() {
+                val bytes = hexStringToByteArray(cleanCommentedHexBytes("""
+            E0 01 01 EA
+            EF                 | System E-Expression
+               14              | (:add_symbols
+               02              | Presence Bits: argument is an expression group
+               01              | expression group length = DELIMITED
+               93 66 6F 6F     | "foo"
+               93 62 61 72     | "bar"
+               F0              |      )
+            | TODO: Change these when we fix the ordering for "append"
+            E1 3F              | foo
+            B2                 | [
+            E1 40              | bar]
+            E1 01              | $ ion
+        """))
+
+                ApplicationReaderDriver(ByteBuffer.wrap(bytes)).use {
+                    it.readAll(
+                        expect(
+                            Expectation.Symbol(text = "foo"),
+                            Expectation.ListStart,
+                            Expectation.Symbol(text = "bar"),
+                            Expectation.End,
+                            Expectation.Symbol(text = "\$ion"),
+                        )
+                    )
+                }
+            }
+
+            @Test
+            fun `set_symbols Ion 1 1 test`() {
+                val bytes = hexStringToByteArray(cleanCommentedHexBytes("""
+                E0 01 01 EA
+                EF                 | System E-Expression
+                   13              | (:set_symbols
+                   02              | Presence Bits: argument is an expression group
+                   01              | expression group length = DELIMITED
+                   93 66 6F 6F     | "foo"
+                   93 62 61 72     | "bar"
+                   F0              |      )
+                E1 01              | foo
+                B2                 | [
+                E1 02              | bar]
+            """))
+
+                ApplicationReaderDriver(ByteBuffer.wrap(bytes)).use {
+                    it.readAll(
+                        expect(
+                            Expectation.Symbol(text = "foo"),
+                            Expectation.ListStart,
+                            Expectation.Symbol(text = "bar"),
+                            Expectation.End
+                        )
+                    )
                 }
             }
 
@@ -963,6 +962,18 @@ class TypedReadersTest {
                     ApplicationReaderDriver(mappedByteBuffer).use { driver -> driver.readAll(NoOpVisitor()) }
                 }
             }
+
+            @Test
+            fun `a big one for Ion 1 1 with macros`() {
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n")
+
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    ApplicationReaderDriver(mappedByteBuffer).use {
+                        it.readAll(NoOpVisitor())
+                    }
+                }
+            }
         }
 
         @Nested
@@ -1203,6 +1214,55 @@ class TypedReadersTest {
                 }
             }
 
+
+            @Test
+            fun `add_symbols Ion 1 1 test`() {
+                val bytes = hexStringToByteArray(cleanCommentedHexBytes("""
+            E0 01 01 EA
+            EF                 | System E-Expression
+               14              | (:add_symbols
+               02              | Presence Bits: argument is an expression group
+               01              | expression group length = DELIMITED
+               93 66 6F 6F     | "foo"
+               93 62 61 72     | "bar"
+               F0              |      )
+            | TODO: Change these when we fix the ordering for "append"
+            E1 3F              | foo
+            B2                 | [
+            E1 40              | bar]
+            E1 01              | $ ion
+        """))
+
+                StreamReaderAsIonReader(ByteBuffer.wrap(bytes)).expect {
+                    value("foo")
+                    value("[bar]")
+                    value("\$ion")
+                }
+            }
+
+            @Test
+            fun `set_symbols Ion 1 1 test`() {
+                val bytes = hexStringToByteArray(cleanCommentedHexBytes("""
+                E0 01 01 EA
+                EF                 | System E-Expression
+                   13              | (:set_symbols
+                   02              | Presence Bits: argument is an expression group
+                   01              | expression group length = DELIMITED
+                   93 66 6F 6F     | "foo"
+                   93 62 61 72     | "bar"
+                   F0              |      )
+                E1 01              | foo
+                B2                 | [
+                E1 02              | bar]
+            """))
+
+                StreamReaderAsIonReader(ByteBuffer.wrap(bytes)).expect {
+                    value("foo")
+                    value("[bar]")
+                }
+            }
+
+
             @Test
             fun constantListTemplateMacro() {
                 val macro = TemplateMacro(
@@ -1336,6 +1396,21 @@ class TypedReadersTest {
                 }
             }
 
+            @Test
+            fun `a big one for Ion 1 1 with macros`() {
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n")
+
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    StreamReaderAsIonReader(mappedByteBuffer).use {
+                        val iter = ION.iterate(it)
+                        while (iter.hasNext()) {
+                            val value = iter.next()
+                            println(value)
+                        }
+                    }
+                }
+            }
 
             fun StreamReaderAsIonReader.expect(block: Iterator<IonValue>.() -> Unit) {
                 use {
@@ -1348,7 +1423,9 @@ class TypedReadersTest {
                 assertTrue(hasNext())
                 val value = next()
                 println(value)
-                assertEquals(ION.singleValue(ion), value)
+                val expected = ION.singleValue(ion)
+                val actual = ION.singleValue(value.toString())
+                assertEquals(expected, actual)
             }
         }
 
@@ -1461,19 +1538,6 @@ class TypedReadersTest {
             repeat(20) { driver.read(visitor) }
             textWriter.close()
             println(sb)
-        }
-    }
-
-
-    @Test
-    fun `a big one for Ion 1 1 with macros`() {
-        val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n")
-
-        FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
-            val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
-            ApplicationReaderDriver(mappedByteBuffer).use {
-                it.readAll(NoOpVisitor())
-            }
         }
     }
 

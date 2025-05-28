@@ -7,13 +7,18 @@ import com.amazon.ion.IonReader
 import com.amazon.ion.IonType
 import com.amazon.ion.SymbolTable
 import com.amazon.ion.SymbolToken
+import com.amazon.ion.SystemSymbols
 import com.amazon.ion.Timestamp
-import com.amazon.ion.impl.*
+import com.amazon.ion.impl._Private_Utils
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.ModuleReader
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_0_SYMBOL_TABLE
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
+import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -21,58 +26,32 @@ import java.util.Date
 
 /**
  * A wrapper for [StreamReader] that implements [IonReader].
- *
- * TODO: We can move infrequently use fields, such as `_ion10reader` and `_ion11Reader` into a helper class in order to
- *       keep this class below 64 bytes (the size of a typical cache line).
+ * This implementation does not handle top-level values.
  */
-class StreamReaderAsIonReader @JvmOverloads constructor(
-    private val source: ByteBuffer, private val additionalMacros: List<Macro> = emptyList()
-): IonReader {
-    private lateinit var _ion10Reader: ValueReader
-    private val ion10Reader: ValueReader
-        get() {
-            if (! ::_ion10Reader.isInitialized) _ion10Reader = StreamReader_1_0(source)
-            return _ion10Reader
-        }
+class StreamWrappingIonReader: IonReader {
 
-    private lateinit var _ion11Reader: ValueReaderBase
-    internal val ion11Reader: ValueReaderBase
-        get() {
-            if (!::_ion11Reader.isInitialized) _ion11Reader = StreamReaderImpl(source)
-            return _ion11Reader
-        }
-
-    private lateinit var _templateReaderPool: TemplateResourcePool
-    private val templateReaderPool: TemplateResourcePool
-        get() {
-            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool()
-            return _templateReaderPool
-        }
-
-    private val encodingContextManager = EncodingContextManager(StreamWrappingIonReader())
-//
-//    private val moduleReader = ModuleReader2(ReaderAdapterIonReader(ionReaderShim))
-//    private val availableModules = mutableMapOf<String, ModuleReader2.Module>()
-//    private val activeModules = mutableListOf<ModuleReader2.Module>()
+    private lateinit var templateReaderPool: TemplateResourcePool
+    private lateinit var reader: ValueReader
 
     private var type: IonType? = null
     private var fieldName: String? = null
     private var fieldNameSid: Int = -1
 
-
     private val annotationState = Annotations()
-
-    private var reader: ValueReader = if (source.getInt(0).toUInt() == 0xE00101EAu) {
-        ion11Reader
-    } else {
-        ion10Reader
-    }
-
 
     private val readerManager = ReaderManager()
 
-    init {
+
+    fun init(reader: ValueReader, templateReaderPool: TemplateResourcePool) {
         readerManager.pushReader(reader)
+        this.reader = reader
+        this.templateReaderPool = templateReaderPool
+        reset()
+    }
+
+    fun init(reader: ValueReader) {
+        readerManager.pushReader(reader)
+        this.reader = reader
         reset()
     }
 
@@ -91,8 +70,6 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         TODO("Not yet implemented")
     }
 
-    // TODO: Make this call `next()` and then cache the result.
-    //       Add a check in `next()` for the cached result
     override fun hasNext(): Boolean = TODO("Deprecated and unsupported")
 
     override fun next(): IonType? {
@@ -120,18 +97,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
             TokenTypeConst.BLOB -> IonType.BLOB
             TokenTypeConst.LIST -> IonType.LIST
             TokenTypeConst.SEXP -> IonType.SEXP
-            TokenTypeConst.STRUCT -> {
-                if (annotationState.annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion_symbol_table") {
-                    reader.structValue().use {
-                        encodingContextManager.readLegacySymbolTable11(it)
-                        encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-                    }
-                    reset()
-                    null
-                } else {
-                    IonType.STRUCT
-                }
-            }
+            TokenTypeConst.STRUCT -> IonType.STRUCT
             TokenTypeConst.ANNOTATIONS -> {
                 reader.annotations().use { annotationState.storeAnnotations(it, reader) }
                 null
@@ -155,53 +121,15 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                     null
                 }
             }
-            TokenTypeConst.IVM -> {
-                handleTopLevelIvm()
-                null
-            }
             TokenTypeConst.EEXP -> {
                 val macroId = reader.eexpValue()
-                val macro = if (macroId < 0) {
-                    SystemMacro[macroId and Int.MAX_VALUE]!!
-                } else {
-                    ion11Reader.macroTable[macroId]
-                }
-
+                // TODO: Should `lookupMacro` be part of the `ValueReader` API?
+                val macro = (reader as ValueReaderBase).macroTable[macroId]
                 val args = reader.eexpArgs(macro.signature)
-
-                val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro) {
-                    SystemMacro.AddSymbols -> {
-                        encodingContextManager.addOrSetSymbols(args, append = true)
-                        encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-//                        println("Add symbols: ${ion11Reader.symbolTable.contentToString()}")
-                        true
-                    }
-                    SystemMacro.SetSymbols -> {
-                        encodingContextManager.addOrSetSymbols(args, append = false)
-                        encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-//                        println("Set symbols: ${ion11Reader.symbolTable.contentToString()}")
-                        true
-                    }
-                    SystemMacro.AddMacros -> {
-                        encodingContextManager.addOrSetMacros(args, append = true)
-                        encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-                        true
-                    }
-                    SystemMacro.SetMacros -> {
-                        encodingContextManager.addOrSetMacros(args, append = false)
-                        encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-                        true
-                    }
-                    SystemMacro.Use -> TODO("Use")
-                    else -> false
-                }
-
-                if (!isShortCircuitEvaluation) {
-                    val eexp = templateReaderPool.startEvaluation(macro, args)
-                    readerManager.pushReader(eexp)
-                    reader = eexp
-                    type = null
-                }
+                val eexp = templateReaderPool.startEvaluation(macro, args)
+                readerManager.pushReader(eexp)
+                reader = eexp
+                type = null
                 null
             }
             TokenTypeConst.VARIABLE_REF -> {
@@ -216,30 +144,6 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
             return type
         }
         return _next()
-    }
-
-    fun handleTopLevelIvm() {
-        val currentVersion = reader.getIonVersion().toInt()
-        // Calling IVM also resets the symbol table, etc.
-        val version = reader.ivm().toInt()
-        // If the version is the same, then we know it's a valid version, and we can skip validation
-        if (version != currentVersion) {
-            val position = reader.position()
-            readerManager.popReader()
-            reader = when (version) {
-                ApplicationReaderDriver.ION_1_0 -> ion10Reader
-                ApplicationReaderDriver.ION_1_1 -> ion11Reader
-                else -> throw IonException("Unknown Ion Version ${version ushr 8}.${version and 0xFF}")
-            }
-            readerManager.pushReader(reader)
-            reader.seekTo(position)
-        }
-
-        if (version == 0x0101) {
-            encodingContextManager.ivm()
-            encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-//            println("IVM: ${ion11Reader.symbolTable.contentToString()}")
-        }
     }
 
     override fun stepIn() {
@@ -264,11 +168,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
     override fun getDepth(): Int = readerManager.containerDepth
 
     override fun getSymbolTable(): SymbolTable {
-        return when (reader.getIonVersion().toInt()) {
-            0x0100 -> ArrayBackedLstSnapshot((reader as com.amazon.ion.v3.impl_1_0.ValueReaderBase).symbolTable)
-            0x0101 -> ArrayBackedLstSnapshot(ion11Reader.symbolTable)
-            else -> throw IllegalStateException("Unknown Ion version ${reader.getIonVersion()}")
-        }
+        TODO()
     }
 
     override fun getType(): IonType? = type

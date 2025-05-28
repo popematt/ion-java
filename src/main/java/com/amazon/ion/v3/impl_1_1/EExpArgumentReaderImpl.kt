@@ -146,15 +146,15 @@ class EExpArgumentReaderImpl(
         return if (length == 0) {
             val maxLength = source.limit() - position
             // TODO: Something more efficient here
-            val sacrificialReader = pool.getDelimitedList(position, maxLength, this)
+            val sacrificialReader = pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
             while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
             val endPosition = sacrificialReader.source.position()
             sacrificialReader.close()
             source.position(endPosition)
-            pool.getDelimitedList(position, maxLength, this)
+            pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
         } else {
             source.position(position + length)
-            pool.getList(position, length)
+            pool.getList(position, length, symbolTable, macroTable)
         }
     }
 

@@ -2,6 +2,7 @@ package com.amazon.ion.v3.impl_1_1
 
 import com.amazon.ion.*
 import com.amazon.ion.v3.*
+import java.lang.IllegalStateException
 import java.nio.ByteBuffer
 
 /**
@@ -130,6 +131,7 @@ object IdMappings {
         return when (typeId) {
             ValueReaderBase.TID_EMPTY_ARGUMENT.toInt() -> 0
             ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> -2
+            ValueReaderBase.TID_UNSET.toInt() -> throw IllegalStateException("Not positioned on an expression or value")
             else -> when (val it = LENGTH_FOR_OPCODE[typeId]) {
                 -3 -> throw IonException("Invalid input: illegal typeId: $typeId")
                 -2 -> -2
