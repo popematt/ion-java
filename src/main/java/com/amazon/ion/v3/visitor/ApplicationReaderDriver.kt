@@ -114,6 +114,13 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         readTopLevelValues(topLevelReader, visitor, 1)
     }
 
+    /**
+     * Internal only entry-point to start using the visitor API at any depth.
+     */
+    internal fun readValues(reader: ValueReader, visitor: VisitingReaderCallback) {
+        readAllValues(reader, visitor)
+    }
+
     private fun maybeVisitNull(reader: ValueReader, visitor: VisitingReaderCallback) {
         visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue()) ?: reader.skip()
     }
@@ -131,6 +138,39 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         val v = visitor.onValue(TokenType.STRING)
         if (v != null) {
             v.onString(reader.stringValue())
+        } else {
+            reader.skip()
+        }
+    }
+
+    private fun maybeVisitList(reader: ValueReader, visitor: VisitingReaderCallback) {
+        val v = visitor.onValue(TokenType.LIST)
+        if (v != null) {
+            v.onListStart()
+            reader.listValue().use { r -> readAllValues(r, v) }
+            v.onListEnd()
+        } else {
+            reader.skip()
+        }
+    }
+
+    private fun maybeVisitSexp(reader: ValueReader, visitor: VisitingReaderCallback) {
+        val v = visitor.onValue(TokenType.LIST)
+        if (v != null) {
+            v.onSexpStart()
+            reader.sexpValue().use { r -> readAllValues(r, v) }
+            v.onSexpEnd()
+        } else {
+            reader.skip()
+        }
+    }
+
+    private fun maybeVisitStruct(reader: ValueReader, visitor: VisitingReaderCallback) {
+        val v = visitor.onValue(TokenType.STRUCT)
+        if (v != null) {
+            v.onStructStart()
+            reader.structValue().use { r -> readAllStructFields(r, v) }
+            v.onStructEnd()
         } else {
             reader.skip()
         }
@@ -190,7 +230,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                                 }
                             }
                         }
-                        // ion11Reader.symbolTable = ION_1_1_SYSTEM_SYMBOLS
                         ion11Reader.initTables(ION_1_1_SYSTEM_SYMBOLS, macroTable)
                     } else {
                         ion10Reader.symbolTable = ION_1_0_SYMBOL_TABLE
@@ -222,36 +261,9 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 } ?: reader.skip()
                 TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)?.onClob(reader.clobValue()) ?: reader.skip()
                 TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)?.onBlob(reader.blobValue()) ?: reader.skip()
-                TokenTypeConst.LIST ->{
-                    val v = visitor.onValue(TokenType.LIST)
-                    if (v != null) {
-                        v.onListStart()
-                        reader.listValue().use { r -> readAllValues(r, v) }
-                        v.onListEnd()
-                    } else {
-                        reader.skip()
-                    }
-                }
-                TokenTypeConst.SEXP -> {
-                    val v = visitor.onValue(TokenType.SEXP)
-                    if (v != null) {
-                        v.onSexpStart()
-                        reader.sexpValue().use { r -> readAllValues(r, v) }
-                        v.onSexpEnd()
-                    } else {
-                        reader.skip()
-                    }
-                }
-                TokenTypeConst.STRUCT -> {
-                    val v = visitor.onValue(TokenType.STRUCT)
-                    if (v != null) {
-                        v.onStructStart()
-                        reader.structValue().use { r -> readAllStructFields(r, v) }
-                        v.onStructEnd()
-                    } else {
-                        reader.skip()
-                    }
-                }
+                TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
+                TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
+                TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
                 TokenTypeConst.ANNOTATIONS -> {
                     val annotationIterator = handlePossibleSystemValue(reader)
                     if (annotationIterator != null) {
@@ -302,7 +314,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                                     templateReaderPool
                                         .startEvaluation(macro, args)
                                         .use { macroInvocation ->
-                                            println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
+//                                            println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
                                             i += readTopLevelValues(macroInvocation, visitor)
                                         }
                                 }
@@ -312,7 +324,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 }
                 TokenTypeConst.END -> return i
                 TokenTypeConst.VARIABLE_REF -> {
-                    (reader as MacroInvocationReader).variableValue().use { variable ->
+                    (reader as TemplateReader).variableValue().use { variable ->
                         readTopLevelValues(variable, visitor)
                     }
                 }
@@ -347,34 +359,9 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             // IMPLEMENTATION NOTE:
             //     For containers, we're going to step in, and then immediately step out if we need to skip.
             //     This might be slightly less efficient, but it works for both delimited and prefixed containers.
-            TokenTypeConst.LIST ->
-                visitor.onValue(TokenType.LIST)?.let { v ->
-                    v.onListStart()
-                    // TODO: Switch to a read all method so that we aren't calling `readValue` in a tight loop
-                    reader
-                        .listValue()
-                        .use { r ->
-                            readAllValues(r, v)
-                        }
-                    v.onListEnd()
-                } ?: reader.skip()
-
-            TokenTypeConst.SEXP ->
-                visitor.onValue(TokenType.SEXP)?.let { v ->
-                    v.onSexpStart()
-                    reader.sexpValue().use { r -> readAllValues(r, v) }
-                    v.onSexpEnd()
-                } ?: reader.skip()
-            TokenTypeConst.STRUCT -> {
-                val v = visitor.onValue(TokenType.STRUCT)
-                if (v != null) {
-                    v.onStructStart()
-                    reader.structValue().use { r -> readAllStructFields(r, v) }
-                    v.onStructEnd()
-                } else {
-                    reader.skip()
-                }
-            }
+            TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
+            TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
+            TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
             TokenTypeConst.ANNOTATIONS -> reader.annotations().use { a ->
                 val v = visitor.onAnnotation(a)
                 if (v != null) {
@@ -402,13 +389,32 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             }
             TokenTypeConst.END -> return false
             TokenTypeConst.VARIABLE_REF -> {
-                (reader as MacroInvocationReader).variableValue().use { variable ->
+                (reader as TemplateReader).variableValue().use { variable ->
                     readValue(variable, visitor)
                 }
             }
             else -> TODO("Unreachable: ${TokenTypeConst(token)}")
         }
         return true
+    }
+
+    private fun visitSexp(reader: ValueReader, v: VisitingReaderCallback) {
+        reader.sexpValue().use { r ->
+            if (r.nextToken() == TokenTypeConst.SYMBOL) {
+                val sid = r.symbolValueSid()
+                val text = if (sid < 0) {
+                    r.symbolValue()
+                } else {
+                    r.lookupSid(sid)
+                }
+                val vTail = v.onSexpStart(text, sid)
+                readAllValues(r, vTail)
+            } else {
+                v.onSexpStart()
+                readAllValues(r, v)
+            }
+        }
+        v.onSexpEnd()
     }
 
     // TODO: Use a stack in this function for nested sequences
@@ -450,36 +456,9 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 // IMPLEMENTATION NOTE:
                 //     For containers, we're going to step in, and then immediately step out if we need to skip.
                 //     This might be slightly less efficient, but it works for both delimited and prefixed containers.
-                TokenTypeConst.LIST ->{
-                    val v = visitor.onValue(TokenType.LIST)
-                    if (v != null) {
-                        v.onListStart()
-                        reader.listValue().use { r -> readAllValues(r, v) }
-                        v.onListEnd()
-                    } else {
-                        reader.skip()
-                    }
-                }
-                TokenTypeConst.SEXP -> {
-                    val v = visitor.onValue(TokenType.SEXP)
-                    if (v != null) {
-                        v.onSexpStart()
-                        reader.sexpValue().use { r -> readAllValues(r, v) }
-                        v.onSexpEnd()
-                    } else {
-                        reader.skip()
-                    }
-                }
-                TokenTypeConst.STRUCT -> {
-                    val v = visitor.onValue(TokenType.STRUCT)
-                    if (v != null) {
-                        v.onStructStart()
-                        reader.structValue().use { r -> readAllStructFields(r, v) }
-                        v.onStructEnd()
-                    } else {
-                        reader.skip()
-                    }
-                }
+                TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
+                TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
+                TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
                 TokenTypeConst.ANNOTATIONS -> {
                     val a = reader.annotations()
                     val v = visitor.onAnnotation(a)
@@ -512,7 +491,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 }
                 TokenTypeConst.END -> return
                 TokenTypeConst.VARIABLE_REF -> {
-                    (reader as MacroInvocationReader).variableValue().use { variable ->
+                    (reader as TemplateReader).variableValue().use { variable ->
                         readAllValues(variable, visitor)
                     }
                 }
@@ -738,4 +717,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         if (::_ion11Reader.isInitialized) _ion11Reader.close()
         macroTable = emptyArray()
     }
+
+
 }

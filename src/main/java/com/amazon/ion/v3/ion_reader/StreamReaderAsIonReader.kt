@@ -11,13 +11,10 @@ import com.amazon.ion.SystemSymbols
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl._Private_Utils
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.v3.StructReader
-import com.amazon.ion.v3.TokenTypeConst
-import com.amazon.ion.v3.ValueReader
+import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
-import com.amazon.ion.v3.impl_1_1.StreamReaderImpl
-import com.amazon.ion.v3.impl_1_1.TemplateResourcePool
-import com.amazon.ion.v3.impl_1_1.ValueReaderBase
+import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.ModuleReader
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_0_SYMBOL_TABLE
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
@@ -33,8 +30,9 @@ import java.util.Date
  * TODO: We can move infrequently use fields, such as `_ion10reader` and `_ion11Reader` into a helper class in order to
  *       keep this class below 64 bytes (the size of a typical cache line).
  */
-class StreamReaderAsIonReader(private val source: ByteBuffer, private val additionalMacros: List<Macro> = emptyList()): IonReader {
-
+class StreamReaderAsIonReader(
+    private val source: ByteBuffer, private val additionalMacros: List<Macro> = emptyList()
+): IonReader {
     private lateinit var _ion10Reader: ValueReader
     private val ion10Reader: ValueReader
         get() {
@@ -56,6 +54,8 @@ class StreamReaderAsIonReader(private val source: ByteBuffer, private val additi
                 TemplateResourcePool(ion11Reader.symbolTable, ion11Reader.macroTable)
             return _templateReaderPool
         }
+
+    private val moduleReader = ModuleReader()
 
     private var type: IonType? = null
     private var fieldName: String? = null
@@ -177,6 +177,12 @@ class StreamReaderAsIonReader(private val source: ByteBuffer, private val additi
                 type = null
                 null
             }
+            TokenTypeConst.VARIABLE_REF -> {
+                val variableReader = (reader as TemplateReader).variableValue()
+                readerManager.pushReader(variableReader)
+                reader = variableReader
+                null
+            }
             else -> TODO("Unreachable: ${TokenTypeConst(token)}")
         }
         if (type != null) {
@@ -191,7 +197,6 @@ class StreamReaderAsIonReader(private val source: ByteBuffer, private val additi
         val version = reader.ivm().toInt()
         // If the version is the same, then we know it's a valid version, and we can skip validation
         if (version != currentVersion) {
-            println("Changing Ion version...")
             val position = reader.position()
             readerManager.popReader()
             reader = when (version) {
@@ -228,7 +233,6 @@ class StreamReaderAsIonReader(private val source: ByteBuffer, private val additi
                 break
             } else if (token != TokenTypeConst.FIELD_NAME) {
                 val sr = (structReader as ValueReaderBase)
-                println(sr.source)
                 throw IllegalStateException("Unexpected token type: ${TokenTypeConst(token)}")
             }
             val fieldNameSid = structReader.fieldNameSid()
@@ -336,8 +340,9 @@ class StreamReaderAsIonReader(private val source: ByteBuffer, private val additi
 
     override fun isNullValue(): Boolean = reader.currentToken() == TokenTypeConst.NULL
 
-    // TODO: This will not work once we have macros. It's possible that there's a `make_string` inside of a struct.
-    override fun isInStruct(): Boolean = reader is StructReader
+    override fun isInStruct(): Boolean {
+        return readerManager.isInStruct
+    }
 
     override fun booleanValue(): Boolean = reader.booleanValue()
     override fun intValue(): Int = reader.longValue().toInt()

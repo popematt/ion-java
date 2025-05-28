@@ -16,7 +16,7 @@ class MacroInvocationReader(
     var expansionLimit: Int = 1_000_000,
     // Available modules? No. That's already resolved in the compiler.
     // Macro table? No. That's already resolved in the compiler.
-): ValueReader, SequenceReader {
+): ValueReader, SequenceReader, TemplateReader {
 
     var i = 0
     var currentExpression: Expression? = null
@@ -62,7 +62,7 @@ class MacroInvocationReader(
         currentExpression = null
     }
 
-    fun variableValue(): ValueReader {
+    override fun variableValue(): ValueReader {
         val expr = takeCurrentExpression<VariableRef>()
         return pool.getVariable(info.arguments, expr.signatureIndex)
     }

@@ -1,7 +1,7 @@
 package com.amazon.ion.v3.ion_reader
 
 import com.amazon.ion.IonException
-import com.amazon.ion.v3.ValueReader
+import com.amazon.ion.v3.*
 import java.io.Closeable
 
 internal class ReaderManager: Closeable {
@@ -30,6 +30,10 @@ internal class ReaderManager: Closeable {
     // Equivalent to "getDepth()"
     private var containerStackSize: Int = 0
 
+    // TODO: @JvmField for performance?
+    var isInStruct: Boolean = false
+        private set
+
     fun isTopAContainer(): Boolean {
         if (containerStackSize > 0) {
             val topContainerIndex = containerStack[containerStackSize - 1]
@@ -39,13 +43,16 @@ internal class ReaderManager: Closeable {
         }
     }
 
+    // TODO: expose a @JvmField for performance?
     val containerDepth: Int
         get() = containerStackSize
 
+    // TODO: expose a @JvmField for performance?
     val readerDepth: Int
         get() = readerStackSize
 
     fun pushContainer(reader: ValueReader) {
+        isInStruct = reader is StructReader
         if (containerStackSize >= containerStack.size) {
             containerStack = containerStack.grow()
         }
@@ -73,6 +80,11 @@ internal class ReaderManager: Closeable {
         while (containerIndex < readerStackSize) {
             readerStack[--readerStackSize]!!.close()
         }
+        if (containerStackSize > 0) {
+            isInStruct = readerStack[containerStack[containerStackSize - 1]] is StructReader
+        } else {
+            isInStruct = false
+        }
         return readerStack[readerStackSize - 1]!!
     }
 
@@ -80,15 +92,24 @@ internal class ReaderManager: Closeable {
      * Returns the new top of the stack.
      */
     fun popReader(): ValueReader? {
-        val parent = readerStack[--readerStackSize]
+        readerStack[--readerStackSize]?.close()
         // TODO: Do we need this, or can we require that you call popContainer when there's a container?
         if (containerStackSize > 0) {
             val topMostContainerIndex = containerStack[containerStackSize - 1]
             if (topMostContainerIndex >= readerStackSize) {
                 containerStackSize--
+                if (containerStackSize > 0) {
+                    isInStruct = readerStack[containerStack[containerStackSize - 1]] is StructReader
+                } else {
+                    isInStruct = false
+                }
             }
         }
-        return parent
+        if (readerStackSize > 0) {
+            return readerStack[readerStackSize - 1]
+        } else {
+            return null
+        }
     }
 
     override fun close() {

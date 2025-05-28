@@ -1,19 +1,17 @@
 package com.amazon.ion.v3.impl_1_1
 
-import com.amazon.ion.IonException
+import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.MacroCompiler
 import com.amazon.ion.impl.macro.ReaderAdapterIonReader
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.ion_reader.*
 
 /**
  * Work in progress class that can read module definitions.
  */
-internal class ModuleReader() {
-//    private val macroCompiler = MacroCompiler(
-//        getMacro = this::getMacro,
-//        reader = ReaderAdapterIonReader(StreamReaderAsIonReader()),
-//    )
+internal class ModuleReader {
+
     var symbolTable: (Int) -> String? = { null }
 
     // TODO: Add a proper `Module` abstraction. For now, we'll use this.
@@ -43,7 +41,7 @@ internal class ModuleReader() {
         return Module(moduleName, moduleSymbols, moduleMacros)
     }
 
-    private fun readModuleDeclarationClause(clause: ValueReader, localAvailableBindings: MutableMap<String, Module>, moduleSymbols: MutableList<String?>, moduleMacros: List<Pair<String?, Macro>>, state: Int): Int {
+    private fun readModuleDeclarationClause(clause: ValueReader, localAvailableBindings: MutableMap<String, Module>, moduleSymbols: MutableList<String?>, moduleMacros: MutableList<Pair<String?, Macro>>, state: Int): Int {
         if (clause.nextToken() != TokenTypeConst.SYMBOL) throw IonException("Invalid module definition; expected SYMBOL found ${TokenTypeConst(clause.currentToken())}")
         val clauseType = clause.symbolValue()
 
@@ -75,8 +73,17 @@ internal class ModuleReader() {
         }
     }
 
-    fun populateMacros(clause: ValueReader, availableBindings: Map<String, Module>, moduleMacros: List<Pair<String?, Macro>>) {
-        TODO("Macro table not implemented yet.")
+    fun populateMacros(clause: ValueReader, localAvailableBindings: Map<String, Module>, moduleMacros: MutableList<Pair<String?, Macro>>) {
+        while (true) {
+            when (clause.nextToken()) {
+                TokenTypeConst.SEXP -> {
+
+                }
+                TokenTypeConst.END -> return
+            }
+        }
+
+
     }
 
     private fun populateSymbols(clause: ValueReader, localAvailableBindings: Map<String, Module>, moduleSymbols: MutableList<String?>) {

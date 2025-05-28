@@ -10,7 +10,6 @@ import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.StreamReaderImpl
 import com.amazon.ion.v3.ion_reader.*
 import com.amazon.ion.v3.visitor.*
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
 import java.io.ByteArrayOutputStream
 import java.lang.StringBuilder
 import java.math.BigDecimal
@@ -537,17 +536,17 @@ class TypedReadersTest {
             @Test
             fun delimitedSexp() {
                 val data = toByteBuffer("""
-            E0 01 01 EA
-            60
-            F2                   | Sexp
-               61 01             | Int 1
-               61 02             | Int 2
-            F0
-            F2
-               61 03
-               61 04             | Int 4
-            F0
-        """)
+                    E0 01 01 EA
+                    60
+                    F2                   | Sexp
+                       61 01             | Int 1
+                       61 02             | Int 2
+                    F0
+                    F2
+                       61 03
+                       61 04             | Int 4
+                    F0
+                """)
 
                 ApplicationReaderDriver(data).use { driver ->
                     driver.readAll(
@@ -809,11 +808,11 @@ class TypedReadersTest {
                     }
                 )
                 val data = toByteBuffer("""
-            E0 01 01 EA
-            60
-            18 61 01
-            61 02
-        """)
+                    E0 01 01 EA
+                    60
+                    18 61 01
+                    61 02
+                """)
 
                 ApplicationReaderDriver(data, listOf(macro)).use { driver ->
                     driver.readAll(
@@ -825,6 +824,46 @@ class TypedReadersTest {
                     )
                 }
             }
+
+            @Test
+            fun templateMacroWithMultipleVariables() {
+                val macro = TemplateMacro(
+                    signature = listOf(
+                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
+                        Macro.Parameter("bar", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
+                    ),
+                    body = ExpressionBuilderDsl.templateBody {
+                        struct {
+                            fieldName("foo")
+                            variable(0)
+                            fieldName("bar")
+                            variable(1)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 61 01 61 02
+                    61 03
+                """)
+
+                ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                    driver.readAll(
+                        expect(
+                            Expectation.IntValue(0),
+                            Expectation.StructStart,
+                            Expectation.FieldName("foo"),
+                            Expectation.IntValue(1),
+                            Expectation.FieldName("bar"),
+                            Expectation.IntValue(2),
+                            Expectation.End,
+                            Expectation.IntValue(3),
+                        )
+                    )
+                }
+            }
+
 
             @Test
             fun strings() {
@@ -1182,13 +1221,121 @@ class TypedReadersTest {
                     61 03
                 """)
 
-                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).use {
-                    val iter = ION.iterate(it)
-                    while (iter.hasNext()) {
-                        println(iter.next())
-                    }
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("[1, 2]")
+                    value("3")
                 }
             }
+
+            @Test
+            fun constantSexpTemplateMacro() {
+                val macro = TemplateMacro(
+                    signature = listOf(),
+                    body = ExpressionBuilderDsl.templateBody {
+                        sexp {
+                            int(1)
+                            int(2)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 03
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("(1 2)")
+                    value("3")
+                }
+            }
+
+            @Test
+            fun constantStructTemplateMacro() {
+                val macro = TemplateMacro(
+                    signature = listOf(),
+                    body = ExpressionBuilderDsl.templateBody {
+                        struct {
+                            fieldName("foo")
+                            int(1)
+                            fieldName("bar")
+                            int(2)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 03
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("{foo: 1, bar: 2}")
+                    value("3")
+                }
+            }
+
+
+            @Test
+            fun templateMacroWithOneVariable() {
+                val macro = TemplateMacro(
+                    signature = listOf(
+                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
+                    ),
+                    body = ExpressionBuilderDsl.templateBody {
+                        variable(0)
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 61 01
+                    61 02
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("1")
+                    value("2")
+                }
+            }
+
+
+            @Test
+            fun templateMacroWithMultipleVariables() {
+                val macro = TemplateMacro(
+                    signature = listOf(
+                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
+                        Macro.Parameter("bar", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
+                    ),
+                    body = ExpressionBuilderDsl.templateBody {
+                        struct {
+                            fieldName("foo")
+                            variable(0)
+                            fieldName("bar")
+                            variable(1)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 61 01 61 02
+                    61 03
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("{ foo:1, bar: 2}")
+                    value("3")
+                }
+            }
+
 
             fun StreamReaderAsIonReader.expect(block: Iterator<IonValue>.() -> Unit) {
                 use {

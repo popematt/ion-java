@@ -52,6 +52,17 @@ interface VisitingReaderCallback {
     fun onListStart()
     fun onListEnd()
     fun onSexpStart()
+
+    /**
+     * Start reading an s-expression.
+     * Return the visitor that should be used for the tail of the s-expression.
+     */
+    fun onSexpStart(symbolText: String?, sid: Int): VisitingReaderCallback {
+        onSexpStart()
+        onValue(TokenType.SYMBOL)?.onSymbol(symbolText, sid)
+        return this
+    }
+
     fun onSexpEnd()
     fun onStructStart()
     fun onStructEnd()
@@ -76,4 +87,8 @@ interface VisitingReaderCallback {
     // TODO: ?
     //  fun onEExpressionArgument(name: String): VisitingReaderCallback? = null
 
+}
+
+internal interface LispyVisitor: VisitingReaderCallback {
+    fun onClause(keyword: String): VisitingReaderCallback
 }
