@@ -15,6 +15,19 @@ class DelimitedSequenceReaderImpl(
     macroTable: Array<Macro>,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), ListReader, SexpReader {
 
+    // TODO: What if we could make it so that it scans its own length when it is opened?
+    //       In doing so, it could also cache any nested delimited containers that it must create.
+
+    fun findEnd() {
+        source.mark()
+        while (nextToken() != TokenTypeConst.END) {
+            // TODO: See if we should cache any child delimited containers.
+            skip()
+        }
+        source.limit(source.position())
+        source.reset()
+    }
+
     override fun nextToken(): Int {
         val token = super.nextToken()
         if (token == TokenTypeConst.END) {

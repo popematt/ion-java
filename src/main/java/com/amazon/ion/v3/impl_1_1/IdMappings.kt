@@ -71,7 +71,11 @@ object IdMappings {
             in 0x00 .. 0x5F -> -2
             in 0x60 .. 0x68 -> opcode and 0xF
             0x69 -> -3
-            in 0x6A .. 0x6D -> TokenTypeConst.FLOAT
+            // Floats
+            0x6A -> 0
+            0x6B -> 2
+            0x6C -> 4
+            0x6D -> 8
             in 0x6E .. 0x6F -> 0
             in 0x70 .. 0x7F -> opcode and 0xF
 
@@ -131,6 +135,7 @@ object IdMappings {
         return when (typeId) {
             ValueReaderBase.TID_EMPTY_ARGUMENT.toInt() -> 0
             ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> -2
+            ValueReaderBase.TID_ON_FIELD_NAME.toInt() -> -2
             ValueReaderBase.TID_UNSET.toInt() -> throw IllegalStateException("Not positioned on an expression or value")
             else -> when (val it = LENGTH_FOR_OPCODE[typeId]) {
                 -3 -> throw IonException("Invalid input: illegal typeId: $typeId")

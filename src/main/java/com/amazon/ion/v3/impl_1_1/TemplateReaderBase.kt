@@ -47,6 +47,7 @@ abstract class TemplateReaderBase(
 
     // TODO: Make sure that this also returns END when at the end of the input.
     override fun currentToken(): Int = currentExpression?.tokenType ?: TokenTypeConst.UNSET
+    override fun isTokenSet(): Boolean = currentToken() != TokenTypeConst.UNSET
     override fun ionType(): IonType? = (currentExpression as? DataModelValue)?.type
 
     override fun valueSize(): Int {
@@ -65,6 +66,15 @@ abstract class TemplateReaderBase(
     override fun variableValue(): ValueReader {
         val expr = takeCurrentExpression<VariableRef>()
         return pool.getVariable(info.arguments, expr.signatureIndex)
+    }
+
+    override fun macroValue(): MacroInvocationReader {
+        val expr = takeCurrentExpression<MacroInvocation>()
+        val arguments = pool.arguments.removeLastOrNull()
+            ?.apply { init(info, expr.startInclusive, expr.endExclusive) }
+            ?: TemplateArgumentReaderImpl(pool, info, expr.startInclusive, expr.endExclusive)
+
+        return pool.startEvaluation(expr.macro, arguments)
     }
 
     protected inline fun <reified T: Expression> takeCurrentExpression(): T {

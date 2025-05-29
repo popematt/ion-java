@@ -12,6 +12,7 @@ open class ApplicationValueReader(
     }
 
     override fun currentToken(): Int = valueReader.currentToken()
+    override fun isTokenSet(): Boolean = valueReader.isTokenSet()
     override fun ionType(): IonType? = valueReader.ionType()
     override fun valueSize(): Int = valueReader.valueSize()
     override fun skip() = valueReader.skip()

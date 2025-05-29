@@ -2,16 +2,16 @@ package com.amazon.ion.v3
 
 import com.amazon.ion.*
 import com.amazon.ion.TestUtils.*
+import com.amazon.ion.impl.bin.*
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.system.IonReaderBuilder
-import com.amazon.ion.system.IonSystemBuilder
+import com.amazon.ion.system.*
+import com.amazon.ion.util.*
 import com.amazon.ion.v3.TypedReadersTest.TestExpectationVisitor.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.StreamReaderImpl
 import com.amazon.ion.v3.ion_reader.*
 import com.amazon.ion.v3.visitor.*
 import java.io.ByteArrayOutputStream
-import java.lang.StringBuilder
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -21,6 +21,7 @@ import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.util.*
 import kotlin.NoSuchElementException
+import kotlin.text.StringBuilder
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -293,7 +294,22 @@ class TypedReadersTest {
             }
         }
 
+        @Test
+        fun `a big one for Ion 1 0 using IonReader API`() {
+            val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy.10n")
 
+            val ION = IonSystemBuilder.standard().build()
+            FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+
+                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                StreamReaderAsIonReader(mappedByteBuffer).use {
+                    val iter = ION.iterate(it)
+                    while (iter.hasNext()) {
+                        iter.next()
+                    }
+                }
+            }
+        }
 
     }
 
@@ -375,6 +391,111 @@ class TypedReadersTest {
                 assertEquals(expected, reader.timestampValue())
             }
         }
+
+        @Test
+        fun skipDelimitedList() {
+            val data = toByteBuffer("""
+                    E0 01 01 EA
+                    F1                   | List
+                       61 01             | Int 1
+                       61 02             | Int 2
+                    F0
+                    F1
+                       61 03
+                       61 04             | Int 4
+                    F0
+                    60
+                """)
+            StreamReaderImpl(data).use { reader ->
+                assertEquals(TokenTypeConst.IVM, reader.nextToken())
+                reader.ivm()
+                assertEquals(TokenTypeConst.LIST, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.LIST, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(0, reader.longValue())
+            }
+        }
+
+        @Test
+        fun skipDelimitedSexp() {
+            val data = toByteBuffer("""
+                    E0 01 01 EA
+                    F2                   | Sexp
+                       61 01             | Int 1
+                       61 02             | Int 2
+                    F0
+                    F2
+                       61 03
+                       61 04             | Int 4
+                    F0
+                    60
+                """)
+            StreamReaderImpl(data).use { reader ->
+                assertEquals(TokenTypeConst.IVM, reader.nextToken())
+                reader.ivm()
+                assertEquals(TokenTypeConst.SEXP, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.SEXP, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(0, reader.longValue())
+            }
+        }
+
+        @Test
+        fun skipDelimitedStruct() {
+            val bytes0 = """
+                    E0 01 01 EA
+                    60
+                    F3
+                       03 61 01            | $ ion : 1
+                       01 F0
+
+                    F3
+                       03 61 02            | $ ion : 2
+                       01 F0
+                    60
+                """
+            val bytes1 = """
+            E0 01 01 EA
+            60
+            F3                   | Struct
+               03                | FlexSym SID 1
+               61 01             | Int 1
+               05                | FlexSym SID 2
+               61 02             | Int 2
+               01 F0
+            F3
+               07                | FlexSym SID 3
+               61 03             | Int 3
+               09                | FlexSym SID 4
+               61 04             | Int 4
+               01 F0
+            60
+            """
+
+
+            val data = toByteBuffer(bytes0)
+
+
+            StreamReaderImpl(data).use { reader ->
+                assertEquals(TokenTypeConst.IVM, reader.nextToken())
+                reader.ivm()
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(0, reader.longValue())
+                assertEquals(TokenTypeConst.STRUCT, reader.nextToken())
+                reader.skip()
+//                assertEquals(TokenTypeConst.INT, reader.nextToken())
+//                assertEquals(0, reader.longValue())
+                assertEquals(TokenTypeConst.STRUCT, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(0, reader.longValue())
+            }
+        }
+
 
         @Nested
         inner class VisitingReaderTests {
@@ -583,6 +704,19 @@ class TypedReadersTest {
                             Expectation.End,
                         ))
                     )
+                }
+
+                data.rewind()
+
+                StreamReaderImpl(data).use {
+                    it.nextToken()
+                    it.ivm()
+                    it.nextToken()
+                    it.longValue()
+                    it.nextToken()
+                    it.skip()
+                    it.nextToken()
+                    it.skip()
                 }
             }
 
@@ -965,12 +1099,18 @@ class TypedReadersTest {
 
             @Test
             fun `a big one for Ion 1 1 with macros`() {
-                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n")
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
+
 
                 FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
                     val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
                     ApplicationReaderDriver(mappedByteBuffer).use {
-                        it.readAll(NoOpVisitor())
+                        var n = 0
+                        while(n < 5) {
+                            println(n++)
+                            it.read(PrinterVisitor())
+                            println()
+                        }
                     }
                 }
             }
@@ -1397,8 +1537,81 @@ class TypedReadersTest {
             }
 
             @Test
+            fun usingMacrosDefinedInTheDataStream() {
+                val macro = TemplateMacro(
+                    signature = listOf(
+                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
+                        Macro.Parameter("bar", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
+                    ),
+                    body = ExpressionBuilderDsl.templateBody {
+                        struct {
+                            fieldName("foo")
+                            variable(0)
+                            fieldName("bar")
+                            variable(1)
+                        }
+                    }
+                )
+                val baos = ByteArrayOutputStream()
+                val writer = IonManagedWriter_1_1.binaryWriter(
+                    output = baos,
+                    managedWriterOptions = ManagedWriterOptions_1_1(
+                        internEncodingDirectiveSymbols = false,
+                        invokeTdlMacrosByName = true,
+                        symbolInliningStrategy = SymbolInliningStrategy.NEVER_INLINE,
+                        lengthPrefixStrategy = LengthPrefixStrategy.ALWAYS_PREFIXED,
+                        eExpressionIdentifierStrategy = ManagedWriterOptions_1_1.EExpressionIdentifierStrategy.BY_NAME,
+                    ),
+                    binaryOptions = _Private_IonBinaryWriterBuilder_1_1.standard()
+                )
+
+                writer.writeInt(0)
+                writer.startMacro(macro)
+                writer.writeInt(1)
+                writer.writeInt(2)
+                writer.endMacro()
+                writer.writeInt(3)
+                writer.close()
+
+                val data = ByteBuffer.wrap(baos.toByteArray())
+                //  E0 01 01 EA
+                //
+                //  EF 15                       | System Macro "set_macros"
+                //     02                       | Presence: expression group
+                //     01                       | Delimited expression group
+                //        F2                    | Delimited Sexp start
+                //           EE 0D              | 'macro'
+                //           EA                 | null
+                //           F2                 | delimited sexp start
+                //             A3 66 6F 6F      | 'foo'
+                //             A3 62 61 72      | 'bar'
+                //           F0
+                //           F3
+                //             FB 66 6F 6F
+                //             F2 A1 25 A3 66 6F 6F F0
+                //             FB 62 61 72
+                //             F2 A1 25 A3 62 61 72 F0
+                //           01 F0
+                //        F0
+                //     F0
+                //
+                //  60
+                //
+                //  F5 01 09 61 01 61 02
+                //
+                //  61 03
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    value("{ foo:1, bar: 2}")
+                    value("3")
+                }
+            }
+
+            @Test
             fun `a big one for Ion 1 1 with macros`() {
-                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n")
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
+
+                // "/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n"
 
                 FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
                     val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())

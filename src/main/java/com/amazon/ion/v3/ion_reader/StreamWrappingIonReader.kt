@@ -99,7 +99,7 @@ class StreamWrappingIonReader: IonReader {
             TokenTypeConst.SEXP -> IonType.SEXP
             TokenTypeConst.STRUCT -> IonType.STRUCT
             TokenTypeConst.ANNOTATIONS -> {
-                reader.annotations().use { annotationState.storeAnnotations(it, reader) }
+                reader.annotations().use { annotationState.storeAnnotations(it) }
                 null
             }
             TokenTypeConst.FIELD_NAME -> {

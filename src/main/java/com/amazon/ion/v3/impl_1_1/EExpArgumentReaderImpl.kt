@@ -133,6 +133,7 @@ class EExpArgumentReaderImpl(
         }
     }
 
+    // TODO: return SequenceReader
     override fun expressionGroup(): ListReader {
         val opcode = this.opcode
         // TODO: Consider returning an empty or singleton expression group if it makes the APIs easier and improves perf.
@@ -144,13 +145,14 @@ class EExpArgumentReaderImpl(
         // TODO: Check if we're on a tagless parameter.
         //       For now, we'll assume that they are all tagged.
         return if (length == 0) {
+            // TODO: We might be able to get the length based on the argument indices.
             val maxLength = source.limit() - position
             // TODO: Something more efficient here
             val sacrificialReader = pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
-            while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
-            val endPosition = sacrificialReader.source.position()
+//            while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
+//            val endPosition = sacrificialReader.source.position()
             sacrificialReader.close()
-            source.position(endPosition)
+//            source.position(endPosition)
             pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
         } else {
             source.position(position + length)
@@ -170,10 +172,9 @@ class EExpArgumentReaderImpl(
             TID_EXPRESSION_GROUP -> {
                 // Assuming tagged.
                 // TODO: We can make this more efficient for length-prefixed expression groups.
-                source.position(expressionGroup().let {
-                    it.close()
-                    it.position()
-                })
+                val eg = expressionGroup()
+                eg.close()
+                source.position(eg.position())
             }
             else -> super.skip()
         }

@@ -5,7 +5,26 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import java.io.Closeable
 
-class TemplateResourcePool: Closeable {
+class TemplateResourcePool private constructor(): Closeable {
+
+    companion object {
+        @JvmStatic
+        private val cached: ThreadLocal<TemplateResourcePool?> = ThreadLocal.withInitial { null }
+
+        @JvmStatic
+        fun getInstance(): TemplateResourcePool {
+            val instance = cached.get() ?: TemplateResourcePool()
+            cached.set(null)
+            return instance
+        }
+
+        @JvmStatic
+        private fun returnInstance(instance: TemplateResourcePool) {
+            if (cached.get() == null) {
+                cached.set(instance)
+            }
+        }
+    }
 
     interface TemplateInvocationInfo {
         val source: List<Expression.TemplateBodyExpression>
@@ -23,6 +42,7 @@ class TemplateResourcePool: Closeable {
     val sequences = ArrayList<TemplateSequenceReaderImpl>(8)
     val annotations = ArrayList<AnnotationIterator>(8)
     val variables = ArrayList<TemplateVariableReaderImpl>(8)
+    val arguments = ArrayList<TemplateArgumentReaderImpl>()
 
     fun startEvaluation(macro: Macro, arguments: ArgumentReader): MacroInvocationReader {
         if (macro is TemplateMacro) {
@@ -33,8 +53,24 @@ class TemplateResourcePool: Closeable {
             } else {
                 return MacroInvocationReader(this, TemplateInvocationInfoImpl(macro.body, macro.signature, arguments), 0, macro.body.size)
             }
+        } else if (macro is SystemMacro) {
+            if (macro.body != null) {
+                val reader = invocations.removeLastOrNull()
+                if (reader != null) {
+                    reader.init(TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments), 0, macro.body!!.size)
+                    return reader
+                } else {
+                    return MacroInvocationReader(this, TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments), 0, macro.body!!.size)
+                }
+            } else {
+                // TODO:
+                //  * `values` should be elided
+                //  * `none` should be replaced with an empty stream of some sort
+
+                TODO("System macros with hard coded implementations")
+            }
         } else {
-            TODO("System macros")
+            TODO("unreachable")
         }
     }
 
@@ -79,8 +115,6 @@ class TemplateResourcePool: Closeable {
     }
 
     override fun close() {
-        annotations.clear()
-        sequences.clear()
-        structs.clear()
+        returnInstance(this)
     }
 }

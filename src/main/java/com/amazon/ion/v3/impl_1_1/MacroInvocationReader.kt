@@ -47,6 +47,9 @@ class MacroInvocationReader(
 
     // TODO: Make sure that this also returns END when at the end of the input.
     override fun currentToken(): Int = currentExpression?.tokenType ?: TokenTypeConst.UNSET
+
+    override fun isTokenSet(): Boolean = currentToken() != TokenTypeConst.UNSET
+
     override fun ionType(): IonType? = (currentExpression as? DataModelValue)?.type
 
     override fun valueSize(): Int {
@@ -120,6 +123,19 @@ class MacroInvocationReader(
         return pool.getStruct(info, expr.startInclusive, expr.endExclusive)
     }
 
+    override fun macroValue(): Macro {
+        val expr = (currentExpression as MacroInvocation)
+        val arguments = pool.arguments.removeLastOrNull()
+            ?.apply { init(info, expr.startInclusive, expr.endExclusive) }
+            ?: TemplateArgumentReaderImpl(pool, info, expr.startInclusive, expr.endExclusive)
+
+        return expr.macro
+    }
+
+    override fun eexpArgs(signature: List<Macro.Parameter>): ArgumentReader {
+        return super.eexpArgs(signature)
+    }
+
     override fun annotations(): AnnotationIterator {
         TODO("Annotations should be their own expression type.")
     }
@@ -137,5 +153,4 @@ class MacroInvocationReader(
     override fun close() {
         pool.invocations.add(this)
     }
-
 }

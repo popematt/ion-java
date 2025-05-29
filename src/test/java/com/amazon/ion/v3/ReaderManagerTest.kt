@@ -102,6 +102,10 @@ class ReaderManagerTest {
             TODO("Not yet implemented")
         }
 
+        override fun isTokenSet(): Boolean {
+            TODO("Not yet implemented")
+        }
+
         override fun ionType(): IonType? {
             TODO("Not yet implemented")
         }

@@ -237,14 +237,12 @@ internal class MacroCompiler(
                             }
                         }
 
-                        val macro = if (macroRef.isUnqualified()) {
-                            getMacro(macroRef)
-                        } else if (macroRef.isSystemMacro()) {
-                            SystemMacro.getMacroOrSpecialForm(macroRef)
-                        } else {
-                            TODO("Qualified macros for non-system modules")
-                        }
-                        macro ?: throw IonException("Unrecognized macro: $macroRef")
+                        val macro = getMacro(macroRef)
+                            ?: SystemMacro.getMacroOrSpecialForm(macroRef)
+                            ?: throw IonException("Unrecognized macro: $macroRef")
+
+
+
                         compileExpressionTail(start, readLiterally) { end -> MacroInvocation(macro, start, end) }
                         return
                     }
@@ -254,6 +252,10 @@ internal class MacroCompiler(
             compileTemplateBodyExpression(readLiterally)
         }
         compileExpressionTail(start, readLiterally) { end -> SExpValue(sexpAnnotations, start, end) }
+    }
+
+    private fun addInlineInvocation(macro: TemplateMacro) {
+
     }
 
     /**
@@ -269,9 +271,9 @@ internal class MacroCompiler(
         return when (encodingType()) {
             IonType.SYMBOL -> MacroRef.byName(moduleName, stringValue())
             IonType.INT -> {
-                val sid = intValue()
-                if (sid < 0) throw IonException("Macro ID must be non-negative: $sid")
-                MacroRef.byId(moduleName, intValue())
+                val id = intValue()
+                if (id < 0) throw IonException("Macro ID must be non-negative: $id")
+                MacroRef.byId(moduleName, id)
             }
             else -> throw IonException("macro invocation must start with an id (int) or identifier (symbol); found ${encodingType() ?: "nothing"}\"")
         }

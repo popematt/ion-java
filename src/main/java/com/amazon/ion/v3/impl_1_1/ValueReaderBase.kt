@@ -14,7 +14,6 @@ abstract class ValueReaderBase(
     internal var source: ByteBuffer,
     @JvmField
     internal var pool: ResourcePool,
-    // TODO: Fully integrate these.
     @JvmField
     internal var symbolTable: Array<String?>,
     @JvmField
@@ -25,16 +24,33 @@ abstract class ValueReaderBase(
         source.order(ByteOrder.LITTLE_ENDIAN)
     }
 
+    /**
+     *
+     * == Structs ==
+     *
+     * - UNSET -> ON_FIELD_NAME, END
+     * - ON_FIELD_NAME -> AFTER_FIELD_NAME
+     * - AFTER_FIELD_NAME -> AFTER_ANNOTATIONS, opcode
+     * - AFTER_ANNOTATIONS -> opcode
+     * - opcode -> UNSET
+     *
+     * == Sequences ==
+     *
+     * - UNSET -> END, AFTER_ANNOTATIONS, opcode
+     * - AFTER_ANNOTATIONS -> opcode
+     * - opcode -> UNSET
+     */
     companion object {
         const val TID_UNSET: Short = -1
         const val NEEDS_DATA: Short = -2
         const val INVALID_DATA: Short = -3
         const val TID_AFTER_ANNOTATION: Short = -4
-        const val TID_AFTER_FIELD_NAME: Short = -5
-        const val TID_START: Short = -6
-        const val TID_END: Short = -7
-        const val TID_EXPRESSION_GROUP: Short = -8
-        const val TID_EMPTY_ARGUMENT: Short = -9
+        const val TID_ON_FIELD_NAME: Short = -5
+        const val TID_AFTER_FIELD_NAME: Short = -6
+        const val TID_START: Short = -7
+        const val TID_END: Short = -8
+        const val TID_EXPRESSION_GROUP: Short = -9
+        const val TID_EMPTY_ARGUMENT: Short = -10
     }
 
     /**
@@ -59,7 +75,6 @@ abstract class ValueReaderBase(
         symbolTable: Array<String?>,
         macroTable: Array<Macro>,
     ) {
-        if (symbolTable.isEmpty()) throw IllegalStateException("symbolTable array may not be empty")
         check(symbolTable[0] == null)
         this.symbolTable = symbolTable
         this.macroTable = macroTable
@@ -87,15 +102,20 @@ abstract class ValueReaderBase(
     //  Returns the TokenType constant.
     private fun type(state: Int): Int {
         if (state < 0) {
-            return if (state == TID_END.toInt())
-                TokenTypeConst.END
-            else
-                TokenTypeConst.UNSET
+            return when (state) {
+                TID_END.toInt() -> TokenTypeConst.END
+                TID_ON_FIELD_NAME.toInt() -> TokenTypeConst.FIELD_NAME
+                TID_EXPRESSION_GROUP.toInt() -> TokenTypeConst.EXPRESSION_GROUP
+                TID_EMPTY_ARGUMENT.toInt() -> TokenTypeConst.EMPTY_ARGUMENT
+                else -> TokenTypeConst.UNSET
+            }
         }
         return IdMappings.TOKEN_TYPE_FOR_OPCODE[state]
     }
 
     override fun currentToken(): Int = type(opcode.toInt())
+
+    override fun isTokenSet(): Boolean = opcode != TID_UNSET
 
     override fun ionType(): IonType? {
         val opcode = opcode.toInt()
@@ -146,21 +166,30 @@ abstract class ValueReaderBase(
 
     override fun skip() {
         val opcode = opcode.toInt()
-        this.opcode = TID_UNSET
         val length = IdMappings.length(opcode, source)
         if (length >= 0) {
             source.position(source.position() + length)
         } else {
             when (val token = type(opcode)) {
                 TokenTypeConst.FIELD_NAME -> {
-                    // TODO: Refactor this to the StructReader.
-                    (this as StructReader).fieldName()
+                    // TODO: Move this to the StructReader if we can.
+                    val r = (this as StructReader)
+                    r.fieldNameSid()
+                    return
                 }
-                // TODO: make this better.
+                // TODO: make this better for delimited containers. Because of the way that `listValue()`
+                //   et al are implemented for delimited containers, this does a double read of the delimited
+                //   containers in order to skip it once. This problem is compounded when nested. Delimited
+                //   containers that are nested 1 layer deep will be skipped with a double read for each read
+                //   of the parent, so 4 reads to skip it once.
                 TokenTypeConst.LIST -> listValue().use {  }
                 TokenTypeConst.SEXP -> sexpValue().use {  }
                 TokenTypeConst.STRUCT -> structValue().use {
-                    while (it.nextToken() != TokenTypeConst.END) { it.skip() }
+                    while (it.nextToken() != TokenTypeConst.END) {
+//                        it.fieldName()
+//                        it.nextToken()
+                        it.skip()
+                    }
                     source.position((it as ValueReaderBase).source.position())
                 }
                 TokenTypeConst.ANNOTATIONS -> annotations().use {  }
@@ -172,6 +201,7 @@ abstract class ValueReaderBase(
                             source.position(it.source.position())
                         }
                     } else {
+//                        println("Evaluating a macro: " + source)
                         eexpArgs(macroTable[id].signature).use {
                             while (it.nextToken() != TokenTypeConst.END) { it.skip() }
                             source.position(it.source.position())
@@ -183,7 +213,14 @@ abstract class ValueReaderBase(
                 }
             }
         }
+        this.opcode = TID_UNSET
     }
+
+    private fun skipDelimitedListOrSexp() {
+
+    }
+
+
 
     override fun nullValue(): IonType {
         val opcode = opcode.toInt()
@@ -240,7 +277,7 @@ abstract class ValueReaderBase(
                 // Not really supported for Longs anyway.
                 TODO("Variable length integers")
             } else {
-                throw IonException("Not positioned on an int; found ${TokenTypeConst(opcode)}")
+                throw IonException("Not positioned on an int; found ${TokenTypeConst(opcode)} (opcode: $opcode)")
             }
         }
     }
@@ -388,13 +425,20 @@ abstract class ValueReaderBase(
             this.opcode = TID_UNSET
 
             val sacrificialReader = pool.getDelimitedStruct(start, symbolTable, macroTable)
-            while (true) {
-                val next = sacrificialReader.nextToken()
-                if (next == TokenTypeConst.END) break
-                sacrificialReader.fieldNameSid()
-                sacrificialReader.nextToken()
+//            while (true) {
+//                val next = sacrificialReader.nextToken()
+//                if (next == TokenTypeConst.END) break
+//                sacrificialReader.fieldNameSid()
+//                sacrificialReader.nextToken()
+//                sacrificialReader.skip()
+//            }
+            while (sacrificialReader.nextToken() != TokenTypeConst.END) {
+                // sacrificialReader.fieldNameSid()
+                // if (sacrificialReader.nextToken() == TokenTypeConst.ANNOTATIONS) sacrificialReader.nextToken()
                 sacrificialReader.skip()
             }
+
+
             val endPosition = sacrificialReader.source.position()
             sacrificialReader.close()
             source.position(endPosition)
@@ -474,7 +518,7 @@ abstract class ValueReaderBase(
             pool.getEExpArgs(position, maxPossibleLength, signature, symbolTable, macroTable)
         } else {
             source.position(position + length)
-            pool.getEExpArgs(position, position + length, signature, symbolTable, macroTable)
+            pool.getEExpArgs(position, length, signature, symbolTable, macroTable)
         }
         return reader
     }

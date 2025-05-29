@@ -59,12 +59,13 @@ class FlexSymReader(private val pool: ResourcePool) {
         } else {
             sid = -1
             val length = -flexSym
-//            val position = source.position()
-//            val scratchBuffer = pool.scratchBuffer
-//            scratchBuffer.limit(position + length)
-//            scratchBuffer.position(position)
-//            source.position(position + length)
-            text = pool.utf8Decoder.decode(source, length)
+            // TODO: This scratch buffer shouldn't be necessary.
+            val position = source.position()
+            val scratchBuffer = pool.scratchBuffer
+            scratchBuffer.limit(position + length)
+            scratchBuffer.position(position)
+            source.position(position + length)
+            text = pool.utf8Decoder.decode(scratchBuffer, length)
         }
     }
 }

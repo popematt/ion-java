@@ -23,9 +23,24 @@ class DelimitedStructReaderImpl internal constructor(
     macroTable: Array<Macro>,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), StructReader {
 
+
+    fun findEnd() {
+        source.mark()
+        while (nextToken() != TokenTypeConst.END) {
+            fieldNameSid()
+            if (nextToken() == TokenTypeConst.ANNOTATIONS) nextToken()
+            skip()
+        }
+        source.limit(source.position())
+        source.reset()
+    }
+
     private var flexSymReader: FlexSymReader = FlexSymReader(pool)
 
     override fun close() {
+        while (nextToken() != TokenTypeConst.END) {
+            skip()
+        }
         pool.delimitedStructs.add(this)
     }
 
@@ -44,7 +59,11 @@ class DelimitedStructReaderImpl internal constructor(
                 source.limit(position + 2)
                 return TokenTypeConst.END
             }
+            this.opcode = TID_ON_FIELD_NAME
             return TokenTypeConst.FIELD_NAME
+        }
+        if (opcode == TID_AFTER_FIELD_NAME.toInt()) {
+            this.opcode = TID_UNSET
         }
         return super.nextToken()
     }

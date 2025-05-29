@@ -54,39 +54,34 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     private lateinit var _templateReaderPool: TemplateResourcePool
     private val templateReaderPool: TemplateResourcePool
         get() {
-            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool()
+            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool.getInstance()
             return _templateReaderPool
         }
 
-    private lateinit var _ion10Reader: StreamReader_1_0
-    private val ion10Reader: StreamReader_1_0
-        get() {
-            if (! ::_ion10Reader.isInitialized) _ion10Reader = StreamReader_1_0(source)
-            return _ion10Reader
-        }
+    private lateinit var ion10Reader: StreamReader_1_0
 
-    private lateinit var _ion11Reader: ValueReaderBase
-    private val ion11Reader: ValueReaderBase
-        get() {
-            if (!::_ion11Reader.isInitialized) _ion11Reader = StreamReaderImpl(source).also {
-                it.initTables(ION_1_1_SYSTEM_SYMBOLS, ION_1_1_SYSTEM_MACROS)
-            }
 
-            return _ion11Reader
+    private lateinit var ion11Reader: ValueReaderBase
+
+
+    private fun initIon10Reader() {
+        ion10Reader = StreamReader_1_0(source.asReadOnlyBuffer())
+    }
+    private fun initIon11Reader() {
+        ion11Reader = StreamReaderImpl(source.asReadOnlyBuffer()).also {
+            it.initTables(ION_1_1_SYSTEM_SYMBOLS, ION_1_1_SYSTEM_MACROS)
         }
+    }
 
     private var topLevelReader: ValueReader = if (source.getInt(0).toUInt() == 0xE00101EAu) {
+        initIon11Reader()
         ion11Reader
     } else {
+        initIon10Reader()
         ion10Reader
     }
 
-    // TODO: Remove the macro table?
-    private var macroTable: Array<Macro> = emptyArray()
-
-    private val ionReaderShim = StreamWrappingIonReader()
-
-    private val encodingContextManager = EncodingContextManager(ionReaderShim)
+    private val encodingContextManager = EncodingContextManager(StreamWrappingIonReader())
 
     fun readAll(visitor: VisitingReaderCallback) {
         readTopLevelValues(topLevelReader, visitor)
@@ -197,8 +192,14 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     if (version != currentVersion) {
                         val position = reader.position()
                         reader = when (version) {
-                            ION_1_0 -> ion10Reader
-                            ION_1_1 -> ion11Reader
+                            ION_1_0 -> {
+                                if (!this::ion10Reader.isInitialized) { initIon10Reader() }
+                                ion10Reader
+                            }
+                            ION_1_1 -> {
+                                if (!this::ion11Reader.isInitialized) { initIon11Reader() }
+                                ion11Reader
+                            }
                             else -> throw IonException("Unknown Ion Version ${version ushr 8}.${version and 0xFF}")
                         }
                         reader.seekTo(position)
@@ -365,18 +366,22 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             }
             TokenTypeConst.EEXP -> {
                 val macroId = reader.eexpValue()
-                val macro = if (macroId < 0) {
+                val macro = if (macroId == -1) {
                     TODO("Look up textual macro addresses")
+                } else if (macroId < 0) {
+                    SystemMacro[macroId and Int.MAX_VALUE]!!
                 } else {
                     ion11Reader.macroTable[macroId]
                 }
                 val macroVisitor = visitor.onEExpression(macro)
-                if (macroVisitor != null) {
-                    reader.eexpArgs(macro.signature).use { r ->
-                        while (readValue(r, macroVisitor, alreadyOnToken = false));
+                reader.eexpArgs(macro.signature).use { args ->
+                    if (macroVisitor != null) {
+                        readAllValues(args, macroVisitor);
+                    } else {
+                        templateReaderPool.startEvaluation(macro, args).use {
+                            evaluator -> readAllValues(evaluator, visitor)
+                        }
                     }
-                } else {
-                    TODO("Use the macro evaluator")
                 }
             }
             TokenTypeConst.END -> return false
@@ -463,21 +468,38 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                         reader.skip()
                     }
                 }
+                TokenTypeConst.TDL_INVOCATION -> {
+                    val macro = (reader as TemplateReader).macroValue()
+                    val macroVisitor = visitor.onEExpression(macro)
+                    reader.eexpArgs(macro.signature).use { args ->
+                        if (macroVisitor != null) {
+                            readAllValues(args, macroVisitor)
+                        } else {
+                            templateReaderPool.startEvaluation(macro, args)
+                                .use { evaluator ->
+                                    readAllValues(evaluator, visitor)
+                                }
+                        }
+                    }
+                }
                 TokenTypeConst.EEXP -> {
                     val macroId = reader.eexpValue()
-                    val macro = if (macroId < 0) {
+                    val macro = if (macroId == -1) {
                         TODO("Look up textual macro addresses")
+                    } else if (macroId < 0) {
+                        SystemMacro[macroId and Int.MAX_VALUE]!!
                     } else {
                         ion11Reader.macroTable[macroId]
                     }
                     val macroVisitor = visitor.onEExpression(macro)
-                    if (macroVisitor != null) {
-                        reader.eexpArgs(macro.signature).use { r -> readAllValues(r, macroVisitor) }
-                    } else {
-                        reader.eexpArgs(macro.signature).use { args ->
-                            templateReaderPool.startEvaluation(macro, args).use { macroInvocation ->
-                                readAllValues(macroInvocation, visitor)
-                            }
+                    reader.eexpArgs(macro.signature).use { args ->
+                        if (macroVisitor != null) {
+                            readAllValues(args, macroVisitor)
+                        } else {
+                            templateReaderPool.startEvaluation(macro, args)
+                                .use { evaluator ->
+                                    readAllValues(evaluator, visitor)
+                                }
                         }
                     }
                 }
@@ -618,7 +640,11 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     }
 
     override fun close() {
-        if (::_ion10Reader.isInitialized) _ion10Reader.close()
-        if (::_ion11Reader.isInitialized) _ion11Reader.close()
+        if (this::ion10Reader.isInitialized) {
+            ion10Reader.close()
+        }
+        if (this::ion11Reader.isInitialized) {
+            ion11Reader.close()
+        }
     }
 }

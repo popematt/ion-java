@@ -2,6 +2,7 @@ package com.amazon.ion.v3
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
+import com.amazon.ion.v3.impl_1_1.*
 import java.nio.ByteBuffer
 
 /**
@@ -47,6 +48,8 @@ interface ValueReader: AutoCloseable {
      * Returns the type of token that the reader is positioned on, or `null` if it is not positioned on a value token.
      */
     fun currentToken(): Int
+
+    fun isTokenSet(): Boolean
 
     /**
      * Returns the [IonType] of the current value, or `null` if the reader is not positioned on a value.
@@ -209,6 +212,8 @@ interface ArgumentReader: ValueReader {
      * NOTE: Seeking backwards is _not_ free when one of the arguments is a delimited expression group or container.
      *
      * TODO: List which [TokenTypeConst] values this can return.
+     *
+     * It's probably not a good idea to mix this method with [nextToken]
      */
     fun seekToArgument(signatureIndex: Int): Int
 
@@ -237,5 +242,6 @@ interface StreamReader: ValueReader {
 
 interface TemplateReader: ValueReader {
     fun variableValue(): ValueReader
+    fun macroValue(): Macro
 }
 

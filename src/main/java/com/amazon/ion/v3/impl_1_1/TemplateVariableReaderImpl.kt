@@ -51,6 +51,7 @@ class TemplateVariableReaderImpl(
     // TODO: Make sure that this also returns END when at the end of the input.
     override fun skip() = TODO("Cannot skip a variable reference. Only the values it contains.")
     override fun currentToken(): Int = arguments.currentToken()
+    override fun isTokenSet(): Boolean = currentToken() != TokenTypeConst.UNSET
     override fun ionType(): IonType? = arguments.ionType()
     override fun valueSize(): Int = arguments.valueSize()
     override fun nullValue(): IonType = arguments.nullValue()
@@ -69,6 +70,9 @@ class TemplateVariableReaderImpl(
     override fun annotations(): AnnotationIterator = arguments.annotations()
     override fun doubleValue(): Double = arguments.doubleValue()
     override fun decimalValue(): Decimal = arguments.decimalValue()
+    override fun eexpValue(): Int = arguments.eexpValue()
+    override fun eexpArgs(signature: List<Macro.Parameter>) = arguments.eexpArgs(signature)
+    override fun eexpMacroRef(): MacroRef = arguments.eexpMacroRef()
 
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")
 

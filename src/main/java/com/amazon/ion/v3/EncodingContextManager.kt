@@ -11,7 +11,7 @@ import com.amazon.ion.v3.ion_reader.*
  * 1. Call a method to evaluate a directive or context-affecting system macros
  * 2. Call updateFlattenedTables
  */
-class EncodingContextManager(
+internal class EncodingContextManager(
     private val ionReaderShim: StreamWrappingIonReader
 ) {
 
@@ -52,7 +52,8 @@ class EncodingContextManager(
 
 
     private val moduleReader = ModuleReader2(ReaderAdapterIonReader(ionReaderShim))
-    private var defaultModule = ModuleReader2.Module("_", emptyList(), emptyList())
+    var defaultModule = ModuleReader2.Module("_", emptyList(), emptyList())
+        private set
     private val availableModules = mutableMapOf<String, ModuleReader2.Module>()
     private val activeModules = mutableListOf<ModuleReader2.Module>()
 
@@ -256,7 +257,7 @@ class EncodingContextManager(
         }
     }
 
-    fun updateFlattenedTables(initTables: (Array<String?>, Array<Macro>) -> Unit, additionalMacros: List<Macro>) {
+    inline fun updateFlattenedTables(initTables: (Array<String?>, Array<Macro>) -> Unit, additionalMacros: List<Macro>) {
         // TODO: Switch to use active encoding modules. Code is below.
         val symbols = ArrayList<String?>()
         symbols.add(null)

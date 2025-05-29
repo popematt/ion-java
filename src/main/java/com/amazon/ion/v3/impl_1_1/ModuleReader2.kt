@@ -91,6 +91,7 @@ internal class ModuleReader2(
 
     fun populateMacros(localAvailableBindings: Map<String, Module>, moduleMacros: MutableList<Pair<String?, Macro>>) {
         this.localAvailableBindings = localAvailableBindings
+        this.moduleMacros = moduleMacros
         while (true) {
             when (val valueType = readerAdapter.nextEncodingType()) {
                 IonType.SEXP -> {
@@ -158,7 +159,9 @@ internal class ModuleReader2(
                 ?: localAvailableBindings["_"]!!.getMacro(macroName)
                 ?: SystemMacro.getMacroOrSpecialForm(macroRef)
         } else {
-            moduleMacros[macroRef.id].second
+
+            moduleMacros.getOrNull(macroRef.id)?.second
+                ?: localAvailableBindings["_"]!!.getMacro(macroRef.id)
         }
     }
 }

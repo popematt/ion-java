@@ -26,7 +26,7 @@ internal class Annotations : Iterator<String?> {
     var annotationsSids = IntArray(8) { -1 }
     var annotationsSize = 0
 
-    fun storeAnnotations(annotationsIterator: AnnotationIterator, reader: ValueReader) {
+    fun storeAnnotations(annotationsIterator: AnnotationIterator) {
         var annotationCount = 0
         while (annotationsIterator.hasNext()) {
             if (annotationCount >= annotations.size) {
@@ -36,11 +36,7 @@ internal class Annotations : Iterator<String?> {
             annotationsIterator.next()
             val sid = annotationsIterator.getSid()
             annotationsSids[annotationCount] = sid
-            if (sid < 0) {
-                annotations[annotationCount] = annotationsIterator.getText()
-            } else {
-                annotations[annotationCount] = reader.lookupSid(sid)
-            }
+            annotations[annotationCount] = annotationsIterator.getText()
             annotationCount++
         }
         annotationsSize = annotationCount
