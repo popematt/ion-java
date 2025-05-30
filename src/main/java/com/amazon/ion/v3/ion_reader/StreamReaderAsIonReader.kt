@@ -179,8 +179,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 null
             }
             TokenTypeConst.TDL_INVOCATION -> {
-                // handleTdlMacro()
-                TODO()
+                handleMacroInvocation((reader as TemplateReader).macroValue())
                 null
             }
             else -> {
@@ -193,47 +192,6 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         return _next()
     }
 
-//    private fun handleTdlMacro() {
-//        val macro = (reader as TemplateReader).macroValue()
-//
-//        println("Evaluating TDL macro $macro")
-//
-//        val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro) {
-//            SystemMacro.AddSymbols -> {
-//                encodingContextManager.addOrSetSymbols(args, append = true)
-//                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-////                        println("Add symbols: ${ion11Reader.symbolTable.contentToString()}")
-//                true
-//            }
-//            SystemMacro.SetSymbols -> {
-//                encodingContextManager.addOrSetSymbols(args, append = false)
-//                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-////                        println("Set symbols: ${ion11Reader.symbolTable.contentToString()}")
-//                true
-//            }
-//            SystemMacro.AddMacros -> {
-//                encodingContextManager.addOrSetMacros(args, append = true)
-//                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-//                true
-//            }
-//            SystemMacro.SetMacros -> {
-//                encodingContextManager.addOrSetMacros(args, append = false)
-//                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
-//                true
-//            }
-//            SystemMacro.Use -> TODO("Use")
-//            else -> false
-//        }
-//
-//        if (!isShortCircuitEvaluation) {
-//            val eexp = templateReaderPool.startEvaluation(macro, args)
-//            readerManager.pushReader(eexp)
-//            reader = eexp
-//            type = null
-//        }
-//    }
-
-
     private fun handleEExp() {
         val macroId = reader.eexpValue()
         val macro = if (macroId < 0) {
@@ -241,10 +199,14 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         } else {
             ion11Reader.macroTable[macroId]
         }
+        handleMacroInvocation(macro)
+    }
 
-        println("Evaluating macro $macro")
+    private fun handleMacroInvocation(macro: Macro) {
 
-        val args = reader.eexpArgs(macro.signature)
+//        println("Evaluating macro $macro")
+
+        val args = reader.macroArguments(macro.signature)
 
         val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro) {
             SystemMacro.AddSymbols -> {

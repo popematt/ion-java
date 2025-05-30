@@ -154,7 +154,7 @@ interface ValueReader: AutoCloseable {
      * For example, you would use this for transcoding E-expressions between text and binary or
      * for hydrating a POJO with a known macro definition without using the evaluator.
      */
-    fun eexpArgs(signature: List<Macro.Parameter>): ArgumentReader = TODO()
+    fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader = TODO()
 
     /**
      * Returns the major/minor version of the current IVM as two bytes in a short.

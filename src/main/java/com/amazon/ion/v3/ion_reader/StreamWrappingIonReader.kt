@@ -7,21 +7,12 @@ import com.amazon.ion.IonReader
 import com.amazon.ion.IonType
 import com.amazon.ion.SymbolTable
 import com.amazon.ion.SymbolToken
-import com.amazon.ion.SystemSymbols
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl._Private_Utils
-import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
-import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.ModuleReader
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_0_SYMBOL_TABLE
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.math.BigDecimal
 import java.math.BigInteger
-import java.nio.ByteBuffer
 import java.util.Date
 
 /**
@@ -125,7 +116,7 @@ class StreamWrappingIonReader: IonReader {
                 val macroId = reader.eexpValue()
                 // TODO: Should `lookupMacro` be part of the `ValueReader` API?
                 val macro = (reader as ValueReaderBase).macroTable[macroId]
-                val args = reader.eexpArgs(macro.signature)
+                val args = reader.macroArguments(macro.signature)
                 val eexp = templateReaderPool.startEvaluation(macro, args)
                 readerManager.pushReader(eexp)
                 reader = eexp

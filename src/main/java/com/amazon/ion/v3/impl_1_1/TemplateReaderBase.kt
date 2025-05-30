@@ -68,13 +68,14 @@ abstract class TemplateReaderBase(
         return pool.getVariable(info.arguments, expr.signatureIndex)
     }
 
-    override fun macroValue(): MacroInvocationReader {
-        val expr = takeCurrentExpression<MacroInvocation>()
-        val arguments = pool.arguments.removeLastOrNull()
-            ?.apply { init(info, expr.startInclusive, expr.endExclusive) }
-            ?: TemplateArgumentReaderImpl(pool, info, expr.startInclusive, expr.endExclusive)
+    override fun macroValue(): Macro {
+        val expr = (currentExpression as MacroInvocation)
+        return expr.macro
+    }
 
-        return pool.startEvaluation(expr.macro, arguments)
+    override fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader {
+        val expr = takeCurrentExpression<MacroInvocation>()
+        return pool.getArguments(info, expr.startInclusive, expr.endExclusive)
     }
 
     protected inline fun <reified T: Expression> takeCurrentExpression(): T {

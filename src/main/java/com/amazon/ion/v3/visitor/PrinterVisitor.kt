@@ -9,10 +9,18 @@ import com.amazon.ion.v3.TokenType
 import java.math.BigInteger
 import java.nio.ByteBuffer
 
-/**
- * A visitor that writes everything to an [IonWriter].
- */
-class PrinterVisitor: VisitingReaderCallback {
+object PrinterVisitorTop: VisitingReaderCallbackBase() {
+    override fun onValue(type: TokenType): VisitingReaderCallback? {
+        println()
+        return PrinterVisitor.onValue(type)
+    }
+    override fun onAnnotation(annotations: AnnotationIterator): VisitingReaderCallback? {
+        println()
+        return PrinterVisitor.onAnnotation(annotations)
+    }
+}
+
+object PrinterVisitor: VisitingReaderCallback {
     override fun onAnnotation(annotations: AnnotationIterator) = apply {
         while (annotations.hasNext()) {
             annotations.next()
@@ -29,9 +37,9 @@ class PrinterVisitor: VisitingReaderCallback {
     override fun onListStart() = print("[")
     override fun onSexpStart() = print("(")
     override fun onStructStart() = print("{")
-    override fun onListEnd() = print("]")
-    override fun onSexpEnd() = print(")")
-    override fun onStructEnd() = print("}")
+    override fun onListEnd() = print("], ")
+    override fun onSexpEnd() = print("), ")
+    override fun onStructEnd() = print("}, ")
 
     override fun onNull(value: IonType) = print("null.$value, ")
     override fun onBoolean(value: Boolean) = print("$value, ")
@@ -45,5 +53,4 @@ class PrinterVisitor: VisitingReaderCallback {
 
     override fun onClob(value: ByteBuffer) = print("<clob>, ")
     override fun onBlob(value: ByteBuffer) = print("<blob>, ")
-
 }

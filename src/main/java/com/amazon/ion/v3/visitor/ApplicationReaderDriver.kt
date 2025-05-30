@@ -275,35 +275,35 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     // TODO: Check for macros that could produce system values
                     // TODO: When there's a system value, decrement i
                     when (macro) {
-                        SystemMacro.SetSymbols -> reader.eexpArgs(macro.signature).use {
+                        SystemMacro.SetSymbols -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetSymbols(it, append = false)
                             encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
                         }
-                        SystemMacro.AddSymbols -> reader.eexpArgs(macro.signature).use {
+                        SystemMacro.AddSymbols -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetSymbols(it, append = true)
                             encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
                         }
-                        SystemMacro.SetMacros -> reader.eexpArgs(macro.signature).use {
+                        SystemMacro.SetMacros -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetMacros(it, append = false)
                             encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
                         }
-                        SystemMacro.AddMacros -> reader.eexpArgs(macro.signature).use {
+                        SystemMacro.AddMacros -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetMacros(it, append = true)
                             encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
                         }
-                        SystemMacro.Use -> reader.eexpArgs(macro.signature).use {
+                        SystemMacro.Use -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.invokeUse(it)
                             encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
                         }
                         else -> {
                             val macroVisitor = visitor.onEExpression(macro)
                             if (macroVisitor != null) {
-                                reader.eexpArgs(macro.signature).use { r -> readAllValues(r, macroVisitor) }
+                                reader.macroArguments(macro.signature).use { r -> readAllValues(r, macroVisitor) }
                             } else {
                                 // TODO: Since we're at the top level, we need to read as top-level values in case a directive
                                 //       is produced.
                                 // Start a macro evaluation session
-                                reader.eexpArgs(macro.signature).use { args ->
+                                reader.macroArguments(macro.signature).use { args ->
                                     templateReaderPool
                                         .startEvaluation(macro, args)
                                         .use { macroInvocation ->
@@ -374,7 +374,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     ion11Reader.macroTable[macroId]
                 }
                 val macroVisitor = visitor.onEExpression(macro)
-                reader.eexpArgs(macro.signature).use { args ->
+                reader.macroArguments(macro.signature).use { args ->
                     if (macroVisitor != null) {
                         readAllValues(args, macroVisitor);
                     } else {
@@ -384,6 +384,20 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     }
                 }
             }
+            TokenTypeConst.TDL_INVOCATION -> {
+                val macro = (reader as TemplateReader).macroValue()
+                val macroVisitor = visitor.onEExpression(macro)
+                reader.macroArguments(macro.signature).use { args ->
+                    if (macroVisitor != null) {
+                        readAllValues(args, macroVisitor);
+                    } else {
+                        templateReaderPool.startEvaluation(macro, args).use {
+                                evaluator -> readAllValues(evaluator, visitor)
+                        }
+                    }
+                }
+            }
+            TokenTypeConst.EMPTY_ARGUMENT -> return false
             TokenTypeConst.END -> return false
             TokenTypeConst.VARIABLE_REF -> {
                 (reader as TemplateReader).variableValue().use { variable ->
@@ -471,7 +485,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 TokenTypeConst.TDL_INVOCATION -> {
                     val macro = (reader as TemplateReader).macroValue()
                     val macroVisitor = visitor.onEExpression(macro)
-                    reader.eexpArgs(macro.signature).use { args ->
+                    reader.macroArguments(macro.signature).use { args ->
                         if (macroVisitor != null) {
                             readAllValues(args, macroVisitor)
                         } else {
@@ -492,7 +506,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                         ion11Reader.macroTable[macroId]
                     }
                     val macroVisitor = visitor.onEExpression(macro)
-                    reader.eexpArgs(macro.signature).use { args ->
+                    reader.macroArguments(macro.signature).use { args ->
                         if (macroVisitor != null) {
                             readAllValues(args, macroVisitor)
                         } else {
@@ -502,6 +516,9 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                                 }
                         }
                     }
+                }
+                TokenTypeConst.EMPTY_ARGUMENT -> {
+                    return
                 }
                 TokenTypeConst.END -> return
                 TokenTypeConst.VARIABLE_REF -> {

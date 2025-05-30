@@ -1097,6 +1097,97 @@ class TypedReadersTest {
                 }
             }
 
+
+            val smallLog11 = """
+            {
+  StartTime: 2020-11-05T07:18:59.968+00:00,
+  EndTime: 2020-11-05T07:18:59+00:00,
+  Marketplace: 'us-east-1',
+  Program: LambdaFrontendInvokeService,
+  Time: 3.267017e6,
+  Operation: ReserveSandbox2,
+  Properties: {
+    FrontendInstanceId: 'i-0505be8aa9972815b',
+    AccountId: '103403959176',
+    RequestId: 'f0bc3259-06e9-5ccb-96f1-6a44af76d4aa',
+    PID: '2812@ip-10-0-16-227',
+    WorkerId: 'i-0c891b196c563ba4c',
+    FrontendInternalAZ: USMA7,
+    WorkerManagerInstanceId: 'i-070b7692b9a6aba7e',
+    SandboxId: '61fa4c30-d51d-40bb-82e0-a6195e27ca10',
+    Thread: 'coral-orchestrator-136',
+    FrontendPublicAZ: 'us-east-1a',
+    WorkerConnectPort: '2503',
+  },
+  Timing: [
+    {
+      Name: 'Time:Warm',
+      Sum: 3.267271041870117e0,
+      Unit: ms,
+      Count: 1,
+    },
+  ],
+  Counters: [
+    {
+      Name: Attempt,
+      Sum: 0e0,
+      Unit: '',
+      Count: 1,
+    },
+    {
+      Name: Success,
+      Sum: 1e0,
+      Unit: '',
+      Count: 1,
+    },
+  ],
+  Metrics: [
+    {
+      Name: Error,
+      Samples: [
+        {
+          Value: 0e0,
+          Repeat: 1,
+        },
+      ],
+      Unit: '',
+    },
+    {
+      Name: Fault,
+      Samples: [
+        {
+          Value: 0e0,
+          Repeat: 1,
+        },
+      ],
+      Unit: '',
+    },
+  ],
+}
+{
+  StartTime: 2020-11-05T07:18:59.971+00:00,
+  EndTime: 2020-11-05T07:18:59+00:00,
+  Marketplace: 'us-east-1',
+  Program: LambdaFrontendInvokeService,
+  Time: 3e3,
+  Operation: 'WSKF:GetLatestKeys',
+  Properties: {
+    FrontendInstanceId: 'i-0505be8aa9972815b',
+    FrontendPublicAZ: 'us-east-1a',
+    PID: '2812@ip-10-0-16-227',
+    FrontendInternalAZ: USMA7,
+  },
+  Timing: [
+    {
+      Name: Latency,
+      Sum: 2.0000000949949026e-3,
+      Unit: ms,
+      Count: 1,
+    },
+  ],
+}
+            """
+
             @Test
             fun `a big one for Ion 1 1 with macros`() {
                 val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
@@ -1105,12 +1196,7 @@ class TypedReadersTest {
                 FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
                     val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
                     ApplicationReaderDriver(mappedByteBuffer).use {
-                        var n = 0
-                        while(n < 5) {
-                            println(n++)
-                            it.read(PrinterVisitor())
-                            println()
-                        }
+                        it.readAll(PrinterVisitorTop)
                     }
                 }
             }
@@ -1608,7 +1694,7 @@ class TypedReadersTest {
             }
 
             @Test
-            fun `a big one for Ion 1 1 with macros`() {
+            fun `a medium one for Ion 1 1 with macros`() {
                 val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
 
                 // "/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n"
@@ -1624,6 +1710,23 @@ class TypedReadersTest {
                     }
                 }
             }
+
+            @Test
+            fun `a big one for Ion 1 1 with macros`() {
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n")
+
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    StreamReaderAsIonReader(mappedByteBuffer).use {
+                        val iter = ION.iterate(it)
+                        while (iter.hasNext()) {
+                            val value = iter.next()
+                            println(value)
+                        }
+                    }
+                }
+            }
+
 
             fun StreamReaderAsIonReader.expect(block: Iterator<IonValue>.() -> Unit) {
                 use {

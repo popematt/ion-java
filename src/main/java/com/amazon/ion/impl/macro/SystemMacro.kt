@@ -276,16 +276,17 @@ enum class SystemMacro(
             .associateBy { it.macroName }
 
         // TODO: Once all of the macros are implemented, replace this with an array as in SystemSymbols_1_1
-        private val MACROS_BY_ID: Map<Byte, SystemMacro> = SystemMacro.entries
+        private val MACROS_BY_ID: Array<SystemMacro> = SystemMacro.entries
             .filterNot { it.id < 0 }
-            .associateBy { it.id }
+            .sortedBy { it.id }
+            .toTypedArray()
 
         @JvmStatic
         fun size() = MACROS_BY_ID.size
 
         /** Gets a [SystemMacro] by its address in the system table */
         @JvmStatic
-        operator fun get(id: Int): SystemMacro? = MACROS_BY_ID[id.toByte()]
+        operator fun get(id: Int): SystemMacro? = MACROS_BY_ID[id]
 
         /** Gets, by name, a [SystemMacro] with an address in the system table (i.e. that can be invoked as E-Expressions) */
         @JvmStatic

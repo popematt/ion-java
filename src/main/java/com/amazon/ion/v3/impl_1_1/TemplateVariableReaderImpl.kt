@@ -2,7 +2,6 @@ package com.amazon.ion.v3.impl_1_1
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
@@ -71,7 +70,7 @@ class TemplateVariableReaderImpl(
     override fun doubleValue(): Double = arguments.doubleValue()
     override fun decimalValue(): Decimal = arguments.decimalValue()
     override fun eexpValue(): Int = arguments.eexpValue()
-    override fun eexpArgs(signature: List<Macro.Parameter>) = arguments.eexpArgs(signature)
+    override fun macroArguments(signature: List<Macro.Parameter>) = arguments.macroArguments(signature)
     override fun eexpMacroRef(): MacroRef = arguments.eexpMacroRef()
 
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")

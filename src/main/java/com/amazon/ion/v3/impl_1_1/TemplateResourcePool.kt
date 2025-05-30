@@ -1,6 +1,6 @@
 package com.amazon.ion.v3.impl_1_1
 
-import com.amazon.ion.SymbolToken
+import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import java.io.Closeable
@@ -44,35 +44,72 @@ class TemplateResourcePool private constructor(): Closeable {
     val variables = ArrayList<TemplateVariableReaderImpl>(8)
     val arguments = ArrayList<TemplateArgumentReaderImpl>()
 
-    fun startEvaluation(macro: Macro, arguments: ArgumentReader): MacroInvocationReader {
-        if (macro is TemplateMacro) {
-            val reader = invocations.removeLastOrNull()
-            if (reader != null) {
-                reader.init(TemplateInvocationInfoImpl(macro.body, macro.signature, arguments), 0, macro.body.size)
-                return reader
-            } else {
-                return MacroInvocationReader(this, TemplateInvocationInfoImpl(macro.body, macro.signature, arguments), 0, macro.body.size)
-            }
-        } else if (macro is SystemMacro) {
-            if (macro.body != null) {
-                val reader = invocations.removeLastOrNull()
-                if (reader != null) {
-                    reader.init(TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments), 0, macro.body!!.size)
-                    return reader
-                } else {
-                    return MacroInvocationReader(this, TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments), 0, macro.body!!.size)
-                }
-            } else {
-                // TODO:
-                //  * `values` should be elided
-                //  * `none` should be replaced with an empty stream of some sort
+    fun startEvaluation(macro: Macro, arguments: ArgumentReader): ValueReader {
+        return when (macro) {
+            is TemplateMacro -> invokeTemplate(macro, arguments)
+            is SystemMacro -> when (macro) {
+                // All system macros that produce system values are evaluated using templates because
+                // the hard-coded implementation only applies at the top level of the stream, and is
+                // handled elsewhere
+                SystemMacro.Values -> getVariable(arguments, 0)
+                SystemMacro.None -> NoneReader
+                SystemMacro.Meta -> NoneReader
+                SystemMacro.Default -> invokeDefault(arguments)
+                SystemMacro.IfNone -> invokeIfNone(arguments)
+                SystemMacro.IfSome -> invokeIfSome(arguments)
 
-                TODO("System macros with hard coded implementations")
+                // TODO: Remove null check once all hard coded implementations are complete
+                else -> if (macro.body != null) {
+                    invokeTemplate(macro, arguments)
+                } else {
+                    // TODO:
+                    //  * `values` should be elided
+                    //  * `none` should be replaced with an empty stream of some sort
+                    TODO("System macros with hard coded implementations: $macro")
+                }
             }
-        } else {
-            TODO("unreachable")
         }
     }
+
+    private fun invokeTemplate(macro: Macro, arguments: ArgumentReader): ValueReader {
+        val reader = invocations.removeLastOrNull()
+        if (reader != null) {
+            reader.init(TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments), 0, macro.body!!.size)
+            return reader
+        } else {
+            return MacroInvocationReader(this, TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments), 0, macro.body!!.size)
+        }
+    }
+
+    private fun invokeDefault(arguments: ArgumentReader): ValueReader {
+        val firstArg = arguments.seekToArgument(0)
+        // TODO: This doesn't properly handle the case where there's an empty expression group in binary
+        //       Same thing for all of the `if` macros
+        if (firstArg == TokenTypeConst.EMPTY_ARGUMENT) {
+            return getVariable(arguments, 1)
+        } else {
+            return getVariable(arguments, 0)
+        }
+    }
+
+    private fun invokeIfNone(arguments: ArgumentReader): ValueReader {
+        val firstArg = arguments.seekToArgument(0)
+        return if (firstArg == TokenTypeConst.EMPTY_ARGUMENT) {
+            getVariable(arguments, 1)
+        } else {
+            getVariable(arguments, 2)
+        }
+    }
+
+    fun invokeIfSome(arguments: ArgumentReader): ValueReader {
+        val firstArg = arguments.seekToArgument(0)
+        return if (firstArg != TokenTypeConst.EMPTY_ARGUMENT) {
+            getVariable(arguments, 1)
+        } else {
+            getVariable(arguments, 2)
+        }
+    }
+
 
     fun getSequence(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): TemplateSequenceReaderImpl {
         val reader = sequences.removeLastOrNull()
@@ -112,6 +149,12 @@ class TemplateResourcePool private constructor(): Closeable {
         } else {
             return TemplateVariableReaderImpl(this, index, argReader)
         }
+    }
+
+    fun getArguments(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): ArgumentReader {
+        return arguments.removeLastOrNull()
+            ?.apply { init(info, startInclusive, endExclusive) }
+            ?: TemplateArgumentReaderImpl(this, info, startInclusive, endExclusive)
     }
 
     override fun close() {

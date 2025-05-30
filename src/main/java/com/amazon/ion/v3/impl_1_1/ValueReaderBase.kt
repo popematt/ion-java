@@ -196,13 +196,13 @@ abstract class ValueReaderBase(
                 TokenTypeConst.EEXP -> {
                     val id = eexpValue()
                     if (id < 0) {
-                        eexpArgs(SystemMacro[id and 0xFF]!!.signature).use {
+                        macroArguments(SystemMacro[id and 0xFF]!!.signature).use {
                             while (it.nextToken() != TokenTypeConst.END) { it.skip() }
                             source.position(it.source.position())
                         }
                     } else {
 //                        println("Evaluating a macro: " + source)
-                        eexpArgs(macroTable[id].signature).use {
+                        macroArguments(macroTable[id].signature).use {
                             while (it.nextToken() != TokenTypeConst.END) { it.skip() }
                             source.position(it.source.position())
                         }
@@ -497,7 +497,7 @@ abstract class ValueReaderBase(
         }
     }
 
-    override fun eexpArgs(signature: List<Macro.Parameter>): EExpArgumentReaderImpl {
+    override fun macroArguments(signature: List<Macro.Parameter>): EExpArgumentReaderImpl {
         // TODO: Add a state value representing "start of arguments", and check for it here
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
