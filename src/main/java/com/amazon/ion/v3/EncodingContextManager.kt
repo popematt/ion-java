@@ -3,6 +3,7 @@ package com.amazon.ion.v3
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
+import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.ModuleReader2
 import com.amazon.ion.v3.ion_reader.*
 
@@ -83,7 +84,8 @@ internal class EncodingContextManager(
      */
     fun addOrSetSymbols(argReader: ArgumentReader, append: Boolean) {
         val newSymbols = if (append) defaultModule.symbols.toMutableList() else mutableListOf()
-        argReader.nextToken()
+        val t = argReader.seekToArgument(0)
+//        println(TokenTypeConst(t))
         argReader.expressionGroup().use { sl ->
             ionReaderShim.init(sl)
             moduleReader.readSymbolsList(newSymbols)
@@ -98,9 +100,15 @@ internal class EncodingContextManager(
      */
     fun addOrSetMacros(argReader: ArgumentReader, append: Boolean) {
         val moduleMacros = if (append) defaultModule.macros.toMutableList() else mutableListOf()
-        argReader.nextToken()
+        argReader.seekToArgument(0)
         argReader.expressionGroup().use { sl ->
             ionReaderShim.init(sl)
+
+            // TODO: I wonder if we can get a performance improvement by using a threadlocal cache of
+            //       bytes to macro definitions. A radix tree could be a very quick lookup. We would
+            //       only need to use the signature and body as the key. This makes the assumption that
+            //       the same macros are usually defined the same way. However, this breaks if there's
+            //       a dependency that is different. :/
             moduleReader.populateMacros(availableModules, moduleMacros)
         }
         // TODO: Should this be a copy-on-write instead of mutation?
@@ -110,58 +118,6 @@ internal class EncodingContextManager(
 
     fun invokeUse(argumentReader: ArgumentReader) {
         TODO("`use` macro not implemented yet")
-    }
-
-    // TODO: Do we even need this?
-    private fun readSymbolTable10(structReader: StructReader): Array<String?> {
-        // NOTE: no need to use ionReaderShim since there will be no macros.
-        val newSymbols = ArrayList<String?>()
-        var isLstAppend = false
-        while (true) {
-            val token = structReader.nextToken()
-            if (token == TokenTypeConst.END) {
-                break
-            }
-            val fieldName = structReader.fieldNameSid()
-            when (fieldName) {
-                SystemSymbols.IMPORTS_SID -> {
-                    val importsToken = structReader.nextToken()
-                    when (importsToken) {
-                        TokenTypeConst.SYMBOL -> {
-                            if (structReader.symbolValueSid() == SystemSymbols.ION_SYMBOL_TABLE_SID) {
-                                isLstAppend = true
-                            }
-                        }
-                        TokenTypeConst.LIST -> {
-                            TODO("Imports not supported yet.")
-                        }
-                        else -> {
-                            // TODO: Should this be an error?
-                        }
-                    }
-                }
-                SystemSymbols.SYMBOLS_SID -> {
-                    structReader.nextToken()
-                    structReader.listValue().use { listReader ->
-                        while (true) {
-                            when (val t = listReader.nextToken()) {
-                                TokenTypeConst.END -> break
-                                TokenTypeConst.STRING -> newSymbols.add(listReader.stringValue())
-                                TokenTypeConst.NULL -> newSymbols.add(null)
-                                else -> throw IonException("Unexpected token type in symbols list: $t")
-                            }
-                        }
-                    }
-                }
-                else -> {}
-            }
-        }
-
-        val startOfNewSymbolTable = if (isLstAppend) defaultModule.symbols.toTypedArray() else ION_1_0_SYMBOL_TABLE
-        val newSymbolTable = Array<String?>(newSymbols.size + startOfNewSymbolTable.size) { null }
-        System.arraycopy(startOfNewSymbolTable, 0, newSymbolTable, 0, startOfNewSymbolTable.size)
-        System.arraycopy(newSymbols.toArray(), 0, newSymbolTable, startOfNewSymbolTable.size, newSymbols.size)
-        return newSymbolTable
     }
 
     fun readLegacySymbolTable11(structReader: StructReader) {
@@ -257,13 +213,19 @@ internal class EncodingContextManager(
         }
     }
 
-    inline fun updateFlattenedTables(initTables: (Array<String?>, Array<Macro>) -> Unit, additionalMacros: List<Macro>) {
+    fun updateFlattenedTables(valueReaderBase: ValueReaderBase, additionalMacros: List<Macro>) {
         // TODO: Switch to use active encoding modules. Code is below.
         val symbols = ArrayList<String?>()
         symbols.add(null)
         symbols.addAll(defaultModule.symbols)
-        initTables(symbols.toTypedArray(), defaultModule.macros.map { (_, m) -> m }.toMutableList().also { it.addAll(additionalMacros) }.toTypedArray())
 
+        valueReaderBase.initTables(
+            symbols.toTypedArray(),
+            defaultModule.macros.map { (_, m) -> m }
+                .toMutableList()
+                .also { it.addAll(additionalMacros) }
+                .toTypedArray()
+        )
         // Active encoding modules code
 //        // TODO: Make this less wasteful in terms of allocations.
 //        val symbols = ArrayList<String?>()

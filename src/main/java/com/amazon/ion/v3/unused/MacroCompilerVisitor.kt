@@ -1,11 +1,20 @@
-package com.amazon.ion.v3.visitor
+package com.amazon.ion.v3.unused
 
-import com.amazon.ion.*
-import com.amazon.ion.impl.*
-import com.amazon.ion.impl.macro.*
-import com.amazon.ion.util.*
+import com.amazon.ion.Decimal
+import com.amazon.ion.IonException
+import com.amazon.ion.IonType
+import com.amazon.ion.SymbolToken
+import com.amazon.ion.Timestamp
+import com.amazon.ion.impl._Private_IonTextAppender
+import com.amazon.ion.impl._Private_Utils
+import com.amazon.ion.impl.macro.Expression
+import com.amazon.ion.impl.macro.Macro
+import com.amazon.ion.impl.macro.TemplateMacro
 import com.amazon.ion.util.confirm
-import com.amazon.ion.v3.*
+import com.amazon.ion.v3.AnnotationIterator
+import com.amazon.ion.v3.TokenType
+import com.amazon.ion.v3.visitor.VisitingReaderCallback
+import com.amazon.ion.v3.visitor.VisitingReaderCallbackBase
 import java.math.BigInteger
 import java.nio.ByteBuffer
 

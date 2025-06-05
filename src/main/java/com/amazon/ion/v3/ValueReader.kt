@@ -137,17 +137,19 @@ interface ValueReader: AutoCloseable {
 
     fun decimalValue(): Decimal
 
-    // TODO: Change this to return a macro ID. Then, add another method that can be used to
-    //       read an E-Expr that accepts a macro definition as its argument, or maybe there's
-    //       a separate evaluating reader that gets used instead.
     /**
      * Returns the current macro id.
      * If the returned value is positive, it is exactly the macro address in user space.
      * If the returned value is negative, it is `(id or Int.MIN_VALUE)` where `id` is a System Macro ID.
      */
-    fun eexpValue(): Int = throw IonException("E-expressions are not supported by this reader")
+//    fun eexpValue(): Int = throw IonException("E-expressions are not supported by this reader")
+//
+//    fun eexpMacroRef(): MacroRef = throw IonException("E-expressions are not supported by this reader")
 
-    fun eexpMacroRef(): MacroRef = throw IonException("E-expressions are not supported by this reader")
+    // TODO: Re-introduce a function that can get a macro reference. Used for informational purposes only,
+    //       and/or system-level transcoding.
+
+    fun macroValue(): Macro = throw IonException("Macro invocations are not supported by this reader.")
 
     /**
      * Very low level API. Do not use unless you are trying to bypass macro evaluation.
@@ -155,6 +157,11 @@ interface ValueReader: AutoCloseable {
      * for hydrating a POJO with a known macro definition without using the evaluator.
      */
     fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader = TODO()
+
+    /**
+     * Returns a sequence of values.
+     */
+    fun expressionGroup(): SequenceReader
 
     /**
      * Returns the major/minor version of the current IVM as two bytes in a short.
@@ -197,12 +204,11 @@ interface SequenceReader: ValueReader
 interface ListReader: SequenceReader, ValueReader
 interface SexpReader: SequenceReader, ValueReader
 
-// TODO: Do we really need this?
-interface EexpReader: ValueReader
-
-// TODO: Do we really need this?
 interface ExpressionGroupReader: SequenceReader, ValueReader {
     // Encoding Type?
+
+    // TODO: Allow reading many tagless values at once. E.g.:
+    fun readInts(dest: Array<Int>, offset: Int, count: Int): Int
 }
 
 interface ArgumentReader: ValueReader {
@@ -217,10 +223,9 @@ interface ArgumentReader: ValueReader {
      */
     fun seekToArgument(signatureIndex: Int): Int
 
-    /**
-     * Returns a sequence of values.
-     */
-    fun expressionGroup(): SequenceReader
+    fun seekToBeforeArgument(signatureIndex: Int)
+
+    val signature: List<Macro.Parameter>
 }
 
 interface StructReader: ValueReader {
@@ -241,7 +246,6 @@ interface StreamReader: ValueReader {
 }
 
 interface TemplateReader: ValueReader {
-    fun variableValue(): ValueReader
-    fun macroValue(): Macro
+    // TODO: Consider adding something that exposes the variable index.
 }
 

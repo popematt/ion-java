@@ -17,7 +17,7 @@ import java.nio.ByteBuffer
  * TODO: I think we can abstract some of the common functionality, such as managing multiple readers,
  *       into a common base class.
  */
-class ApplicationReaderDriver2 @JvmOverloads constructor(
+class ApplicationReaderDriver @JvmOverloads constructor(
     private val source: ByteBuffer,
     private val additionalMacros: List<Macro> = emptyList()
     // TODO: Catalog, options?
@@ -62,15 +62,16 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
     private lateinit var ion10Reader: StreamReader_1_0
 
 
-    private lateinit var ion11Reader: ValueReaderBase
+    lateinit internal var ion11Reader: ValueReaderBase
 
-    private val readerManager = ReaderManager()
 
     private fun initIon10Reader() {
         ion10Reader = StreamReader_1_0(source.asReadOnlyBuffer())
     }
     private fun initIon11Reader() {
-        ion11Reader = StreamReaderImpl(source.asReadOnlyBuffer())
+        ion11Reader = StreamReaderImpl(source.asReadOnlyBuffer()).also {
+            it.initTables(ION_1_1_SYSTEM_SYMBOLS, ION_1_1_SYSTEM_MACROS)
+        }
     }
 
     private var topLevelReader: ValueReader = if (source.getInt(0).toUInt() == 0xE00101EAu) {
@@ -87,7 +88,6 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
         readTopLevelValues(topLevelReader, visitor)
     }
 
-    // This is broken.
     fun readN(n: Int, visitor: VisitingReaderCallback) {
         readTopLevelValues(topLevelReader, visitor, n)
     }
@@ -123,18 +123,6 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
         } else {
             reader.skip()
         }
-    }
-
-    private fun maybeVisitSymbol(reader: ValueReader, visitor: VisitingReaderCallback) {
-        visitor.onValue(TokenType.SYMBOL)?.let {
-            val sid = reader.symbolValueSid()
-            val text = if (sid < 0) {
-                reader.symbolValue()
-            } else {
-                reader.lookupSid(sid)
-            }
-            it.onSymbol(text, sid)
-        } ?: reader.skip()
     }
 
     private fun maybeVisitList(reader: ValueReader, visitor: VisitingReaderCallback) {
@@ -174,8 +162,10 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
         val v = visitor.onValue(TokenType.STRUCT)
         if (v != null) {
             v.onStructStart()
-            reader.structValue().use { r -> readAllStructFields(r, v) }
-            v.onStructEnd()
+            reader.structValue().use { r ->
+                readAllTheFields(r, v)
+                v.onStructEnd()
+            }
         } else {
             reader.skip()
         }
@@ -191,13 +181,12 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
         var reader = originalReader
         var annotatedValueVisitor: VisitingReaderCallback? = null
         var i = 0
-        while (i++ < max) {
+        while (i < max) {
 
             val visitor = annotatedValueVisitor ?: originalVisitor
 
             when (val token = reader.nextToken()) {
                 TokenTypeConst.IVM -> {
-                    i-- // Since an IVM doesn't count as a value.
 
                     val currentVersion = reader.getIonVersion().toInt()
                     val version = reader.ivm().toInt()
@@ -227,34 +216,59 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     }
                     continue
                 }
-                TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue()) ?: reader.skip()
-                TokenTypeConst.BOOL -> visitor.onValue(TokenType.BOOL)?.onBoolean(reader.booleanValue()) ?: reader.skip()
-                TokenTypeConst.INT -> visitor.onValue(TokenType.INT)?.onLongInt(reader.longValue()) ?: reader.skip()
-                TokenTypeConst.FLOAT -> visitor.onValue(TokenType.FLOAT)?.onFloat(reader.doubleValue()) ?: reader.skip()
-                TokenTypeConst.DECIMAL -> visitor.onValue(TokenType.DECIMAL)?.onDecimal(reader.decimalValue()) ?: reader.skip()
-                TokenTypeConst.TIMESTAMP -> visitor.onValue(TokenType.TIMESTAMP)?.onTimestamp(reader.timestampValue()) ?: reader.skip()
-                TokenTypeConst.STRING -> {
-                    val v = visitor.onValue(TokenType.STRING)
-                    if (v != null) {
-                        v.onString(reader.stringValue())
-                    } else {
-                        reader.skip()
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 -> {
+                    i++
+                    when (token) {
+                        TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue())
+                            ?: reader.skip()
+
+                        TokenTypeConst.BOOL -> visitor.onValue(TokenType.BOOL)?.onBoolean(reader.booleanValue())
+                            ?: reader.skip()
+
+                        TokenTypeConst.INT -> visitor.onValue(TokenType.INT)?.onLongInt(reader.longValue())
+                            ?: reader.skip()
+
+                        TokenTypeConst.FLOAT -> visitor.onValue(TokenType.FLOAT)?.onFloat(reader.doubleValue())
+                            ?: reader.skip()
+
+                        TokenTypeConst.DECIMAL -> visitor.onValue(TokenType.DECIMAL)?.onDecimal(reader.decimalValue())
+                            ?: reader.skip()
+
+                        TokenTypeConst.TIMESTAMP -> visitor.onValue(TokenType.TIMESTAMP)
+                            ?.onTimestamp(reader.timestampValue()) ?: reader.skip()
+
+                        TokenTypeConst.STRING -> {
+                            val v = visitor.onValue(TokenType.STRING)
+                            if (v != null) {
+                                v.onString(reader.stringValue())
+                            } else {
+                                reader.skip()
+                            }
+                        }
+
+                        TokenTypeConst.SYMBOL -> visitor.onValue(TokenType.SYMBOL)?.let {
+                            val sid = reader.symbolValueSid()
+                            val text = if (sid < 0) {
+                                reader.symbolValue()
+                            } else {
+                                reader.lookupSid(sid)
+                            }
+                            it.onSymbol(text, sid)
+                        } ?: reader.skip()
+
+                        TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)
+                            ?.onClob(reader.clobValue())
+                            ?: reader.skip()
+
+                        TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)
+                            ?.onBlob(reader.blobValue())
+                            ?: reader.skip()
+
+                        TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
+                        TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
+                        TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
                     }
                 }
-                TokenTypeConst.SYMBOL -> visitor.onValue(TokenType.SYMBOL)?.let {
-                    val sid = reader.symbolValueSid()
-                    val text = if (sid < 0) {
-                        reader.symbolValue()
-                    } else {
-                        reader.lookupSid(sid)
-                    }
-                    it.onSymbol(text, sid)
-                } ?: reader.skip()
-                TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)?.onClob(reader.clobValue()) ?: reader.skip()
-                TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)?.onBlob(reader.blobValue()) ?: reader.skip()
-                TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
-                TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
-                TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
                 TokenTypeConst.ANNOTATIONS -> {
                     val annotationIterator = handlePossibleSystemValue(reader)
                     if (annotationIterator != null) {
@@ -311,7 +325,7 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                                         .startEvaluation(macro, args)
                                         .use { macroInvocation ->
 //                                            println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
-                                            i += readTopLevelValues(macroInvocation, visitor)
+                                            i += readTopLevelValues(macroInvocation, visitor, max - i)
                                         }
                                 }
                             }
@@ -319,8 +333,17 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     }
                 }
                 TokenTypeConst.END -> return i
+                TokenTypeConst.EXPRESSION_GROUP -> {
+                    i += readTopLevelValues(reader.expressionGroup(), visitor, max - i)
+                }
                 TokenTypeConst.VARIABLE_REF -> {
-
+                    // (reader as TemplateReader).argumentIndex()
+                    // No-Op. We'll just go again to get the next token.
+                    // Subtract 1 because
+                    i--
+                }
+                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
+                    return i
                 }
                 else -> TODO("Unreachable: ${TokenTypeConst(token)}")
             }
@@ -373,7 +396,7 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                         readAllValues(args, macroVisitor);
                     } else {
                         templateReaderPool.startEvaluation(macro, args).use {
-                            evaluator -> readAllValues(evaluator, visitor)
+                                evaluator -> readAllValues(evaluator, visitor)
                         }
                     }
                 }
@@ -407,12 +430,22 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
         v.onSexpEnd()
     }
 
-    // TODO: Use a stack in this function for nested sequences
-    //       Use a stack in readAllStructs for nested structs
-    private tailrec fun readAllValues(reader: ValueReader, visitor: VisitingReaderCallback) {
+    private fun readAllValues(initialReader: ValueReader, visitor: VisitingReaderCallback) {
         var annotatedValueVisitor: VisitingReaderCallback? = null
+        var stack = Array<ValueReader?>(0) { null }
+        var stackSize = 0
+        var reader: ValueReader = initialReader
 
-        var nextReader: ValueReader
+        fun pushReaderToStack() {
+            if (stack.size == stackSize) {
+                val oldStack = stack
+                stack = arrayOfNulls(stackSize + 10)
+                System.arraycopy(oldStack, 0, stack, 0, stackSize)
+            }
+            stack[stackSize] = reader
+            stackSize++
+        }
+
         while(true) {
 
             val visitor = annotatedValueVisitor ?: visitor
@@ -450,6 +483,7 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                 TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
                 TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
                 TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
+
                 TokenTypeConst.ANNOTATIONS -> {
                     val a = reader.annotations()
                     val v = visitor.onAnnotation(a)
@@ -462,101 +496,50 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                         reader.skip()
                     }
                 }
+
+                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
+                    // Do nothing
+                }
+                TokenTypeConst.EXPRESSION_GROUP -> {
+                    pushReaderToStack()
+                    (reader as ArgumentReader)
+                    reader = reader.expressionGroup()
+                }
                 TokenTypeConst.MACRO_INVOCATION -> {
                     val macro = reader.macroValue()
                     val macroVisitor = visitor.onEExpression(macro)
                     val args = reader.macroArguments(macro.signature)
                     if (macroVisitor != null) {
                         readAllValues(args, macroVisitor)
+                        args.close()
                     } else {
-                        nextReader = templateReaderPool.startEvaluation(macro, args)
-                        break
+                        val invocation = templateReaderPool.startEvaluation(macro, args)
+                        pushReaderToStack()
+                        reader = invocation
                     }
                 }
-                // TODO: Merge with NOP?
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
-                    continue
+                TokenTypeConst.VARIABLE_REF -> {
+//                    pushReaderToStack()
+//                    (reader as TemplateReader)
+//                    reader = reader.variableValue()
                 }
+
                 TokenTypeConst.END -> {
                     reader.close()
-                    return
-                }
-                TokenTypeConst.VARIABLE_REF -> {
-                    continue
+                    if (stackSize > 0) {
+                        reader = stack[--stackSize]!!
+                    } else {
+                        break
+                    }
                 }
                 else -> TODO("Unreachable: ${TokenTypeConst(token)}")
             }
         }
-
-        val visitor = annotatedValueVisitor ?: visitor
-        return readAllValues(nextReader, visitor)
     }
 
-    private fun readAllStructFields(
-        reader: ValueReader,
-        visitor: VisitingReaderCallback,
-        initialFieldName: String? = null,
-        initialFieldNameSid: Int = -1,
-    ) {
-        var fieldName: String? = initialFieldName
-        var fieldNameSid = initialFieldNameSid
-
-        while (true) {
-            // Field name
-            val token = reader.nextToken()
-
-            when (token) {
-                TokenTypeConst.END -> return
-                TokenTypeConst.FIELD_NAME -> {
-                    (reader as StructReader)
-                    fieldNameSid = reader.fieldNameSid()
-                    fieldName = if (fieldNameSid < 0) {
-                        reader.fieldName()
-                    } else {
-                        reader.lookupSid(fieldNameSid)
-                    }
-                }
-
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
-                    // Do nothing
-                }
-                TokenTypeConst.EXPRESSION_GROUP -> {
-                    (reader as ArgumentReader)
-                    readAllStructFields(reader.expressionGroup(), visitor, fieldName, fieldNameSid)
-                }
-                TokenTypeConst.MACRO_INVOCATION -> {
-                    val macro = reader.macroValue()
-                    val macroVisitor = visitor.onEExpression(macro)
-                    reader.macroArguments(macro.signature).use { args ->
-                        if (macroVisitor != null) {
-                            // TODO: This is weird. We might not have called onField yet.
-                            readAllValues(args, macroVisitor);
-                        } else {
-                            templateReaderPool.startEvaluation(macro, args).use {
-                                    evaluator -> readAllStructFields(evaluator, visitor, fieldName, fieldNameSid)
-                            }
-                        }
-                    }
-                }
-                TokenTypeConst.VARIABLE_REF -> {
-                }
-                else -> {
-                    val fieldVisitor = visitor.onField(fieldName, fieldNameSid)
-                    if (fieldVisitor != null) {
-                        readValue(reader, fieldVisitor, alreadyOnToken = true)
-                    } else {
-                        // We might need to skip annotations.
-                        if (reader.nextToken() == TokenTypeConst.ANNOTATIONS) reader.nextToken()
-                        reader.skip()
-                    }
-                }
-            }
-        }
-    }
-
-    private fun readAllTheThings(
+    private fun readAllTheFields(
         initialReader: ValueReader,
-        visitor: VisitingReaderCallback,
+        initialVisitor: VisitingReaderCallback,
         initialFieldName: String? = null,
         initialFieldNameSid: Int = -1,
     ) {
@@ -565,9 +548,7 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
         var stack = Array<ValueReader?>(0) { null }
         var stackSize = 0
         var reader: ValueReader = initialReader
-        var isInStruct = fieldName != null || fieldNameSid >= 0
-
-        var readerManager = ReaderManager()
+        var annotatedValueVisitor: VisitingReaderCallback? = null
 
         fun pushReaderToStack() {
             if (stack.size == stackSize) {
@@ -580,32 +561,22 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
         }
 
         while (true) {
+            val visitor = annotatedValueVisitor ?: initialVisitor
             val token = reader.nextToken()
+
             when (token) {
                 TokenTypeConst.END -> {
                     reader.close()
                     if (stackSize > 0) {
+//                        println("Popping from stack")
                         reader = stack[--stackSize]!!
                     } else {
                         break
                     }
                 }
-                TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue()) ?: reader.skip()
-                TokenTypeConst.BOOL -> visitor.onValue(TokenType.BOOL)?.onBoolean(reader.booleanValue()) ?: reader.skip()
-                TokenTypeConst.INT -> visitor.onValue(TokenType.INT)?.onLongInt(reader.longValue()) ?: reader.skip()
-                TokenTypeConst.FLOAT -> visitor.onValue(TokenType.FLOAT)?.onFloat(reader.doubleValue()) ?: reader.skip()
-                TokenTypeConst.DECIMAL -> visitor.onValue(TokenType.DECIMAL)?.onDecimal(reader.decimalValue()) ?: reader.skip()
-                TokenTypeConst.TIMESTAMP -> visitor.onValue(TokenType.TIMESTAMP)?.onTimestamp(reader.timestampValue()) ?: reader.skip()
-                TokenTypeConst.STRING -> maybeVisitString(reader, visitor)
-                TokenTypeConst.SYMBOL -> maybeVisitSymbol(reader, visitor)
-                TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)?.onClob(reader.clobValue()) ?: reader.skip()
-                TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)?.onBlob(reader.blobValue()) ?: reader.skip()
-                TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
-                TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
-                TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
+
                 TokenTypeConst.FIELD_NAME -> {
                     (reader as StructReader)
-                    isInStruct = true
                     fieldNameSid = reader.fieldNameSid()
                     fieldName = if (fieldNameSid < 0) {
                         reader.fieldName()
@@ -613,8 +584,83 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                         reader.lookupSid(fieldNameSid)
                     }
                 }
+
+                TokenTypeConst.ANNOTATIONS -> {
+                    val a = reader.annotations()
+                    // Before we call `onAnnotation()`, we need to call `onField()`
+                    // But, then we need to make sure to _not_ call `onField` when we visit the actual value.
+
+                    val v = visitor.onField(fieldName, fieldNameSid)?.onAnnotation(a)
+                    if (v != null) {
+                        annotatedValueVisitor = v
+                        continue
+                    } else {
+                        reader.nextToken()
+                        reader.skip()
+                    }
+
+                    a.close()
+                }
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 -> {
+                    val fieldValueVisitor = annotatedValueVisitor ?: visitor.onField(fieldName, fieldNameSid)
+                    if (fieldValueVisitor == null) {
+                        reader.skip()
+                        annotatedValueVisitor = null
+                        continue
+                    }
+                    when (token) {
+                        TokenTypeConst.NULL -> fieldValueVisitor.onNull(reader.nullValue())
+                        TokenTypeConst.BOOL -> fieldValueVisitor.onBoolean(reader.booleanValue())
+                        TokenTypeConst.INT -> fieldValueVisitor.onLongInt(reader.longValue())
+                        TokenTypeConst.FLOAT -> fieldValueVisitor.onFloat(reader.doubleValue())
+                        TokenTypeConst.DECIMAL -> fieldValueVisitor.onDecimal(reader.decimalValue())
+                        TokenTypeConst.TIMESTAMP -> fieldValueVisitor.onTimestamp(reader.timestampValue())
+                        TokenTypeConst.STRING -> fieldValueVisitor.onString(reader.stringValue())
+                        TokenTypeConst.SYMBOL -> {
+                            val sid = reader.symbolValueSid()
+                            val text = if (sid < 0) {
+                                reader.symbolValue()
+                            } else {
+                                reader.lookupSid(sid)
+                            }
+                            fieldValueVisitor.onSymbol(text, sid)
+                        }
+                        TokenTypeConst.CLOB -> fieldValueVisitor.onClob(reader.clobValue())
+                        TokenTypeConst.BLOB -> fieldValueVisitor.onBlob(reader.blobValue())
+                        TokenTypeConst.LIST -> {
+                            val r = reader.listValue()
+                            fieldValueVisitor.onListStart()
+                            readAllValues(r, fieldValueVisitor)
+                            fieldValueVisitor.onListEnd()
+                            r.close()
+                        }
+                        TokenTypeConst.SEXP -> {
+                            val r = reader.sexpValue()
+                            fieldValueVisitor.onSexpStart()
+                            readAllValues(r, fieldValueVisitor)
+                            fieldValueVisitor.onSexpEnd()
+                            r.close()
+                        }
+                        TokenTypeConst.STRUCT -> {
+                            val r = reader.structValue()
+                            fieldValueVisitor.onStructStart()
+                            readAllTheFields(r, fieldValueVisitor)
+                            fieldValueVisitor.onStructEnd()
+                            r.close()
+                        }
+                    }
+                }
+
                 TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
-                    // Do nothing
+                    // Is this correct?
+                    fieldName = null
+                    fieldNameSid = -1
+                    reader.skip()
+                    TODO()
+                }
+                TokenTypeConst.NOP -> {
+                    fieldName = null
+                    fieldNameSid = -1
                 }
                 TokenTypeConst.EXPRESSION_GROUP -> {
                     pushReaderToStack()
@@ -624,30 +670,19 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                 TokenTypeConst.MACRO_INVOCATION -> {
                     val macro = reader.macroValue()
                     val macroVisitor = visitor.onEExpression(macro)
-                    reader.macroArguments(macro.signature).use { args ->
-                        if (macroVisitor != null) {
-                            // TODO: This is weird. We might not have called onField yet.
-                            readAllValues(args, macroVisitor)
-                        } else {
-
-                            templateReaderPool.startEvaluation(macro, args)
-                        }
-                    }
-                }
-                TokenTypeConst.VARIABLE_REF -> {
-                }
-                else -> {
-                    // TODO: This doesn't seem right.
-                    val fieldVisitor = visitor.onField(fieldName, fieldNameSid)
-                    if (fieldVisitor != null) {
-                        readValue(reader, fieldVisitor, alreadyOnToken = true)
+                    val args = reader.macroArguments(macro.signature)
+                    if (macroVisitor != null) {
+                        readAllValues(args, macroVisitor)
+                        args.close()
                     } else {
-                        // We might need to skip annotations.
-                        if (reader.nextToken() == TokenTypeConst.ANNOTATIONS) reader.nextToken()
-                        reader.skip()
+                        val invocation = templateReaderPool.startEvaluation(macro, args)
+                        pushReaderToStack()
+                        reader = invocation
                     }
                 }
+                else -> TODO("Unreachable: ${TokenTypeConst(token)}")
             }
+            annotatedValueVisitor = null
         }
     }
 

@@ -18,7 +18,7 @@ object IdMappings {
     @JvmStatic
     private fun tokenTypeForOpCode(opcode: Int): Int {
         return when (opcode) {
-            in 0x00 .. 0x5F -> TokenTypeConst.EEXP
+            in 0x00 .. 0x5F -> TokenTypeConst.MACRO_INVOCATION
             in 0x60 .. 0x68 -> TokenTypeConst.INT
             0x69 -> TokenTypeConst.RESERVED
             in 0x6A .. 0x6D -> TokenTypeConst.FLOAT
@@ -38,13 +38,13 @@ object IdMappings {
             in 0xEA .. 0xEB -> TokenTypeConst.NULL
             in 0xEC .. 0xED -> TokenTypeConst.NOP
             0xEE -> TokenTypeConst.SYMBOL
-            0xEF -> TokenTypeConst.EEXP
+            0xEF -> TokenTypeConst.MACRO_INVOCATION
             0xF0 -> TokenTypeConst.END
             0xF1 ->	TokenTypeConst.LIST
             0xF2 ->	TokenTypeConst.SEXP
             0xF3 ->	TokenTypeConst.STRUCT
-            0xF4 ->	TokenTypeConst.EEXP
-            0xF5 ->	TokenTypeConst.EEXP
+            0xF4 ->	TokenTypeConst.MACRO_INVOCATION
+            0xF5 ->	TokenTypeConst.MACRO_INVOCATION
             0xF6 ->	TokenTypeConst.INT
             0xF7 ->	TokenTypeConst.DECIMAL
             0xF8 ->	TokenTypeConst.TIMESTAMP

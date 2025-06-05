@@ -198,6 +198,10 @@ class ReaderManagerTest {
             TODO("Not yet implemented")
         }
 
+        override fun expressionGroup(): SequenceReader {
+            TODO("Not yet implemented")
+        }
+
         override fun close() {
             println("Closing: $id")
             isClosed = true

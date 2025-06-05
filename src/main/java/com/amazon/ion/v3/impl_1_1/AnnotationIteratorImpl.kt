@@ -76,7 +76,7 @@ internal class AnnotationIteratorImpl(
     override var _text: String? = null
 
     override fun hasNext(): Boolean = opcode != END
-    override fun next() {
+    override fun next(): String? {
         if (!hasNext()) throw NoSuchElementException()
         opcode = when (opcode) {
             0xE4 -> {
@@ -112,6 +112,7 @@ internal class AnnotationIteratorImpl(
             }
             else -> opcode
         }
+        return _text
     }
 
     private fun readFlexSym() {

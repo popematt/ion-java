@@ -1,8 +1,15 @@
-package com.amazon.ion.v3.impl_1_1
+package com.amazon.ion.v3.impl_1_1.template
 
-import com.amazon.ion.*
-import com.amazon.ion.impl.macro.*
-import com.amazon.ion.v3.*
+import com.amazon.ion.SymbolToken
+import com.amazon.ion.impl.macro.Expression
+import com.amazon.ion.impl.macro.Macro
+import com.amazon.ion.impl.macro.SystemMacro
+import com.amazon.ion.impl.macro.TemplateMacro
+import com.amazon.ion.v3.AnnotationIterator
+import com.amazon.ion.v3.ArgumentReader
+import com.amazon.ion.v3.TokenTypeConst
+import com.amazon.ion.v3.ValueReader
+import com.amazon.ion.v3.impl_1_1.MacroInvocationReader
 import java.io.Closeable
 
 class TemplateResourcePool private constructor(): Closeable {
@@ -31,7 +38,7 @@ class TemplateResourcePool private constructor(): Closeable {
         val signature: List<Macro.Parameter>
         val arguments: ArgumentReader
     }
-    private class TemplateInvocationInfoImpl(
+    internal class TemplateInvocationInfoImpl(
         override var source: List<Expression.TemplateBodyExpression>,
         override var signature: List<Macro.Parameter>,
         override var arguments: ArgumentReader,
@@ -44,16 +51,25 @@ class TemplateResourcePool private constructor(): Closeable {
     val variables = ArrayList<TemplateVariableReaderImpl>(8)
     val arguments = ArrayList<TemplateArgumentReaderImpl>()
 
+    /**
+     * This takes ownership of the ArgumentReader and closes it when this evaluator is closed.
+     */
     fun startEvaluation(macro: Macro, arguments: ArgumentReader): ValueReader {
         return when (macro) {
-            is TemplateMacro -> invokeTemplate(macro, arguments)
+            is TemplateMacro -> return invokeTemplate(macro, arguments)
             is SystemMacro -> when (macro) {
                 // All system macros that produce system values are evaluated using templates because
                 // the hard-coded implementation only applies at the top level of the stream, and is
                 // handled elsewhere
-                SystemMacro.Values -> getVariable(arguments, 0)
-                SystemMacro.None -> NoneReader
-                SystemMacro.Meta -> NoneReader
+                SystemMacro.Values -> getVariable(arguments, 0, isArgumentOwner = true)
+                SystemMacro.None -> {
+                    arguments.close()
+                    NoneReader
+                }
+                SystemMacro.Meta -> {
+                    arguments.close()
+                    NoneReader
+                }
                 SystemMacro.Default -> invokeDefault(arguments)
                 SystemMacro.IfNone -> invokeIfNone(arguments)
                 SystemMacro.IfSome -> invokeIfSome(arguments)
@@ -74,39 +90,57 @@ class TemplateResourcePool private constructor(): Closeable {
     private fun invokeTemplate(macro: Macro, arguments: ArgumentReader): ValueReader {
         val reader = invocations.removeLastOrNull()
         if (reader != null) {
-            reader.init(TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments), 0, macro.body!!.size)
+            reader.init(
+                TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments),
+                0, macro.body!!.size,
+                isArgumentOwner = true)
             return reader
         } else {
-            return MacroInvocationReader(this, TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments), 0, macro.body!!.size)
+            return MacroInvocationReader(
+                this,
+                TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments),
+                0,
+                macro.body!!.size,
+                isArgumentOwner = true
+            )
         }
     }
 
     private fun invokeDefault(arguments: ArgumentReader): ValueReader {
-        val firstArg = arguments.seekToArgument(0)
+//        println("Invoking Default with arguments: $arguments")
+        arguments.seekToBeforeArgument(0)
+        val firstArg = arguments.nextToken()
         // TODO: This doesn't properly handle the case where there's an empty expression group in binary
         //       Same thing for all of the `if` macros
-        if (firstArg == TokenTypeConst.EMPTY_ARGUMENT) {
-            return getVariable(arguments, 1)
+
+//        println("Checking first arg for 'default': ${TokenTypeConst(arguments.currentToken())}")
+
+        if (firstArg == TokenTypeConst.NOP_EMPTY_ARGUMENT) {
+            return getVariable(arguments, 1, isArgumentOwner = true)
         } else {
-            return getVariable(arguments, 0)
+            return getVariable(arguments, 0, isArgumentOwner = true)
         }
     }
 
     private fun invokeIfNone(arguments: ArgumentReader): ValueReader {
-        val firstArg = arguments.seekToArgument(0)
-        return if (firstArg == TokenTypeConst.EMPTY_ARGUMENT) {
-            getVariable(arguments, 1)
+        arguments.seekToBeforeArgument(0)
+        val firstArg = arguments.nextToken()
+//        println("Checking first arg for 'if_none': ${TokenTypeConst(arguments.currentToken())}")
+        return if (firstArg == TokenTypeConst.NOP_EMPTY_ARGUMENT) {
+            getVariable(arguments, 1, isArgumentOwner = true)
         } else {
-            getVariable(arguments, 2)
+            getVariable(arguments, 2, isArgumentOwner = true)
         }
     }
 
     fun invokeIfSome(arguments: ArgumentReader): ValueReader {
-        val firstArg = arguments.seekToArgument(0)
-        return if (firstArg != TokenTypeConst.EMPTY_ARGUMENT) {
-            getVariable(arguments, 1)
+        arguments.seekToBeforeArgument(0)
+        val firstArg = arguments.nextToken()
+//        println("Checking first arg for 'if_some': ${TokenTypeConst(arguments.currentToken())}")
+        return if (firstArg != TokenTypeConst.NOP_EMPTY_ARGUMENT) {
+            getVariable(arguments, 1, isArgumentOwner = true)
         } else {
-            getVariable(arguments, 2)
+            getVariable(arguments, 2, isArgumentOwner = true)
         }
     }
 
@@ -114,20 +148,20 @@ class TemplateResourcePool private constructor(): Closeable {
     fun getSequence(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): TemplateSequenceReaderImpl {
         val reader = sequences.removeLastOrNull()
         if (reader != null) {
-            reader.init(info, startInclusive, endExclusive)
+            reader.init(info, startInclusive, endExclusive, isArgumentOwner = false)
             return reader
         } else {
-            return TemplateSequenceReaderImpl(this, info, startInclusive, endExclusive)
+            return TemplateSequenceReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)
         }
     }
 
     fun getStruct(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): TemplateStructReaderImpl {
         val reader = structs.removeLastOrNull()
         if (reader != null) {
-            reader.init(info, startInclusive, endExclusive)
+            reader.init(info, startInclusive, endExclusive, isArgumentOwner = false)
             return reader
         } else {
-            return TemplateStructReaderImpl(this, info, startInclusive, endExclusive)
+            return TemplateStructReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)
         }
     }
 
@@ -141,20 +175,23 @@ class TemplateResourcePool private constructor(): Closeable {
         }
     }
 
-    fun getVariable(argReader: ArgumentReader, index: Int): TemplateVariableReaderImpl {
+    fun getVariable(argReader: ArgumentReader, index: Int, isArgumentOwner: Boolean): TemplateVariableReaderImpl {
+//        println("Getting variable: $index")
         val reader = variables.removeLastOrNull()
         if (reader != null) {
-            reader.init(index, argReader)
+            reader.init(index, argReader, isArgumentOwner)
             return reader
         } else {
-            return TemplateVariableReaderImpl(this, index, argReader)
+            return TemplateVariableReaderImpl(this, index, argReader, isArgumentOwner)
         }
     }
 
-    fun getArguments(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): ArgumentReader {
-        return arguments.removeLastOrNull()
-            ?.apply { init(info, startInclusive, endExclusive) }
-            ?: TemplateArgumentReaderImpl(this, info, startInclusive, endExclusive)
+    fun getArguments(info: TemplateInvocationInfo, signature: List<Macro.Parameter>, startInclusive: Int, endExclusive: Int): ArgumentReader {
+        val argReader = arguments.removeLastOrNull()
+            ?.apply { init(info, startInclusive, endExclusive, isArgumentOwner = false) }
+            ?: TemplateArgumentReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)
+        argReader.initArgs(signature)
+        return argReader
     }
 
     override fun close() {

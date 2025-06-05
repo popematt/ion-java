@@ -29,11 +29,11 @@ object TokenTypeConst {
     const val IVM = 18
     /** Reader is positioned on a TypeId or Opcode that is reserved. This should be an error. */
     const val RESERVED = 19
-    const val EEXP = 20
+    const val MACRO_INVOCATION = 20
     const val EXPRESSION_GROUP = 21
-    const val EMPTY_ARGUMENT = 22
+
+    const val NOP_EMPTY_ARGUMENT = 22 // Try making this the same number as NOP
     const val VARIABLE_REF = 23
-    const val TDL_INVOCATION = 24
 
     // TODO: Do we need END_OF_INVOCATION, or could we just re-use END?
     //       We will just use `END`, and add a "requiresStepOut" flag to readers if we need to.
@@ -61,11 +61,10 @@ object TokenTypeConst {
             17 -> "END"
             18 -> "IVM"
             19 -> "RESERVED"
-            20 -> "EEXP"
+            20 -> "MACRO_INVOCATION"
             21 -> "EXPRESSION_GROUP"
             22 -> "EMPTY_ARGUMENT"
             23 -> "VARIABLE_REF"
-            24 -> "TDL_INVOCATION"
             else -> "UNKNOWN"
         } + "($i)"
     }

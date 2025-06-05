@@ -10,7 +10,7 @@ import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl._Private_Utils
 import com.amazon.ion.v3.*
-import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.template.*
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.util.Date
@@ -112,10 +112,8 @@ class StreamWrappingIonReader: IonReader {
                     null
                 }
             }
-            TokenTypeConst.EEXP -> {
-                val macroId = reader.eexpValue()
-                // TODO: Should `lookupMacro` be part of the `ValueReader` API?
-                val macro = (reader as ValueReaderBase).macroTable[macroId]
+            TokenTypeConst.MACRO_INVOCATION -> {
+                val macro = reader.macroValue()
                 val args = reader.macroArguments(macro.signature)
                 val eexp = templateReaderPool.startEvaluation(macro, args)
                 readerManager.pushReader(eexp)
@@ -124,9 +122,9 @@ class StreamWrappingIonReader: IonReader {
                 null
             }
             TokenTypeConst.VARIABLE_REF -> {
-                val variableReader = (reader as TemplateReader).variableValue()
-                readerManager.pushReader(variableReader)
-                reader = variableReader
+//                val variableReader = (reader as TemplateReader).deprecated_variableValue()
+//                readerManager.pushReader(variableReader)
+//                reader = variableReader
                 null
             }
             else -> TODO("Unreachable: ${TokenTypeConst(token)}")

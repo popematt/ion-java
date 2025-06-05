@@ -1,10 +1,8 @@
-package com.amazon.ion.v3.impl_1_1
+package com.amazon.ion.v3.impl_1_1.template
 
-import com.amazon.ion.*
-import com.amazon.ion.impl.*
-import com.amazon.ion.v3.*
+import com.amazon.ion.SymbolToken
+import com.amazon.ion.v3.AnnotationIterator
 import com.amazon.ion.v3.PrivateAnnotationIterator
-import java.nio.ByteBuffer
 
 internal class TemplateAnnotationIteratorImpl(
     var annotations: List<SymbolToken>,
@@ -18,9 +16,10 @@ internal class TemplateAnnotationIteratorImpl(
     }
 
     override fun hasNext(): Boolean = i < annotations.size
-    override fun next() {
+    override fun next(): String? {
         if (!hasNext()) throw NoSuchElementException()
         currentAnnotation = annotations[i++]
+        return currentAnnotation.text
     }
 
     // The text should have been resolved when the macro was compiled. Even if there is a SID,

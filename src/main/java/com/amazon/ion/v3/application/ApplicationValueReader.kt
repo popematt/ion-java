@@ -80,6 +80,10 @@ open class ApplicationValueReader(
         valueReader.close()
     }
 
+    override fun expressionGroup(): SequenceReader {
+        TODO("Not yet implemented")
+    }
+
     class ApplicationStructReader(valueReader: StructReader): ApplicationValueReader(valueReader), StructReader {
         override fun fieldNameSid(): Int = (valueReader as StructReader).fieldNameSid()
         override fun fieldName(): String? = (valueReader as StructReader).fieldName()

@@ -708,6 +708,8 @@ abstract class ValueReaderBase internal constructor(
     }
 
     override fun position(): Int = source.position()
+
+    override fun expressionGroup(): SequenceReader = throw UnsupportedOperationException("Expression groups not supported in Ion 1.0")
 }
 
 class StreamReader_1_0(source: ByteBuffer): ValueReaderBase(source, ReaderPool_1_0(source.asReadOnlyBuffer()), ION_1_0_SYMBOL_TABLE), StreamReader {

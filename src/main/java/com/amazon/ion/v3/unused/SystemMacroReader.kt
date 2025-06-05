@@ -1,23 +1,39 @@
-package com.amazon.ion.v3.impl_1_1
+package com.amazon.ion.v3.unused
 
-import com.amazon.ion.*
-import com.amazon.ion.impl.macro.*
+import com.amazon.ion.Decimal
+import com.amazon.ion.IonType
+import com.amazon.ion.Timestamp
+import com.amazon.ion.impl.macro.SystemMacro
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
-object NoneReader: TemplateReader {
-    override fun variableValue(): ValueReader {
+class SystemMacroReader(
+    private var macro: SystemMacro,
+    private var args: ArgumentReader,
+): ValueReader {
+
+    companion object {
+        private const val S_READY = 0
+    }
+
+    private var state = S_READY
+
+
+    override fun nextToken(): Int {
         TODO("Not yet implemented")
     }
 
-    override fun macroValue(): Macro {
+    override fun currentToken(): Int {
         TODO("Not yet implemented")
     }
 
-    override fun nextToken(): Int = TokenTypeConst.END
-    override fun currentToken(): Int = TokenTypeConst.END
-    override fun isTokenSet(): Boolean = true
-    override fun ionType(): IonType? = null
+    override fun isTokenSet(): Boolean {
+        TODO("Not yet implemented")
+    }
+
+    override fun ionType(): IonType? {
+        TODO("Not yet implemented")
+    }
 
     override fun valueSize(): Int {
         TODO("Not yet implemented")
@@ -95,7 +111,9 @@ object NoneReader: TemplateReader {
         TODO("Not yet implemented")
     }
 
-    override fun getIonVersion(): Short = 0x0101
+    override fun getIonVersion(): Short {
+        TODO("Not yet implemented")
+    }
 
     override fun seekTo(position: Int) {
         TODO("Not yet implemented")
@@ -105,6 +123,11 @@ object NoneReader: TemplateReader {
         TODO("Not yet implemented")
     }
 
-    // Nothing to do.
-    override fun close() = Unit
+    override fun close() {
+        TODO("Not yet implemented")
+    }
+
+    override fun expressionGroup(): SequenceReader {
+        TODO("Not yet implemented")
+    }
 }

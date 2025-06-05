@@ -1,10 +1,10 @@
-package com.amazon.ion.v3.impl_1_1
+package com.amazon.ion.v3.impl_1_1.template
 
 import com.amazon.ion.IonException
-import com.amazon.ion.impl.macro.*
-import com.amazon.ion.impl.macro.Expression.*
-import com.amazon.ion.v3.*
-import java.nio.ByteBuffer
+import com.amazon.ion.impl.macro.Expression
+import com.amazon.ion.impl.macro.Macro
+import com.amazon.ion.v3.ArgumentReader
+import com.amazon.ion.v3.TokenTypeConst
 
 /**
  * Reads the raw E-expression arguments
@@ -14,24 +14,30 @@ class TemplateArgumentReaderImpl(
     info: TemplateResourcePool.TemplateInvocationInfo,
     startInclusive: Int,
     endExclusive: Int,
-): TemplateReaderBase(pool, info, startInclusive, endExclusive), ArgumentReader {
+    isArgumentOwner: Boolean,
+): TemplateReaderBase(pool, info, startInclusive, endExclusive, isArgumentOwner), ArgumentReader {
 
-    private var signature: List<Macro.Parameter> = emptyList()
+    override fun toString(): String {
+        return "TemplateArgumentReaderImpl(signature=$signature, argumentIndices=${argumentIndices.contentToString()}, source=${info.source})"
+    }
+
+    override var signature: List<Macro.Parameter> = emptyList()
+        private set
 
     private var presence = IntArray(8)
     // The position of a "not present" argument is always the first byte after the last byte of the previous argument
     private var argumentIndices = IntArray(8)
 
     // The position in the _signature_
-    private var currentParameterIndex = 0
+    private var nextParameterIndex = 0
 
-    override fun close() {
+    override fun returnToPool() {
         pool.arguments.add(this)
     }
 
     fun initArgs(signature: List<Macro.Parameter>) {
         this.signature = signature
-        this.currentParameterIndex = 0
+        this.nextParameterIndex = 0
         // Make sure we have enough space in our arrays
         if (signature.size > argumentIndices.size) {
             argumentIndices = IntArray(signature.size)
@@ -40,7 +46,7 @@ class TemplateArgumentReaderImpl(
         // TODO: Make this lazy or precompute this
         var position = startInclusive
         for (i in signature.indices) {
-            if (i < endExclusive) {
+            if (position < endExclusive) {
                 argumentIndices[i] = position
                 val currentExpression = info.source[position]
                 position++
@@ -52,10 +58,12 @@ class TemplateArgumentReaderImpl(
                         } else {
                             presence[i] = 2
                         }
+                        position = argEndExclusive
                     } else {
                         presence[i] = 1
                     }
-                    position = argEndExclusive
+                } else {
+                    presence[i] = 1
                 }
             } else {
                 presence[i] = 0
@@ -64,42 +72,47 @@ class TemplateArgumentReaderImpl(
         }
     }
 
+    override fun seekToBeforeArgument(signatureIndex: Int) {
+        if (signatureIndex >= signature.size) throw IllegalStateException("Not in the signature")
+//        println("[$id] Seeking to before template arg $signatureIndex of $signature")
+        // println("${signature[signatureIndex]}($signatureIndex)")
+        nextParameterIndex = signatureIndex
+        currentExpression = null
+    }
+
     override fun seekToArgument(signatureIndex: Int): Int {
-        this.i = argumentIndices[signatureIndex]
-        val tokenType = when (presence[signatureIndex]) {
+        seekToBeforeArgument(signatureIndex)
+        return nextToken()
+    }
+
+    override fun nextToken(): Int {
+        val currentParameterIndex = nextParameterIndex
+        if (currentParameterIndex >= signature.size) {
+            return TokenTypeConst.END
+        }
+//        println("[$id] Reading Template arg ${signature[currentParameterIndex]}($currentParameterIndex)")
+
+        nextParameterIndex++
+
+        this.i = argumentIndices[currentParameterIndex]
+        val tokenType = when (presence[currentParameterIndex]) {
             2 -> {
                 currentExpression = info.source[i]
-                currentParameterIndex = signatureIndex + 1
                 TokenTypeConst.EXPRESSION_GROUP
             }
             1 -> {
                 super.nextToken()
             }
             0 -> {
-                currentExpression = info.source[i]
-                currentParameterIndex = signatureIndex + 1
-                TokenTypeConst.EMPTY_ARGUMENT
+                currentExpression = null
+                TokenTypeConst.NOP_EMPTY_ARGUMENT
             }
-            else -> throw IonException("Invalid presence bits for parameter $signatureIndex; was ${presence[signatureIndex]}")
+            else -> throw IonException("Invalid presence bits for parameter $currentParameterIndex; was ${presence[currentParameterIndex]}")
         }
         return tokenType
     }
 
-    override fun nextToken(): Int {
-        val cpIndex = currentParameterIndex
-        currentParameterIndex++
-        if (cpIndex >= signature.size) {
-            return TokenTypeConst.END
-        }
-        return seekToArgument(cpIndex)
-    }
-
-    override fun expressionGroup(): SequenceReader {
-        val expr = takeCurrentExpression<ExpressionGroup>()
-        return pool.getSequence(info, expr.startInclusive, expr.endExclusive)
-    }
-
-    override fun skip() {
-        // Nothing to do?
-    }
+//    override fun skip() {
+//        // Nothing to do?
+//    }
 }

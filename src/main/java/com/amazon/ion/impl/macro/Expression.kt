@@ -252,7 +252,7 @@ sealed interface Expression {
         override val macro: Macro,
         override val selfIndex: Int,
         override val endExclusive: Int
-    ) : TemplateBodyExpression, HasStartAndEnd, InvokableExpression, ExpressionBase(TokenTypeConst.TDL_INVOCATION)
+    ) : TemplateBodyExpression, HasStartAndEnd, InvokableExpression, ExpressionBase(TokenTypeConst.MACRO_INVOCATION)
 
     /**
      * An e-expression that needs to be expanded.
@@ -261,5 +261,5 @@ sealed interface Expression {
         override val macro: Macro,
         override val selfIndex: Int,
         override val endExclusive: Int
-    ) : EExpressionBodyExpression, HasStartAndEnd, InvokableExpression, ExpressionBase(TokenTypeConst.EEXP)
+    ) : EExpressionBodyExpression, HasStartAndEnd, InvokableExpression, ExpressionBase(TokenTypeConst.MACRO_INVOCATION)
 }

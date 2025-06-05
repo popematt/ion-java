@@ -1,7 +1,10 @@
-package com.amazon.ion.v3.impl_1_1
+package com.amazon.ion.v3.impl_1_1.template
 
-import com.amazon.ion.*
-import com.amazon.ion.impl.macro.*
+import com.amazon.ion.Decimal
+import com.amazon.ion.IonException
+import com.amazon.ion.IonType
+import com.amazon.ion.Timestamp
+import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
@@ -12,15 +15,18 @@ class TemplateVariableReaderImpl(
     val pool: TemplateResourcePool,
     var signatureIndex: Int,
     var arguments: ArgumentReader,
+    var isArgumentOwner: Boolean,
 ): ValueReader, ListReader, SexpReader {
     var hasAnnotations = false
 
     fun init(
         signatureIndex: Int,
         arguments: ArgumentReader,
+        isArgumentOwner: Boolean,
      ) {
         this.arguments = arguments
         this.signatureIndex = signatureIndex
+        this.isArgumentOwner = isArgumentOwner
         this.hasAnnotations = false
     }
 
@@ -31,7 +37,9 @@ class TemplateVariableReaderImpl(
             return TokenTypeConst.END
         }
         if (!hasAnnotations) {
-            val token = arguments.seekToArgument(i)
+            arguments.seekToBeforeArgument(i)
+            val token = arguments.nextToken()
+
             if (token == TokenTypeConst.ANNOTATIONS) {
                 hasAnnotations = true
             } else {
@@ -48,7 +56,7 @@ class TemplateVariableReaderImpl(
     }
 
     // TODO: Make sure that this also returns END when at the end of the input.
-    override fun skip() = TODO("Cannot skip a variable reference. Only the values it contains.")
+    override fun skip() = arguments.skip()
     override fun currentToken(): Int = arguments.currentToken()
     override fun isTokenSet(): Boolean = currentToken() != TokenTypeConst.UNSET
     override fun ionType(): IonType? = arguments.ionType()
@@ -69,9 +77,9 @@ class TemplateVariableReaderImpl(
     override fun annotations(): AnnotationIterator = arguments.annotations()
     override fun doubleValue(): Double = arguments.doubleValue()
     override fun decimalValue(): Decimal = arguments.decimalValue()
-    override fun eexpValue(): Int = arguments.eexpValue()
+    override fun macroValue(): Macro = arguments.macroValue()
     override fun macroArguments(signature: List<Macro.Parameter>) = arguments.macroArguments(signature)
-    override fun eexpMacroRef(): MacroRef = arguments.eexpMacroRef()
+    override fun expressionGroup(): SequenceReader = arguments.expressionGroup()
 
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")
 

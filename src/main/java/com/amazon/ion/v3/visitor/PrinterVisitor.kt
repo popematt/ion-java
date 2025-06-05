@@ -24,12 +24,12 @@ object PrinterVisitor: VisitingReaderCallback {
     override fun onAnnotation(annotations: AnnotationIterator) = apply {
         while (annotations.hasNext()) {
             annotations.next()
-            print(annotations.getText() ?: "\$0")
+            printSymbolToken(annotations.getText(), annotations.getSid())
             print("::")
         }
     }
     override fun onField(fieldName: String?, fieldSid: Int) = apply {
-        print(fieldName ?: "\$fieldSid")
+        printSymbolToken(fieldName, fieldSid)
         print(": ")
     }
     override fun onValue(type: TokenType): VisitingReaderCallback = this
@@ -45,12 +45,28 @@ object PrinterVisitor: VisitingReaderCallback {
     override fun onBoolean(value: Boolean) = print("$value, ")
     override fun onLongInt(value: Long) = print("$value, ")
     override fun onBigInt(value: BigInteger) = print("$value, ")
-    override fun onFloat(value: Double) = print("$value, ")
+    override fun onFloat(value: Double) = print("${value}, ")
     override fun onDecimal(value: Decimal) = print("$value, ")
     override fun onTimestamp(value: Timestamp) = print("$value, ")
     override fun onString(value: String) = print("\"$value\", ")
-    override fun onSymbol(value: String?, sid: Int) = print("${value ?: "\$sid"}, ")
+
+    val identifierSymbolRegex = Regex("[A-Za-z_\$][A-Za-z0-9_\$]*")
+
+    override fun onSymbol(value: String?, sid: Int) {
+        printSymbolToken(value, sid)
+        print(", ")
+    }
 
     override fun onClob(value: ByteBuffer) = print("<clob>, ")
     override fun onBlob(value: ByteBuffer) = print("<blob>, ")
+
+    private fun printSymbolToken(value: String?, sid: Int) {
+        if (value == null) {
+            print("\$$sid")
+        } else if (value.matches(identifierSymbolRegex)) {
+            print(value)
+        } else {
+            print("'$value'")
+        }
+    }
 }

@@ -45,6 +45,54 @@ interface ComplicatedVisitor {
 }
 
 
+interface ReaderVisitor {
+    /**
+     * Return a [ReaderVisitor] that should be used to read the value.
+     * If null, then skip the value.
+     */
+    fun onField(fieldName: String?, fieldSid: Int) : ReaderVisitor? = this
+
+    /**
+     * Return a [ReaderVisitor] that should be used to read the value.
+     * If null, then skip the value.
+     */
+    fun onAnnotation(annotations: AnnotationIterator) : ReaderVisitor? = this
+
+    /**
+     * Exposes that an IVM has been encountered.
+     */
+    fun onIVM(major: Int, minor: Int): Unit = Unit
+
+    fun onStart()
+    fun onEnd()
+
+    fun onNull(value: IonType)
+    fun onBoolean(value: Boolean)
+    fun onLongInt(value: Long)
+    fun onBigInt(value: BigInteger)
+    fun onFloat(value: Double)
+    fun onDecimal(value: Decimal)
+    fun onTimestamp(value: Timestamp)
+    fun onString(value: String)
+    fun onSymbol(value: String?, sid: Int)
+    fun onClob(value: ByteBuffer)
+    fun onBlob(value: ByteBuffer)
+    fun onList(): ReaderVisitor
+    fun onSexp(): ReaderVisitor
+    fun onStruct(): ReaderVisitor
+
+    /**
+     * Only implement this method if you want to bypass the macro evaluation.
+     *
+     * If bypassing macro evaluation, the returned visitor will get `onStart()`,
+     * all the macro arguments in order, followed by `onEnd()`.
+     * TODO: How to represent expression groups? Or maybe argument names?
+     */
+    fun onMacro(macro: Macro): ReaderVisitor? = null
+
+    fun onArgument(name: String): ReaderVisitor? = null
+}
+
 /**
  *
  *

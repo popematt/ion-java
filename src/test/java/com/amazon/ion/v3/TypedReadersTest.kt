@@ -4,11 +4,12 @@ import com.amazon.ion.*
 import com.amazon.ion.TestUtils.*
 import com.amazon.ion.impl.bin.*
 import com.amazon.ion.impl.macro.*
+import com.amazon.ion.impl.macro.ExpressionBuilderDsl.Companion.templateBody
 import com.amazon.ion.system.*
-import com.amazon.ion.util.*
 import com.amazon.ion.v3.TypedReadersTest.TestExpectationVisitor.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
-import com.amazon.ion.v3.impl_1_1.StreamReaderImpl
+import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.ion_reader.*
 import com.amazon.ion.v3.visitor.*
 import java.io.ByteArrayOutputStream
@@ -21,6 +22,10 @@ import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.util.*
 import kotlin.NoSuchElementException
+import kotlin.collections.ArrayList
+import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.InvocationKind
+import kotlin.contracts.contract
 import kotlin.text.StringBuilder
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -458,24 +463,6 @@ class TypedReadersTest {
                        01 F0
                     60
                 """
-            val bytes1 = """
-            E0 01 01 EA
-            60
-            F3                   | Struct
-               03                | FlexSym SID 1
-               61 01             | Int 1
-               05                | FlexSym SID 2
-               61 02             | Int 2
-               01 F0
-            F3
-               07                | FlexSym SID 3
-               61 03             | Int 3
-               09                | FlexSym SID 4
-               61 04             | Int 4
-               01 F0
-            60
-            """
-
 
             val data = toByteBuffer(bytes0)
 
@@ -487,8 +474,6 @@ class TypedReadersTest {
                 assertEquals(0, reader.longValue())
                 assertEquals(TokenTypeConst.STRUCT, reader.nextToken())
                 reader.skip()
-//                assertEquals(TokenTypeConst.INT, reader.nextToken())
-//                assertEquals(0, reader.longValue())
                 assertEquals(TokenTypeConst.STRUCT, reader.nextToken())
                 reader.skip()
                 assertEquals(TokenTypeConst.INT, reader.nextToken())
@@ -496,6 +481,754 @@ class TypedReadersTest {
             }
         }
 
+        // Ion 1.0
+        val smallLog = "$" + """ion_log::"ServiceQueryLog_1_0"
+            {
+                StartTime:2018-08-06T23:59:59.897Z,
+                Marketplace:"us-west-2",
+                Program:"Canal_20130901",
+                Time:19041583,
+                Operation:"PutRecord",
+                AccountId:"599497505561",
+                AwsAccessKeyId:"AKIAIDCULUG4T7M7YSFA",
+                AwsAccountId:"599497505561",
+                AwsCallerPrincipal:"AIDAJDEOMPZALKP53LY7E",
+                AwsUserArn:"arn:aws:iam::599497505561:user/kinesis-rw-user",
+                AwsUserPrincipal:"AIDAJDEOMPZALKP53LY7E",
+                ChainId:"Chain_163fa914bda_7",
+                EndTime:Instant::2018-08-06T23:59:59.000Z,
+                PID:"38207@kinesis-proxy-hailstoneperf-pdx-62002.pdx2.amazon.com",
+                RemoteIpAddress:"10.242.81.215",
+                RemoteIpAddressSequence:"10.242.81.215",
+                RemoteSocket:"127.0.0.1:44700",
+                RequestId:"bb1890d7-f941-4277-b183-791205713dc7",
+                SN:"49585610451445194228944925219480153390279546138439714930",
+                ShardId:"shardId-000000000135",
+                Size:"104",
+                StreamName:"240-shard-fe-stress",
+                Throttler:"Gossip",
+                UserAgent:"aws-sdk-java/2.0.0-preview-11-SNAPSHOT Linux/3.2.45-0.6.wd.514.39.260.metal1.x86_64 Java_HotSpot_TM__64-Bit_Server_VM/25.92-b14 Java/1.8.0_92",
+                'amz-sdk-invocation-id':"af8e1574-03b1-6e24-597a-7281467821b3",
+                'amz-sdk-retry':"0/0/500",
+            }
+        """
+
+        val smallLog11Binary = """
+                01 85 b2 2d 47 ba 23 0f 84 b2 2d 47 ba 03
+                e1 04 e1 05 6c 24 67 47 4a e1 06 f3 0f e1 08
+                13 e1 0a 17 e1 0c 1b e1 0e 1f e1 10 23 e1 12 27
+                e1 14 2b e1 16 2f e1 18 33 e1 1a 37 e1 1c 01 f0 f1 09 00
+                e1 1d 6c f8 1a 51 40 f0 f1 0b e1 1e 0c e1 1f
+                f0 ef 00 ef 00 f1 07 00 e1 20 6a 07 00 e1 21 6a f0 ef 00
+            """.trimIndent()
+
+        private fun template(vararg parameters: String, body: TemplateDsl.() -> Unit): Macro {
+            val signature = parameters.map {
+                val cardinality = Macro.ParameterCardinality.fromSigil("${it.last()}")
+                if (cardinality == null) {
+                    Macro.Parameter(it, Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
+                } else {
+                    Macro.Parameter(it.dropLast(1), Macro.ParameterEncoding.Tagged, cardinality)
+                }
+            }
+            return TemplateMacro(signature, templateBody(body))
+        }
+
+        @Test
+        fun readEExpArgs() {
+            val data = """
+                01
+                60
+                6E
+            """
+            val signature = template("foo", "bar?", "baz?"){}.signature
+
+            val source = toByteBuffer(data)
+
+            val reader = EExpArgumentReaderImpl(
+                source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
+                ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN)),
+                symbolTable = arrayOf(),
+                macroTable = arrayOf(),
+            )
+            reader.initArgs(signature)
+            reader.calculateEndPosition()
+
+            reader.seekToBeforeArgument(1)
+            reader.assertNextToken(TokenTypeConst.BOOL).skip()
+
+            reader.seekToBeforeArgument(0)
+            reader.assertNextToken(TokenTypeConst.INT).skip()
+
+            reader.seekToBeforeArgument(1)
+            reader.assertNextToken(TokenTypeConst.BOOL).skip()
+
+            reader.seekToBeforeArgument(2)
+            reader.assertNextToken(TokenTypeConst.NOP_EMPTY_ARGUMENT)
+
+            reader.seekToBeforeArgument(1)
+            reader.assertNextToken(TokenTypeConst.BOOL).skip()
+
+            reader.seekToBeforeArgument(0)
+            reader.assertNextToken(TokenTypeConst.INT).skip()
+        }
+
+        @Test
+        fun readTemplateArgs() {
+            val data = "00"
+            val signature = template("foo", "bar?", "baz?"){}.signature
+
+            val source = toByteBuffer(data)
+
+            val reader = TemplateArgumentReaderImpl(
+                TemplateResourcePool.getInstance(),
+                TemplateResourcePool.TemplateInvocationInfoImpl(
+                    listOf(
+                        Expression.LongIntValue(value = 0),
+                        Expression.BoolValue(value = false),
+                    ),
+                    signature,
+                    EExpArgumentReaderImpl(source, ResourcePool(source), emptyArray(), emptyArray())
+                ),
+                startInclusive = 0,
+                endExclusive = 2,
+                isArgumentOwner = false,
+            )
+            reader.initArgs(signature)
+
+            reader.seekToBeforeArgument(1)
+            reader.assertNextToken(TokenTypeConst.BOOL).skip()
+
+            reader.seekToBeforeArgument(0)
+            reader.assertNextToken(TokenTypeConst.INT).skip()
+
+            reader.seekToBeforeArgument(1)
+            reader.assertNextToken(TokenTypeConst.BOOL).skip()
+
+            reader.seekToBeforeArgument(2)
+            reader.assertNextToken(TokenTypeConst.NOP_EMPTY_ARGUMENT)
+
+            reader.seekToBeforeArgument(1)
+            reader.assertNextToken(TokenTypeConst.BOOL).skip()
+
+            reader.seekToBeforeArgument(0)
+            reader.assertNextToken(TokenTypeConst.INT).skip()
+        }
+
+
+        @Test
+        fun readVariableThatReferencesEExpArgs() {
+            val identity = template("x") { variable(0) }
+            val foo = template("f") {
+                variable(0)
+            }
+
+            val data = """
+                00
+                01 60
+            """.trimIndent()
+
+            val pool = TemplateResourcePool.getInstance()
+
+            StreamReaderImpl(toByteBuffer(data)).use { stream ->
+                stream.initTables(
+                    symbolTable = arrayOf(null),
+                    macroTable = arrayOf(identity, foo)
+                )
+                stream.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                stream.startMacroEvaluation(pool).use { m1 ->
+                    m1.assertVariableTokenType(TokenTypeConst.MACRO_INVOCATION)
+                        .startMacroEvaluation(pool).use { m2 ->
+                            m2.assertNextToken(TokenTypeConst.INT).skip()
+                            m2.assertNextToken(TokenTypeConst.END)
+                        }
+                    m1.assertNextToken(TokenTypeConst.END)
+                }
+                stream.assertNextToken(TokenTypeConst.END)
+            }
+        }
+
+        @Test
+        fun readVariableThatReferencesAnotherVariable() {
+            val identity = template("x") { variable(0) }
+            val foo = template("f") {
+                macro(identity) {
+                    variable(0)
+                }
+            }
+
+            val data = """
+                00 60
+            """
+
+            val pool = TemplateResourcePool.getInstance()
+
+            StreamReaderImpl(toByteBuffer(data)).use { stream ->
+                stream.initTables(
+                    symbolTable = arrayOf(null),
+                    macroTable = arrayOf(foo)
+                )
+                stream.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                stream.startMacroEvaluation(pool).use { m1 ->
+                    m1.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                        .startMacroEvaluation(pool).use { m2 ->
+                            m2.assertNextToken(TokenTypeConst.INT).skip()
+                            m2.assertNextToken(TokenTypeConst.END)
+                        }
+                    m1.assertNextToken(TokenTypeConst.END)
+                }
+                stream.assertNextToken(TokenTypeConst.END)
+            }
+        }
+
+        @Test
+        fun smallLog() {
+            val placeholder = TemplateMacro(emptyList(), listOf(Expression.LongIntValue(value = 0)))
+
+            // (macro one ( ) '' )
+            val one = template() { symbol("") }
+
+            // (macro entry
+            //        (
+            //        0 start_time
+            //        1 end_time
+            //        2 marketplace
+            //        3 program
+            //        4 time
+            //        5 operation
+            //        6 properties
+            //        7 timing
+            //        8 counters
+            //        9 levels
+            //        10 service_metrics
+            //        11 metrics
+            //        12 groups )
+            //        {
+            //          StartTime: ( '%' start_time ),
+            //          EndTime: (%end_time),
+            //          Marketplace: ( '%' marketplace ),
+            //          Program: ( '%' program ),
+            //          Time: ( '%' time ),
+            //          Operation: ( '%' operation ),
+            //          Properties: ( '%' properties ),
+            //          ServiceMetrics: ( '%' service_metrics ),
+            //          Timing: ( '%' timing ),
+            //          Counters: ( '%' counters ),
+            //          Levels: ( '%' levels ),
+            //          Metrics: ( '%' metrics ),
+            //          Groups: ( '%' groups ),
+            //        }
+            //      )
+            val entry = template(*"start_time end_time marketplace program time operation properties timing counters levels service_metrics metrics groups".split(" ").toTypedArray()) {
+                struct {
+                    fieldName("StartTime"); variable(0)
+                    fieldName("EndTime"); variable(1)
+                    fieldName("Marketplace"); variable(2)
+                    fieldName("Program"); variable(3)
+                    fieldName("Time"); variable(4)
+                    fieldName("Operation"); variable(5)
+                    fieldName("Properties"); variable(6)
+                    fieldName("ServiceMetrics"); variable(10)
+                    fieldName("Timing"); variable(7)
+                    fieldName("Counters"); variable(8)
+                    fieldName("Levels"); variable(9)
+                    fieldName("Metrics"); variable(11)
+                    fieldName("Groups"); variable(12)
+                }
+            }
+
+            // ( macro summary ( name sum unit '\?' count '\?' )
+            //         { Name: ( '%' name ), Sum: ( '%' sum ), Unit: ( '.' $ion:: default ( '%' unit ) ( '.' 0 ) ), Count: ( '.' $ion:: default ( '%' count ) 1 ), } )
+            val summary = template("name", "sum", "unit?", "count?") {
+                struct {
+                    fieldName("Name"); variable(0)
+                    fieldName("Sum"); variable(1)
+                    fieldName("Unit"); macro(SystemMacro.Default) { variable(2); macro(one) {} }
+                    fieldName("Count"); macro(SystemMacro.Default) { variable(3); int(1) }
+                }
+            }
+
+            // ( macro sample ( value repeat ? )
+            //         { Value: ( '%' value ), Repeat: ( '.' $ion:: default ( '%' repeat ) 1 ), } )
+            val sample = template("value", "repeat?") {
+                struct {
+                    fieldName("Value"); variable(0)
+                    fieldName("Repeat"); macro(SystemMacro.Default) { variable(1); int(1) }
+                }
+            }
+
+            // ( macro metric
+            //         ( name value unit '\?' dimensions '\?' )
+            //         { Name: ( '%' name ), Samples: ( '%' value ), Unit: ( '.' $ion:: default ( '%' unit ) ( '.' 0 ) ), Dimensions: ( '%' dimensions ), } )
+            val metric = template("name", "value", "unit?", "dimensions?") {
+                struct {
+                    fieldName("Name"); variable(0)
+                    fieldName("Samples"); variable(1)
+                    fieldName("Unit"); macro(SystemMacro.Default) { variable(2); macro(one) {} }
+                    fieldName("Dimensions"); variable(3)
+                }
+            }
+
+            // ( macro metric_single ( name value repeat '?' unit '?' dimensions '?' )
+            //         ( . 6 ( '%' name ) [ ( '.' 4 ( '%' value ) ( '%' repeat ) ), ] ( % unit ) ( '%' dimensions ) )
+            // )
+            val metricSingle = template("name", "value", "repeat?", "unit?", "dimension?") {
+                macro(metric) {
+                    variable(0)
+                    list {
+                        macro(sample) {
+                            variable(1)
+                            variable(2)
+                        }
+                    }
+                    variable(3)
+                    variable(4)
+                }
+            }
+            // ( macro summary_ms ( name value count '\?' ) (. 2 (%name) (%value) ms (%count)) )
+            val summaryMs = template("name", "value", "count?") {
+                macro(summary) {
+                    variable(0)
+                    variable(1)
+                    symbol("ms")
+                    variable(2)
+                }
+            }
+            // ( macro summary0 (name) (. 2 (%name) 0e0 ) )
+            val summary0 = template("name") {
+                macro(summary) {
+                    variable(0)
+                    float(0.0)
+                }
+            }
+            // ( macro summary1 ( name ) (. 2 (%name) 1e0 ) )
+            val summary1 = template("name") {
+                macro(summary) {
+                    variable(0)
+                    float(1.0)
+                }
+            }
+
+            val macroTable = arrayOf<Macro>(
+                /* 00 */ one,
+                /* 01 */ entry,
+                /* 02 */ summary,
+                /* 03 */ placeholder,
+                /* 04 */ sample,
+                /* 05 */ placeholder,
+                /* 06 */ metric,
+                /* 07 */ metricSingle,
+                /* 08 */ placeholder,
+                /* 09 */ summaryMs,
+                /* 0a */ placeholder,
+                /* 0b */ summary0,
+                /* 0c */ summary1,
+                /* 0d */ placeholder,
+                /* 0e */ placeholder,
+                *EncodingContextManager.ION_1_1_SYSTEM_MACROS,
+            )
+            val symbolTable = arrayOf<String?>(null,
+                "ms", "B", "s", "us-east-1", "LambdaFrontendInvokeService",
+                "ReserveSandbox2", "FrontendInstanceId", "i-0505be8aa9972815b", "AccountId", "103403959176",
+                "RequestId", "f0bc3259-06e9-5ccb-96f1-6a44af76d4aa", "PID", "2812@ip-10-0-16-227", "WorkerId",
+                "i-0c891b196c563ba4c", "FrontendInternalAZ", "USMA7", "WorkerManagerInstanceId", "i-070b7692b9a6aba7e",
+                "SandboxId", "61fa4c30-d51d-40bb-82e0-a6195e27ca10", "Thread", "coral-orchestrator-136", "FrontendPublicAZ",
+                "us-east-1a", "WorkerConnectPort", "2503", "Time:Warm", "Attempt",
+                "Success", "Error", "Fault",
+                )
+
+            val templatePool = TemplateResourcePool.getInstance()
+
+            val data = toByteBuffer(smallLog11Binary)
+
+            StreamReaderImpl(data).use { reader ->
+                reader.initTables(symbolTable, macroTable)
+                reader.nextToken()
+                val macro = reader.macroValue()
+                assertEquals(entry, macro)
+                val args = reader.macroArguments(macro.signature)
+                templatePool.startEvaluation(macro, args).useWith {
+                    assertNextToken(TokenTypeConst.STRUCT)
+                    structValue().useWith {
+                        assertFieldNameAndType("StartTime", TokenTypeConst.TIMESTAMP).skip()
+
+                        assertFieldNameAndType("EndTime", TokenTypeConst.TIMESTAMP).skip()
+
+                        assertFieldNameAndType("Marketplace", TokenTypeConst.SYMBOL).skip()
+
+                        assertFieldNameAndType("Program", TokenTypeConst.SYMBOL).skip()
+
+                        assertFieldNameAndType("Time", TokenTypeConst.FLOAT).skip()
+
+                        assertFieldNameAndType("Operation", TokenTypeConst.SYMBOL).skip()
+
+                        assertFieldNameAndType("Properties", TokenTypeConst.STRUCT)
+                            .structValue()
+                            .use { struct ->
+                                struct.assertFieldNameAndType("FrontendInstanceId", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("AccountId", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("RequestId", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("PID", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("WorkerId", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("FrontendInternalAZ", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("WorkerManagerInstanceId", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("SandboxId", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("Thread", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("FrontendPublicAZ", TokenTypeConst.SYMBOL).skip()
+                                struct.assertFieldNameAndType("WorkerConnectPort", TokenTypeConst.SYMBOL).skip()
+                                struct.assertNextToken(TokenTypeConst.END)
+                            }
+
+                        assertFieldNameAndType("ServiceMetrics", TokenTypeConst.MACRO_INVOCATION)
+                        val m1 = macroValue()
+                        templatePool.startEvaluation(m1, macroArguments(m1.signature)).use { i1 ->
+                            i1.assertNextToken(TokenTypeConst.END)
+                        }
+
+                        assertFieldNameAndType("Timing", TokenTypeConst.LIST)
+                            .listValue()
+                            .use { l ->
+                                l.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                                l.startMacroEvaluation(templatePool).use { i3 ->
+                                    i3.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                                    i3.startMacroEvaluation(templatePool).use { i4 ->
+                                        i4.assertNextToken(TokenTypeConst.STRUCT)
+                                            .structValue()
+                                            .use { s ->
+                                                s.assertFieldNameAndType("Name", TokenTypeConst.SYMBOL)
+                                                    .skip()
+                                                s.assertFieldNameAndType("Sum", TokenTypeConst.FLOAT)
+                                                    .skip()
+                                                s.assertFieldNameAndType("Unit", TokenTypeConst.MACRO_INVOCATION)
+                                                    .startMacroEvaluation(templatePool)
+                                                    .use { i5 ->
+                                                        i5.assertNextToken(TokenTypeConst.SYMBOL).skip()
+                                                        i5.assertNextToken(TokenTypeConst.END)
+                                                    }
+
+                                                s.assertFieldNameAndType("Count", TokenTypeConst.MACRO_INVOCATION)
+                                                    .startMacroEvaluation(templatePool)
+                                                    .use { i6 ->
+                                                        i6.assertNextToken(TokenTypeConst.INT)
+                                                            .skip()
+                                                        i6.assertNextToken(TokenTypeConst.END)
+                                                    }
+                                                s.assertNextToken(TokenTypeConst.END)
+                                            }
+                                        i4.assertNextToken(TokenTypeConst.END)
+                                    }
+                                    i3.assertNextToken(TokenTypeConst.END)
+                                }
+                                l.assertNextToken(TokenTypeConst.END)
+                            }
+
+                        assertFieldNameAndType("Counters", TokenTypeConst.LIST).skip()
+
+                        assertFieldNameAndType("Levels", TokenTypeConst.MACRO_INVOCATION)
+                        val m2 = macroValue()
+                        templatePool.startEvaluation(m2, macroArguments(m2.signature)).use { i2 ->
+                            i2.assertNextToken(TokenTypeConst.END)
+                        }
+
+
+                        assertFieldNameAndType("Metrics", TokenTypeConst.LIST).skip()
+
+                        assertFieldNameAndType("Groups", TokenTypeConst.MACRO_INVOCATION)
+                        val m3 = macroValue()
+                        templatePool.startEvaluation(m3, macroArguments(m3.signature)).use { i3 ->
+                            i3.assertNextToken(TokenTypeConst.END)
+                        }
+
+                        assertNextToken(TokenTypeConst.END)
+
+                    }
+                }
+            }
+        }
+
+        /*
+        │         2212 │            9 │ 09 00                   │ · · (:summary_ms
+        │         2214 │            2 │ e1 1d                   │ · · · 'Time:Warm' // <$29> name
+        │         2216 │            5 │ 6c f8 1a 51 40          │ · · · 3.267271041870117e0 // value
+        │              │              │                         │ · · · (::) // count
+        │              │              │                         │ · · ),
+        */
+        @Test
+        fun summaryMs() {
+            // (macro one ( ) '' )
+            val one = template { symbol("") }
+
+            val summary = template("s_name", "s_sum", "s_unit?", "s_count?") {
+                struct {
+                    fieldName("Name"); variable(0)
+                    fieldName("Sum"); variable(1)
+                    fieldName("Unit"); macro(SystemMacro.Default) { variable(2); macro(one) {} }
+                    fieldName("Count"); macro(SystemMacro.Default) { variable(3); int(1) }
+                }
+            }
+            // ( macro summary_ms ( name value count? ) (.summary (%name) (%value) ms (%count)) )
+            val summaryMs = template("name", "value", "count?") {
+                macro(summary) {
+                    variable(0)
+                    variable(1)
+                    symbol("ms")
+                    variable(2)
+                }
+            }
+
+            val data = """
+                02 00                   | · · (:summary_ms
+                e1 01                   | · · · 'Time:Warm' // <${'$'}29> name
+                6c f8 1a 51 40          | · · · 3.267271041870117e0 // value
+                                        | · · · (::) // count
+                                        | · · ),
+            """.trimIndent()
+
+            val pool = TemplateResourcePool.getInstance()
+
+            StreamReaderImpl(toByteBuffer(data)).use {
+                (it as ValueReaderBase).initTables(
+                    symbolTable = arrayOf(null, "Time:Warm"),
+                    macroTable = arrayOf(one, summary, summaryMs),
+                )
+
+                it.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                it.startMacroEvaluation(pool).use { m ->
+                    m.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                    m.startMacroEvaluation(pool).use { i4 ->
+                        i4.assertNextToken(TokenTypeConst.STRUCT)
+                            .structValue()
+                            .use { s ->
+                                s.assertFieldNameAndType("Name", TokenTypeConst.SYMBOL)
+                                    .skip()
+                                s.assertFieldNameAndType("Sum", TokenTypeConst.FLOAT)
+                                    .skip()
+                                s.assertFieldNameAndType("Unit", TokenTypeConst.MACRO_INVOCATION)
+                                    .startMacroEvaluation(pool)
+                                    .use { i5 ->
+                                        i5.assertNextToken(TokenTypeConst.SYMBOL).skip()
+                                        i5.assertNextToken(TokenTypeConst.END)
+                                    }
+
+                                s.assertFieldNameAndType("Count", TokenTypeConst.MACRO_INVOCATION)
+                                    .startMacroEvaluation(pool)
+                                    .use { i6 ->
+                                        i6.assertNextToken(TokenTypeConst.INT).skip()
+                                        i6.assertNextToken(TokenTypeConst.END)
+                                    }
+                                s.assertNextToken(TokenTypeConst.END)
+                            }
+                        i4.assertNextToken(TokenTypeConst.END)
+                    }
+                    m.assertNextToken(TokenTypeConst.END)
+                }
+                it.assertNextToken(TokenTypeConst.END)
+            }
+
+
+
+        }
+
+        /*
+        │         2235 │            5 │ 07 00                   │ · · (:metric_single
+        │         2237 │            2 │ e1 20                   │ · · · Error // <$32> name
+        │         2239 │            1 │ 6a                      │ · · · 0e0 // value
+        │              │              │                         │ · · · (::) // repeat
+        │              │              │                         │ · · · (::) // unit
+        │              │              │                         │ · · · (::) // dimensions
+        │              │              │                         │ · · ),
+        │              │              │                         │ · · {
+        │              │              │                         │ · · · Name: Error,
+        │              │              │                         │ · · · Samples:
+        │              │              │                         │ · · · [
+        │              │              │                         │ · · · · {
+        │              │              │                         │ · · · · · Value:
+        │              │              │                (%value) │ · · · · · 0e0,
+        │              │              │                         │ · · · · · Repeat:
+        │              │              │                         │ · · · · · 1,
+        │              │              │                         │ · · · · },
+        │              │              │                         │ · · · ],
+        │              │              │                         │ · · · Unit: '',
+        │              │              │                         │ · · · Dimensions:
+        │              │              │                         │ · · },
+         */
+        @Test
+        fun metricSingle() {
+            // (macro one ( ) '' )
+            val one = template { symbol("") }
+
+            //( macro sample ( value repeat '\?' ) { Value: ( '%' value ), Repeat: ( '.' $ion:: default ( '%' repeat ) 1 ), } )
+            val sample = template("value", "repeat?") {
+                struct {
+                    fieldName("Value"); variable(0)
+                    fieldName("Repeat"); macro(SystemMacro.Default) {
+                        variable(1)
+                        int(1)
+                    }
+                }
+            }
+
+            //( macro metric ( name value unit '\?' dimensions '\?' ) { Name: ( '%' name ), Samples: ( '%' value ), Unit: ( '.' $ion:: default ( '%' unit ) (.one) ), Dimensions: ( '%' dimensions ), } )
+            val metric = template("name", "value", "unit?", "dimensions?") {
+                struct {
+                    fieldName("Name"); variable(0)
+                    fieldName("Samples"); variable(1)
+                    fieldName("Unit"); macro(SystemMacro.Default) {
+                        variable(3)
+                        macro(one) {}
+                    }
+                    fieldName("Dimensions"); variable(3)
+                }
+            }
+
+            //  (macro metric_single (name value repeat? unit? dimensions?) (.metric (%name) [ (.sample (%value) (%repeat)),] (%unit) (%dimensions)))
+            val metricSingle = template("name", "value", "repeat?", "unit?", "dimensions?") {
+                macro(metric) {
+                    variable(0)
+                    list {
+                        macro(sample) {
+                            variable(1)
+                            variable(2)
+                        }
+                    }
+                    variable(3)
+                    variable(4)
+                }
+            }
+
+            val data = """
+                03 00                   | · · (:metric_single
+                e1 01                   | · · · Error // <$ 32> name
+                6a                      | · · · 0e0 // value
+                                        | · · · (::) // repeat
+                                        | · · · (::) // unit
+                                        | · · · (::) // dimensions
+                                        | · · ),
+            """.trimIndent()
+
+            // { Name: Error, Samples: [ { Value: 0e0, Repeat: 1, }, ], Unit: '' },
+
+            val pool = TemplateResourcePool.getInstance()
+
+            StreamReaderImpl(toByteBuffer(data)).use {
+                (it as ValueReaderBase).initTables(
+                    symbolTable = arrayOf(null, "Error"),
+                    macroTable = arrayOf(one, sample, metric, metricSingle),
+                )
+
+                it.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                it.startMacroEvaluation(pool).use { m ->
+                    m.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                    m.startMacroEvaluation(pool).use { i4 ->
+                        i4.assertNextToken(TokenTypeConst.STRUCT)
+                            .structValue()
+                            .use { s ->
+                                s.assertFieldNameAndType("Name", TokenTypeConst.SYMBOL)
+                                    .skip()
+                                s.assertFieldNameAndType("Samples", TokenTypeConst.LIST)
+                                    .listValue()
+                                    .use { l ->
+                                        l.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                                            .startMacroEvaluation(pool)
+                                            .use { m2 ->
+                                                m2.assertNextToken(TokenTypeConst.STRUCT)
+                                                    .structValue()
+                                                    .use { s2 ->
+                                                        s2.assertFieldNameAndType("Value", TokenTypeConst.FLOAT).skip()
+                                                        s2.assertFieldNameAndType("Repeat", TokenTypeConst.MACRO_INVOCATION)
+                                                            .startMacroEvaluation(pool)
+                                                            .use { m3 ->
+                                                                m3.assertNextToken(TokenTypeConst.INT).skip()
+                                                                m3.assertNextToken(TokenTypeConst.END)
+                                                            }
+                                                        s2.assertNextToken(TokenTypeConst.END)
+                                                    }
+                                                m2.assertNextToken(TokenTypeConst.END)
+                                            }
+                                        l.assertNextToken(TokenTypeConst.END)
+                                    }
+                                s.assertFieldNameAndType("Unit", TokenTypeConst.MACRO_INVOCATION)
+                                    .startMacroEvaluation(pool)
+                                    .use { i5 ->
+                                        i5.assertNextToken(TokenTypeConst.SYMBOL).skip()
+                                        i5.assertNextToken(TokenTypeConst.END)
+                                    }
+
+                                s.assertNextToken(TokenTypeConst.END)
+                            }
+                        i4.assertNextToken(TokenTypeConst.END)
+                    }
+                    m.assertNextToken(TokenTypeConst.END)
+                }
+                it.assertNextToken(TokenTypeConst.END)
+            }
+
+
+
+        }
+
+
+        private fun ValueReader.startMacroEvaluation(pool: TemplateResourcePool): ValueReader {
+            val macro = macroValue()
+            val args = macroArguments(macro.signature)
+            return pool.startEvaluation(macro, args)
+        }
+
+        private fun StructReader.assertFieldNameAndType(name: String, token: Int) = apply {
+            assertFieldName(name)
+            assertNextToken(token)
+        }
+
+        private fun StructReader.assertFieldNameAndTypeThenSkip(name: String, token: Int) {
+            assertFieldNameAndType(name, token)
+            skip()
+        }
+
+        private fun ValueReader.assertVariableTokenType(token: Int): ValueReader {
+            //(this as TemplateReader).argumentIndex()
+            assertEquals(TokenTypeConst(token), TokenTypeConst(this.nextToken()))
+            return this
+        }
+
+        private fun ValueReader.assertNextToken(token: Int): ValueReader = apply {
+            assertEquals(TokenTypeConst(token), TokenTypeConst(this.nextToken()))
+        }
+
+        private fun StructReader.assertFieldName(name: String): StructReader = apply {
+            assertNextToken(TokenTypeConst.FIELD_NAME)
+            val sid = this.fieldNameSid()
+            val text = if (sid < 0) {
+                this.fieldName()
+            } else {
+                lookupSid(sid)
+            }
+            assertEquals(name, text)
+        }
+
+        @OptIn(ExperimentalContracts::class)
+        inline fun <T:AutoCloseable?, R> T.useWith(block: T.() -> R): R {
+            contract {
+                callsInPlace(block, InvocationKind.EXACTLY_ONCE)
+            }
+            var exception: Throwable? = null
+            try {
+                return this.block()
+            } catch (e: Throwable) {
+                exception = e
+                throw e
+            } finally {
+                when {
+                    this == null -> {}
+                    exception == null -> close()
+                    else ->
+                        try {
+                            close()
+                        } catch (closeException: Throwable) {
+                            exception?.addSuppressed(closeException)
+                        }
+                }
+            }
+        }
 
         @Nested
         inner class VisitingReaderTests {
@@ -932,14 +1665,9 @@ class TypedReadersTest {
 
             @Test
             fun templateMacroWithOneVariable() {
-                val macro = TemplateMacro(
-                    signature = listOf(
-                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
-                    ),
-                    body = ExpressionBuilderDsl.templateBody {
-                        variable(0)
-                    }
-                )
+                val macro = template("foo") {
+                    variable(0)
+                }
                 val data = toByteBuffer("""
                     E0 01 01 EA
                     60
@@ -997,6 +1725,176 @@ class TypedReadersTest {
                 }
             }
 
+            @Test
+            fun templateMacroWithMultipleVariablesOutOfOrder() {
+                val macro = template("foo", "bar") {
+                    struct {
+                        fieldName("foo")
+                        variable(1)
+                        fieldName("bar")
+                        variable(0)
+                    }
+                }
+
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 61 01 61 02
+                    61 03
+                """)
+
+                ApplicationReaderDriver(data, listOf(macro)).use { driver ->
+                    driver.readAll(
+                        expect(
+                            Expectation.IntValue(0),
+                            Expectation.StructStart,
+                            Expectation.FieldName("foo"),
+                            Expectation.IntValue(2),
+                            Expectation.FieldName("bar"),
+                            Expectation.IntValue(1),
+                            Expectation.End,
+                            Expectation.IntValue(3),
+                        )
+                    )
+                }
+            }
+
+
+            @Test
+            fun smallLog() {
+                val placeholder = TemplateMacro(emptyList(), listOf(Expression.LongIntValue(value = 0)))
+
+                // (macro one ( ) '' )
+                val one = template() { symbol("") }
+
+                val entry = template(*"start_time end_time marketplace program time operation properties timing counters levels service_metrics metrics groups".split(" ").toTypedArray()) {
+                    struct {
+                        fieldName("StartTime"); variable(0)
+                        fieldName("EndTime"); variable(1)
+                        fieldName("Marketplace"); variable(2)
+                        fieldName("Program"); variable(3)
+                        fieldName("Time"); variable(4)
+                        fieldName("Operation"); variable(5)
+                        fieldName("Properties"); variable(6)
+                        fieldName("ServiceMetrics"); variable(10)
+                        fieldName("Timing"); variable(7)
+                        fieldName("Counters"); variable(8)
+                        fieldName("Levels"); variable(9)
+                        fieldName("Metrics"); variable(11)
+                        fieldName("Groups"); variable(12)
+                    }
+                }
+
+                // ( macro summary ( name sum unit '\?' count '\?' )
+                //         { Name: ( '%' name ), Sum: ( '%' sum ), Unit: ( '.' $ion:: default ( '%' unit ) ( '.' 0 ) ), Count: ( '.' $ion:: default ( '%' count ) 1 ), } )
+                val summary = template("name", "sum", "unit?", "count?") {
+                    struct {
+                        fieldName("Name"); variable(0)
+                        fieldName("Sum"); variable(1)
+                        fieldName("Unit"); macro(SystemMacro.Default) { variable(2); macro(one) {} }
+                        fieldName("Count"); macro(SystemMacro.Default) { variable(3); int(1) }
+                    }
+                }
+
+                // ( macro sample ( value repeat ? )
+                //         { Value: ( '%' value ), Repeat: ( '.' $ion:: default ( '%' repeat ) 1 ), } )
+                val sample = template("value", "repeat?") {
+                    struct {
+                        fieldName("Value"); variable(0)
+                        fieldName("Repeat"); macro(SystemMacro.Default) { variable(1); int(1) }
+                    }
+                }
+
+                // ( macro metric
+                //         ( name value unit '\?' dimensions '\?' )
+                //         { Name: ( '%' name ), Samples: ( '%' value ), Unit: ( '.' $ion:: default ( '%' unit ) ( '.' 0 ) ), Dimensions: ( '%' dimensions ), } )
+                val metric = template("name", "value", "unit?", "dimensions?") {
+                    struct {
+                        fieldName("Name"); variable(0)
+                        fieldName("Samples"); variable(1)
+                        fieldName("Unit"); macro(SystemMacro.Default) { variable(2); macro(one) {} }
+                        fieldName("Dimensions"); variable(3)
+                    }
+                }
+
+                // ( macro metric_single ( name value repeat '?' unit '?' dimensions '?' )
+                //         ( . 6 ( '%' name ) [ ( '.' 4 ( '%' value ) ( '%' repeat ) ), ] ( % unit ) ( '%' dimensions ) )
+                // )
+                val metricSingle = template("name", "value", "repeat?", "unit?", "dimension?") {
+                    macro(metric) {
+                        variable(0)
+                        list {
+                            macro(sample) {
+                                variable(1)
+                                variable(2)
+                            }
+                        }
+                        variable(3)
+                        variable(4)
+                    }
+                }
+                // ( macro summary_ms ( name value count '\?' ) (. 2 (%name) (%value) ms (%count)) )
+                val summaryMs = template("name", "value", "count?") {
+                    macro(summary) {
+                        variable(0)
+                        variable(1)
+                        symbol("ms")
+                        variable(2)
+                    }
+                }
+                // ( macro summary0 (name) (. 2 (%name) 0e0 ) )
+                val summary0 = template("name") {
+                    macro(summary) {
+                        variable(0)
+                        float(0.0)
+                    }
+                }
+                // ( macro summary1 ( name ) (. 2 (%name) 1e0 ) )
+                val summary1 = template("name") {
+                    macro(summary) {
+                        variable(0)
+                        float(1.0)
+                    }
+                }
+
+                val macroTable = arrayOf<Macro>(
+                    /* 00 */ one,
+                    /* 01 */ entry,
+                    /* 02 */ summary,
+                    /* 03 */ placeholder,
+                    /* 04 */ sample,
+                    /* 05 */ placeholder,
+                    /* 06 */ metric,
+                    /* 07 */ metricSingle,
+                    /* 08 */ placeholder,
+                    /* 09 */ summaryMs,
+                    /* 0a */ placeholder,
+                    /* 0b */ summary0,
+                    /* 0c */ summary1,
+                    /* 0d */ placeholder,
+                    /* 0e */ placeholder,
+                    *EncodingContextManager.ION_1_1_SYSTEM_MACROS,
+                )
+                val symbolTable = arrayOf<String?>(null,
+                    "ms", "B", "s", "us-east-1", "LambdaFrontendInvokeService",
+                    "ReserveSandbox2", "FrontendInstanceId", "i-0505be8aa9972815b", "AccountId", "103403959176",
+                    "RequestId", "f0bc3259-06e9-5ccb-96f1-6a44af76d4aa", "PID", "2812@ip-10-0-16-227", "WorkerId",
+                    "i-0c891b196c563ba4c", "FrontendInternalAZ", "USMA7", "WorkerManagerInstanceId", "i-070b7692b9a6aba7e",
+                    "SandboxId", "61fa4c30-d51d-40bb-82e0-a6195e27ca10", "Thread", "coral-orchestrator-136", "FrontendPublicAZ",
+                    "us-east-1a", "WorkerConnectPort", "2503", "Time:Warm", "Attempt",
+                    "Success", "Error", "Fault",
+                )
+
+
+                ApplicationReaderDriver(toByteBuffer("E0 01 01 EA 60 " + smallLog11Binary)).use {
+
+                    it.read(NoOpVisitor())
+
+                    it.ion11Reader.initTables(symbolTable, macroTable)
+
+                    it.readAll(PrinterVisitorTop)
+                }
+            }
 
             @Test
             fun strings() {
@@ -1018,37 +1916,6 @@ class TypedReadersTest {
                     )
                 }
             }
-
-            val smallLog = "$" + """ion_log::"ServiceQueryLog_1_0"
-        {
-                  StartTime:2018-08-06T23:59:59.897Z,
-                  Marketplace:"us-west-2",
-                  Program:"Canal_20130901",
-                  Time:19041583,
-                  Operation:"PutRecord",
-                  AccountId:"599497505561",
-                  AwsAccessKeyId:"AKIAIDCULUG4T7M7YSFA",
-                  AwsAccountId:"599497505561",
-                  AwsCallerPrincipal:"AIDAJDEOMPZALKP53LY7E",
-                  AwsUserArn:"arn:aws:iam::599497505561:user/kinesis-rw-user",
-                  AwsUserPrincipal:"AIDAJDEOMPZALKP53LY7E",
-                  ChainId:"Chain_163fa914bda_7",
-                  EndTime:Instant::2018-08-06T23:59:59.000Z,
-                  PID:"38207@kinesis-proxy-hailstoneperf-pdx-62002.pdx2.amazon.com",
-                  RemoteIpAddress:"10.242.81.215",
-                  RemoteIpAddressSequence:"10.242.81.215",
-                  RemoteSocket:"127.0.0.1:44700",
-                  RequestId:"bb1890d7-f941-4277-b183-791205713dc7",
-                  SN:"49585610451445194228944925219480153390279546138439714930",
-                  ShardId:"shardId-000000000135",
-                  Size:"104",
-                  StreamName:"240-shard-fe-stress",
-                  Throttler:"Gossip",
-                  UserAgent:"aws-sdk-java/2.0.0-preview-11-SNAPSHOT Linux/3.2.45-0.6.wd.514.39.260.metal1.x86_64 Java_HotSpot_TM__64-Bit_Server_VM/25.92-b14 Java/1.8.0_92",
-                  'amz-sdk-invocation-id':"af8e1574-03b1-6e24-597a-7281467821b3",
-                  'amz-sdk-retry':"0/0/500",
-        }
-    """
 
             @Test
             fun `small log file no macros`() {
@@ -1189,7 +2056,7 @@ class TypedReadersTest {
             """
 
             @Test
-            fun `a big one for Ion 1 1 with macros`() {
+            fun `a small log for Ion 1 1 with macros`() {
                 val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
 
 
@@ -1199,6 +2066,62 @@ class TypedReadersTest {
                         it.readAll(PrinterVisitorTop)
                     }
                 }
+
+                val ion = IonSystemBuilder.standard().build()
+                val actual = ion.newDatagram()
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    ApplicationReaderDriver(mappedByteBuffer).use {
+                        it.readAll(IonDatagramHydrator(actual))
+                    }
+                }
+
+                val expected = ion.loader.load(path.toFile())
+
+                val ei = expected.iterator()
+                val ai = actual.iterator()
+                var i = 0
+                while (ei.hasNext() && ai.hasNext()) {
+                    val e = ei.next()
+                    val a = ai.next()
+                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
+                    i++
+                }
+                assertEquals(expected.size, actual.size)
+            }
+
+            @Test
+            fun `medium log for Ion 1 1 with macros`() {
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_medium.11.10n")
+
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    ApplicationReaderDriver(mappedByteBuffer).use {
+                        it.readAll(PrinterVisitorTop)
+                    }
+                }
+
+                val ion = IonSystemBuilder.standard().build()
+                val actual = ion.newDatagram()
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    ApplicationReaderDriver(mappedByteBuffer).use {
+                        it.readAll(IonDatagramHydrator(actual))
+                    }
+                }
+
+                val expected = ion.loader.load(path.toFile())
+
+                val ei = expected.iterator()
+                val ai = actual.iterator()
+                var i = 0
+                while (ei.hasNext() && ai.hasNext()) {
+                    val e = ei.next()
+                    val a = ai.next()
+                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
+                    i++
+                }
+                assertEquals(expected.size, actual.size)
             }
         }
 
@@ -1569,14 +2492,8 @@ class TypedReadersTest {
 
             @Test
             fun templateMacroWithOneVariable() {
-                val macro = TemplateMacro(
-                    signature = listOf(
-                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
-                    ),
-                    body = ExpressionBuilderDsl.templateBody {
-                        variable(0)
-                    }
-                )
+                val macro = template("foo") { variable(0) }
+
                 val data = toByteBuffer("""
                     E0 01 01 EA
                     60
@@ -1621,6 +2538,163 @@ class TypedReadersTest {
                     value("3")
                 }
             }
+
+            @Test
+            fun smallLog() {
+                val placeholder = TemplateMacro(emptyList(), listOf(Expression.LongIntValue(value = 0)))
+
+                // (macro one ( ) '' )
+                val one = template() { symbol("") }
+
+                val entry = template(*"start_time end_time marketplace program time operation properties timing counters levels service_metrics metrics groups".split(" ").toTypedArray()) {
+                    struct {
+                        fieldName("StartTime"); variable(0)
+                        fieldName("EndTime"); variable(1)
+                        fieldName("Marketplace"); variable(2)
+                        fieldName("Program"); variable(3)
+                        fieldName("Time"); variable(4)
+                        fieldName("Operation"); variable(5)
+                        fieldName("Properties"); variable(6)
+                        fieldName("ServiceMetrics"); variable(10)
+                        fieldName("Timing"); variable(7)
+                        fieldName("Counters"); variable(8)
+                        fieldName("Levels"); variable(9)
+                        fieldName("Metrics"); variable(11)
+                        fieldName("Groups"); variable(12)
+                    }
+                }
+
+                // ( macro summary ( name sum unit '\?' count '\?' )
+                //         { Name: ( '%' name ), Sum: ( '%' sum ), Unit: ( '.' $ion:: default ( '%' unit ) ( '.' 0 ) ), Count: ( '.' $ion:: default ( '%' count ) 1 ), } )
+                val summary = template("name", "sum", "unit?", "count?") {
+                    struct {
+                        fieldName("Name"); variable(0)
+                        fieldName("Sum"); variable(1)
+                        fieldName("Unit"); macro(SystemMacro.Default) { variable(2); macro(one) {} }
+                        fieldName("Count"); macro(SystemMacro.Default) { variable(3); int(1) }
+                    }
+                }
+
+                // ( macro sample ( value repeat ? )
+                //         { Value: ( '%' value ), Repeat: ( '.' $ion:: default ( '%' repeat ) 1 ), } )
+                val sample = template("value", "repeat?") {
+                    struct {
+                        fieldName("Value"); variable(0)
+                        fieldName("Repeat"); macro(SystemMacro.Default) { variable(1); int(1) }
+                    }
+                }
+
+                // ( macro metric
+                //         ( name value unit '\?' dimensions '\?' )
+                //         { Name: ( '%' name ), Samples: ( '%' value ), Unit: ( '.' $ion:: default ( '%' unit ) ( '.' 0 ) ), Dimensions: ( '%' dimensions ), } )
+                val metric = template("name", "value", "unit?", "dimensions?") {
+                    struct {
+                        fieldName("Name"); variable(0)
+                        fieldName("Samples"); variable(1)
+                        fieldName("Unit"); macro(SystemMacro.Default) { variable(2); macro(one) {} }
+                        fieldName("Dimensions"); variable(3)
+                    }
+                }
+
+                // ( macro metric_single ( name value repeat '?' unit '?' dimensions '?' )
+                //         ( . 6 ( '%' name ) [ ( '.' 4 ( '%' value ) ( '%' repeat ) ), ] ( % unit ) ( '%' dimensions ) )
+                // )
+                val metricSingle = template("name", "value", "repeat?", "unit?", "dimension?") {
+                    macro(metric) {
+                        variable(0)
+                        list {
+                            macro(sample) {
+                                variable(1)
+                                variable(2)
+                            }
+                        }
+                        variable(3)
+                        variable(4)
+                    }
+                }
+                // ( macro summary_ms ( name value count '\?' ) (. 2 (%name) (%value) ms (%count)) )
+                val summaryMs = template("name", "value", "count?") {
+                    macro(summary) {
+                        variable(0)
+                        variable(1)
+                        symbol("ms")
+                        variable(2)
+                    }
+                }
+                // ( macro summary0 (name) (. 2 (%name) 0e0 ) )
+                val summary0 = template("name") {
+                    macro(summary) {
+                        variable(0)
+                        float(0.0)
+                    }
+                }
+                // ( macro summary1 ( name ) (. 2 (%name) 1e0 ) )
+                val summary1 = template("name") {
+                    macro(summary) {
+                        variable(0)
+                        float(1.0)
+                    }
+                }
+
+                val macroTable = arrayOf<Macro>(
+                    /* 00 */ one,
+                    /* 01 */ entry,
+                    /* 02 */ summary,
+                    /* 03 */ placeholder,
+                    /* 04 */ sample,
+                    /* 05 */ placeholder,
+                    /* 06 */ metric,
+                    /* 07 */ metricSingle,
+                    /* 08 */ placeholder,
+                    /* 09 */ summaryMs,
+                    /* 0a */ placeholder,
+                    /* 0b */ summary0,
+                    /* 0c */ summary1,
+                    /* 0d */ placeholder,
+                    /* 0e */ placeholder,
+                    *EncodingContextManager.ION_1_1_SYSTEM_MACROS,
+                )
+                val symbolTable = arrayOf<String?>(null,
+                    "ms", "B", "s", "us-east-1", "LambdaFrontendInvokeService",
+                    "ReserveSandbox2", "FrontendInstanceId", "i-0505be8aa9972815b", "AccountId", "103403959176",
+                    "RequestId", "f0bc3259-06e9-5ccb-96f1-6a44af76d4aa", "PID", "2812@ip-10-0-16-227", "WorkerId",
+                    "i-0c891b196c563ba4c", "FrontendInternalAZ", "USMA7", "WorkerManagerInstanceId", "i-070b7692b9a6aba7e",
+                    "SandboxId", "61fa4c30-d51d-40bb-82e0-a6195e27ca10", "Thread", "coral-orchestrator-136", "FrontendPublicAZ",
+                    "us-east-1a", "WorkerConnectPort", "2503", "Time:Warm", "Attempt",
+                    "Success", "Error", "Fault",
+                )
+
+                val actual = ION.newDatagram()
+
+                StreamReaderAsIonReader(toByteBuffer("E0 01 01 EA 60 " + smallLog11Binary)).use {
+
+                    val iter = ION.iterate(it)
+                    iter.next()
+
+                    it.ion11Reader.initTables(symbolTable, macroTable)
+
+                    while (iter.hasNext()) {
+                        val value = iter.next()
+                        println(value.toPrettyString())
+                        actual.add(value)
+                    }
+                }
+
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
+
+                val expected = ION.loader.load(path.toFile())
+                val ei = expected.iterator()
+                val ai = actual.iterator()
+                var i = 0
+                while (ei.hasNext() && ai.hasNext()) {
+                    val e = ei.next()
+                    val a = ai.next()
+                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
+                    i++
+                }
+                assertEquals(expected.size, actual.size)
+            }
+
 
             @Test
             fun usingMacrosDefinedInTheDataStream() {
@@ -1694,10 +2768,12 @@ class TypedReadersTest {
             }
 
             @Test
-            fun `a medium one for Ion 1 1 with macros`() {
+            fun `a small log for Ion 1 1 with macros`() {
                 val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
 
                 // "/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n"
+
+                val actual = ION.newDatagram()
 
                 FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
                     val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
@@ -1706,13 +2782,56 @@ class TypedReadersTest {
                         while (iter.hasNext()) {
                             val value = iter.next()
                             println(value)
+                            actual.add(value)
                         }
                     }
                 }
+
+                val expected = ION.loader.load(path.toFile())
+                val ei = expected.iterator()
+                val ai = actual.iterator()
+                var i = 0
+                while (ei.hasNext() && ai.hasNext()) {
+                    val e = ei.next()
+                    val a = ai.next()
+                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
+                    i++
+                }
+                assertEquals(expected.size, actual.size)
             }
 
             @Test
-            fun `a big one for Ion 1 1 with macros`() {
+            fun `a medium one log Ion 1 1 with macros`() {
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_medium.11.10n")
+
+                val actual = ION.newDatagram()
+
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    StreamReaderAsIonReader(mappedByteBuffer).use {
+                        val iter = ION.iterate(it)
+                        while (iter.hasNext()) {
+                            val value = iter.next()
+                            actual.add(value)
+                        }
+                    }
+                }
+
+                val expected = ION.loader.load(path.toFile())
+                val ei = expected.iterator()
+                val ai = actual.iterator()
+                var i = 0
+                while (ei.hasNext() && ai.hasNext()) {
+                    val e = ei.next()
+                    val a = ai.next()
+                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
+                    i++
+                }
+                assertEquals(expected.size, actual.size)
+            }
+
+            @Test
+            fun `a big log for Ion 1 1 with macros`() {
                 val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n")
 
                 FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
@@ -2152,15 +3271,16 @@ class TypedReadersTest {
                     value
                 }
                 TokenTypeConst.END -> null
-                TokenTypeConst.EEXP -> {
+                TokenTypeConst.MACRO_INVOCATION -> {
                     val sexp = ion.newEmptySexp()
-                    val address = reader.eexpValue()
-                    sexp.add().newSymbol(":$address")
+//                    val address = reader.eexpValue()
+//                    sexp.add().newSymbol(":$address")
                     while (true) {
                         val value = readValue(reader) ?: break
                         sexp.add(value)
                     }
                     sexp
+                    TODO()
                 }
                 TokenTypeConst.IVM -> readValue(reader)
                 TokenTypeConst.NOP-> readValue(reader)
@@ -2422,7 +3542,7 @@ class TypedReadersTest {
                     }
                 }
             } catch (e: Throwable) {
-                println(results.takeLast(25).forEach(::println))
+                println(results.takeLast(50).forEach(::println))
                 throw e
             }
         }

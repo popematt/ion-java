@@ -15,13 +15,22 @@ class EExpArgumentReaderImpl(
     macroTable: Array<Macro>,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), ArgumentReader {
 
-    private var signature: List<Macro.Parameter> = emptyList()
+    override var signature: List<Macro.Parameter> = emptyList()
+        private set
 
     // 0, 1, or 2
-    private var presence = IntArray(8)
+    var presence = IntArray(8)
     // The position of a "not present" argument is always the first byte after the last byte of the previous argument
-    private var argumentIndices = IntArray(8)
-    private var currentParameterIndex = 0
+    var argumentIndices = IntArray(8)
+    // This is specifically, the index of the parameter within the macro signature, not within the ByteBuffer.
+    private var nextParameterIndex = 0
+        set(value) {
+            val e = Exception()
+            val stackFrame = e.stackTrace[1]
+            val stackFrame2 = e.stackTrace[2]
+//            println("[$id] setting nextParameterIndex $field --> $value\n    " + e.stackTrace.take(5).joinToString("\n    "))
+            field = value
+        }
 
     override fun close() {
 //        println("Closing EExpArgumentReaderImpl...")
@@ -31,7 +40,7 @@ class EExpArgumentReaderImpl(
 
     fun initArgs(signature: List<Macro.Parameter>) {
         this.signature = signature
-        this.currentParameterIndex = 0
+        this.nextParameterIndex = 0
         // Make sure we have enough space in our arrays
         if (signature.size > argumentIndices.size) {
             argumentIndices = IntArray(signature.size)
@@ -61,22 +70,32 @@ class EExpArgumentReaderImpl(
         argumentIndices[0] = source.position()
     }
 
-
     fun calculateEndPosition(): Int {
         source.mark()
-        for (i in 1 until argumentIndices.size) {
-            val previous = signature[i - 1]
-            val previousPosition = argumentIndices[i - 1]
-            var sizeOfPrevious = 0
-            nextToken()
-
-
-            argumentIndices[i] = previousPosition + sizeOfPrevious
+        for (i in signature.indices) {
+            nextParameterIndex = i
+            val argPosition = source.position()
+            if (presence[i] > 0) {
+                nextToken()
+                skip()
+            }
+            argumentIndices[i] = argPosition
         }
-        return argumentIndices[argumentIndices.size - 1] // + size of last argument
+//        println("[$id] Argument indices: ${argumentIndices.contentToString()}")
+        val endPosition = source.position()
+//        println("[$id] End exclusive = $endPosition")
+        source.reset()
+        source.limit(endPosition)
+        return endPosition
     }
 
-    override fun seekToArgument(signatureIndex: Int): Int {
+    // This can be combined with `nextToken()`
+    override fun seekToBeforeArgument(signatureIndex: Int) {
+//        println("[$id] Seeking to before eexp arg ${signature[signatureIndex]}($signatureIndex)")
+
+//        if (Debug.enabled) println("seeking to before argument: ${signature[signatureIndex]} ($signatureIndex)")
+        nextParameterIndex = signatureIndex
+
         var argumentPosition = argumentIndices[signatureIndex]
         if (argumentPosition < 0) {
             // TODO: See if this is faster if it uses a loop instead of recursion.
@@ -86,43 +105,66 @@ class EExpArgumentReaderImpl(
             skip()
             argumentPosition = source.position()
             argumentIndices[signatureIndex] = argumentPosition
+        } else {
+            source.position(argumentPosition)
         }
-        val tokenType = when (presence[signatureIndex]) {
-            2 -> {
-                source.position(argumentIndices[signatureIndex])
-                opcode = TID_EXPRESSION_GROUP
-                TokenTypeConst.EXPRESSION_GROUP
-            }
-            1 -> {
-                source.position(argumentIndices[signatureIndex])
-                super.nextToken()
-            }
-            0 -> {
-                opcode = TID_EMPTY_ARGUMENT
-                TokenTypeConst.EMPTY_ARGUMENT
-            }
-            else -> throw IonException("Invalid presence bits for parameter $signatureIndex; was ${presence[signatureIndex]}")
-        }
-        return tokenType
+        opcode = TID_UNSET
+    }
+
+    override fun seekToArgument(signatureIndex: Int): Int {
+        seekToBeforeArgument(signatureIndex)
+        return nextToken()
+
+
+//        println("[$id] Seeking to eexp arg ${signature[signatureIndex]}($signatureIndex)")
+//        var argumentPosition = argumentIndices[signatureIndex]
+//        if (argumentPosition < 0) {
+//            // TODO: See if this is faster if it uses a loop instead of recursion.
+//            // TODO: If it's faster to calculate all of the argument positions up front, then consider adding a reader
+//            //       option that allows users to decide between eager and lazy argument calculations.
+//            seekToArgument(signatureIndex - 1)
+//            skip()
+//            argumentPosition = source.position()
+//            argumentIndices[signatureIndex] = argumentPosition
+//        }
+//        val tokenType = when (presence[signatureIndex]) {
+//            2 -> {
+//                source.position(argumentIndices[signatureIndex])
+//                opcode = TID_EXPRESSION_GROUP
+//                TokenTypeConst.EXPRESSION_GROUP
+//            }
+//            1 -> {
+//                source.position(argumentIndices[signatureIndex])
+//                super.nextToken()
+//            }
+//            0 -> {
+//                opcode = TID_EMPTY_ARGUMENT
+//                TokenTypeConst.NOP_EMPTY_ARGUMENT
+//            }
+//            else -> throw IonException("Invalid presence bits for parameter $signatureIndex; was ${presence[signatureIndex]}")
+//        }
+//        return tokenType
     }
 
     override fun nextToken(): Int {
-        val cpIndex = currentParameterIndex
-        currentParameterIndex++
+        val cpIndex = nextParameterIndex
         if (cpIndex >= signature.size) {
             opcode = TID_END
 //            println("Position: ${source.position()}, token: END")
             return TokenTypeConst.END
         }
+//        println("[$id] Reading EExp arg ${signature[cpIndex]}")
+        nextParameterIndex++
         val currentParameter = signature[cpIndex]
         val presence = presence[cpIndex]
 //        println("Checking next argument presence. Positioned at ${source.position()}, presence: $presence")
         return when (presence) {
             0 -> {
                 opcode = TID_EMPTY_ARGUMENT
-                TokenTypeConst.EMPTY_ARGUMENT
+                TokenTypeConst.NOP_EMPTY_ARGUMENT
             }
             1 -> {
+                // Assuming tagged
                 super.nextToken()
             }
             2 -> {
@@ -178,5 +220,6 @@ class EExpArgumentReaderImpl(
             }
             else -> super.skip()
         }
+//        println(source.position())
     }
 }

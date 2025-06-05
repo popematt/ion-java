@@ -1,9 +1,18 @@
-package com.amazon.ion.v3.impl_1_1
+package com.amazon.ion.v3.unused
 
-import com.amazon.ion.*
-import com.amazon.ion.impl.macro.*
-import com.amazon.ion.impl.macro.Expression.*
-import com.amazon.ion.v3.*
+import com.amazon.ion.Decimal
+import com.amazon.ion.IonException
+import com.amazon.ion.IonType
+import com.amazon.ion.Timestamp
+import com.amazon.ion.impl.macro.Expression
+import com.amazon.ion.v3.AnnotationIterator
+import com.amazon.ion.v3.ListReader
+import com.amazon.ion.v3.SequenceReader
+import com.amazon.ion.v3.SexpReader
+import com.amazon.ion.v3.StructReader
+import com.amazon.ion.v3.TokenTypeConst
+import com.amazon.ion.v3.ValueReader
+import com.amazon.ion.v3.impl_1_1.template.TemplateResourcePool
 import java.nio.ByteBuffer
 
 /**
@@ -50,11 +59,11 @@ abstract class TemplateValueReaderBase(
         }
         if (currentExpression == null && currentArgumentIndex < 0) {
             val expr = info.source[i++]
-            if (expr is HasStartAndEnd) i = expr.endExclusive
+            if (expr is Expression.HasStartAndEnd) i = expr.endExclusive
             currentExpression = expr
         }
-        if (currentExpression is VariableRef) {
-            currentArgumentIndex = takeCurrentExpression<VariableRef>().signatureIndex
+        if (currentExpression is Expression.VariableRef) {
+            currentArgumentIndex = takeCurrentExpression<Expression.VariableRef>().signatureIndex
             val token = info.arguments.seekToArgument(currentArgumentIndex)
 
             if (token == TokenTypeConst.ANNOTATIONS) {
@@ -70,13 +79,13 @@ abstract class TemplateValueReaderBase(
 
     // TODO: Make sure that this also returns END when at the end of the input.
     override fun currentToken(): Int = currentExpression?.tokenType ?: TokenTypeConst.UNSET
-    override fun ionType(): IonType? = (currentExpression as? DataModelValue)?.type
+    override fun ionType(): IonType? = (currentExpression as? Expression.DataModelValue)?.type
 
     override fun valueSize(): Int {
         // This is mostly only used for Ints.
         when (currentExpression) {
-            is LongIntValue -> return 8
-            is BigIntValue -> return 9
+            is Expression.LongIntValue -> return 8
+            is Expression.BigIntValue -> return 9
             else -> return -1
         }
     }
@@ -86,7 +95,7 @@ abstract class TemplateValueReaderBase(
     }
 
     fun variableValue(): ValueReader {
-        val expr = takeCurrentExpression<VariableRef>()
+        val expr = takeCurrentExpression<Expression.VariableRef>()
         info.arguments.seekToArgument(expr.signatureIndex)
         info.arguments.seekTo(info.arguments.position() - 1)
         return info.arguments
@@ -102,14 +111,14 @@ abstract class TemplateValueReaderBase(
         }
     }
 
-    override fun nullValue(): IonType = takeCurrentExpression<NullValue>().type
-    override fun booleanValue(): Boolean = takeCurrentExpression<BoolValue>().value
-    override fun longValue(): Long = takeCurrentExpression<LongIntValue>().value
-    override fun stringValue(): String = takeCurrentExpression<StringValue>().value
-    override fun symbolValue(): String? = takeCurrentExpression<SymbolValue>().value.text
+    override fun nullValue(): IonType = takeCurrentExpression<Expression.NullValue>().type
+    override fun booleanValue(): Boolean = takeCurrentExpression<Expression.BoolValue>().value
+    override fun longValue(): Long = takeCurrentExpression<Expression.LongIntValue>().value
+    override fun stringValue(): String = takeCurrentExpression<Expression.StringValue>().value
+    override fun symbolValue(): String? = takeCurrentExpression<Expression.SymbolValue>().value.text
 
     override fun symbolValueSid(): Int {
-        val expr = takeCurrentExpression<SymbolValue>()
+        val expr = takeCurrentExpression<Expression.SymbolValue>()
         if (expr.value.sid < 0) {
             currentExpression = expr
             return -1
@@ -122,24 +131,24 @@ abstract class TemplateValueReaderBase(
         TODO("Macro evaluator has only resolved symbol text")
     }
 
-    override fun timestampValue(): Timestamp = takeCurrentExpression<TimestampValue>().value
+    override fun timestampValue(): Timestamp = takeCurrentExpression<Expression.TimestampValue>().value
 
     // TODO: Make the lob values use a ByteBuffer?
-    override fun clobValue(): ByteBuffer = ByteBuffer.wrap(takeCurrentExpression<ClobValue>().value)
-    override fun blobValue(): ByteBuffer = ByteBuffer.wrap(takeCurrentExpression<BlobValue>().value)
+    override fun clobValue(): ByteBuffer = ByteBuffer.wrap(takeCurrentExpression<Expression.ClobValue>().value)
+    override fun blobValue(): ByteBuffer = ByteBuffer.wrap(takeCurrentExpression<Expression.BlobValue>().value)
 
     override fun listValue(): ListReader {
-        val expr = takeCurrentExpression<ListValue>()
+        val expr = takeCurrentExpression<Expression.ListValue>()
         return pool.getSequence(info, expr.startInclusive, expr.endExclusive)
     }
 
     override fun sexpValue(): SexpReader {
-        val expr = takeCurrentExpression<SExpValue>()
+        val expr = takeCurrentExpression<Expression.SExpValue>()
         return pool.getSequence(info, expr.startInclusive, expr.endExclusive)
     }
 
     override fun structValue(): StructReader {
-        val expr = takeCurrentExpression<StructValue>()
+        val expr = takeCurrentExpression<Expression.StructValue>()
         return pool.getStruct(info, expr.startInclusive, expr.endExclusive)
     }
 
@@ -148,8 +157,8 @@ abstract class TemplateValueReaderBase(
         TODO("Annotations should be their own expression type.")
     }
 
-    override fun doubleValue(): Double = takeCurrentExpression<FloatValue>().value
-    override fun decimalValue(): Decimal = Decimal.valueOf(takeCurrentExpression<DecimalValue>().value)
+    override fun doubleValue(): Double = takeCurrentExpression<Expression.FloatValue>().value
+    override fun decimalValue(): Decimal = Decimal.valueOf(takeCurrentExpression<Expression.DecimalValue>().value)
 
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")
 
@@ -158,4 +167,3 @@ abstract class TemplateValueReaderBase(
     override fun seekTo(position: Int) = TODO("This method only applies to raw readers.")
     override fun position(): Int  = TODO("This method only applies to raw readers.")
 }
-

@@ -13,6 +13,7 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -121,7 +122,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 if (annotationState.annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion_symbol_table") {
                     reader.structValue().use {
                         encodingContextManager.readLegacySymbolTable11(it)
-                        encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                        encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                     }
                     reset()
                     null
@@ -159,27 +160,20 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 handleTopLevelIvm()
                 null
             }
-            TokenTypeConst.EEXP -> {
-                handleEExp()
+            TokenTypeConst.MACRO_INVOCATION -> {
+                handleMacro()
                 null
             }
             TokenTypeConst.VARIABLE_REF -> {
-                val variableReader = (reader as TemplateReader).variableValue()
-                readerManager.pushReader(variableReader)
-                this.reader = variableReader
                 null
             }
             TokenTypeConst.EXPRESSION_GROUP -> {
-                val expressionGroup = (reader as ArgumentReader).expressionGroup()
+                val expressionGroup = reader.expressionGroup()
                 readerManager.pushReader(expressionGroup)
                 this.reader = expressionGroup
                 null
             }
-            TokenTypeConst.EMPTY_ARGUMENT -> {
-                null
-            }
-            TokenTypeConst.TDL_INVOCATION -> {
-                handleMacroInvocation((reader as TemplateReader).macroValue())
+            TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
                 null
             }
             else -> {
@@ -192,18 +186,8 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         return _next()
     }
 
-    private fun handleEExp() {
-        val macroId = reader.eexpValue()
-        val macro = if (macroId < 0) {
-            SystemMacro[macroId and Int.MAX_VALUE]!!
-        } else {
-            ion11Reader.macroTable[macroId]
-        }
-        handleMacroInvocation(macro)
-    }
-
-    private fun handleMacroInvocation(macro: Macro) {
-
+    private fun handleMacro() {
+        val macro = reader.macroValue()
 //        println("Evaluating macro $macro")
 
         val args = reader.macroArguments(macro.signature)
@@ -211,24 +195,24 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro) {
             SystemMacro.AddSymbols -> {
                 encodingContextManager.addOrSetSymbols(args, append = true)
-                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
 //                        println("Add symbols: ${ion11Reader.symbolTable.contentToString()}")
                 true
             }
             SystemMacro.SetSymbols -> {
                 encodingContextManager.addOrSetSymbols(args, append = false)
-                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
 //                        println("Set symbols: ${ion11Reader.symbolTable.contentToString()}")
                 true
             }
             SystemMacro.AddMacros -> {
                 encodingContextManager.addOrSetMacros(args, append = true)
-                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
             }
             SystemMacro.SetMacros -> {
                 encodingContextManager.addOrSetMacros(args, append = false)
-                encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+                encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
             }
             SystemMacro.Use -> TODO("Use")
@@ -262,7 +246,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
 
         if (version == 0x0101) {
             encodingContextManager.ivm()
-            encodingContextManager.updateFlattenedTables(ion11Reader::initTables, additionalMacros)
+            encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
 //            println("IVM: ${ion11Reader.symbolTable.contentToString()}")
         }
     }
