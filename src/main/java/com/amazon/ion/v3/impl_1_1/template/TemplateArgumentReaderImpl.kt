@@ -3,8 +3,7 @@ package com.amazon.ion.v3.impl_1_1.template
 import com.amazon.ion.IonException
 import com.amazon.ion.impl.macro.Expression
 import com.amazon.ion.impl.macro.Macro
-import com.amazon.ion.v3.ArgumentReader
-import com.amazon.ion.v3.TokenTypeConst
+import com.amazon.ion.v3.*
 
 /**
  * Reads the raw E-expression arguments
@@ -21,6 +20,14 @@ class TemplateArgumentReaderImpl(
         return "TemplateArgumentReaderImpl(signature=$signature, argumentIndices=${argumentIndices.contentToString()}, source=${info.source})"
     }
 
+    override fun reinitState() {
+        // TODO: See if we can eliminate this.
+        signature = emptyList()
+        nextParameterIndex = 0
+        presence = IntArray(8)
+        argumentIndices = IntArray(8)
+    }
+
     override var signature: List<Macro.Parameter> = emptyList()
         private set
 
@@ -31,7 +38,14 @@ class TemplateArgumentReaderImpl(
     // The position in the _signature_
     private var nextParameterIndex = 0
 
+
+    private var e: String = "unknown"
     override fun returnToPool() {
+        if (this in pool.arguments) {
+            System.err.println("Previously closed at: $e")
+            throw IllegalStateException("Already closed: $this")
+        }
+        // e = Exception().stackTraceToString()
         pool.arguments.add(this)
     }
 
@@ -58,10 +72,10 @@ class TemplateArgumentReaderImpl(
                         } else {
                             presence[i] = 2
                         }
-                        position = argEndExclusive
                     } else {
                         presence[i] = 1
                     }
+                    position = argEndExclusive
                 } else {
                     presence[i] = 1
                 }
@@ -70,12 +84,18 @@ class TemplateArgumentReaderImpl(
                 argumentIndices[i] = endExclusive
             }
         }
+//        println("Setting up template arg reader... $id")
+//        println(signature)
+//        println(presence.contentToString())
+//        println(argumentIndices.contentToString())
+//        println(info.source.mapIndexed(::Pair).joinToString("\n") { (i, it) -> "    $i = $it" })
+
     }
 
     override fun seekToBeforeArgument(signatureIndex: Int) {
         if (signatureIndex >= signature.size) throw IllegalStateException("Not in the signature")
 //        println("[$id] Seeking to before template arg $signatureIndex of $signature")
-        // println("${signature[signatureIndex]}($signatureIndex)")
+//         println("${signature[signatureIndex]}($signatureIndex)")
         nextParameterIndex = signatureIndex
         currentExpression = null
     }
@@ -105,7 +125,7 @@ class TemplateArgumentReaderImpl(
             }
             0 -> {
                 currentExpression = null
-                TokenTypeConst.NOP_EMPTY_ARGUMENT
+                TokenTypeConst.ABSENT_ARGUMENT
             }
             else -> throw IonException("Invalid presence bits for parameter $currentParameterIndex; was ${presence[currentParameterIndex]}")
         }

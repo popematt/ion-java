@@ -9,12 +9,13 @@ import com.amazon.ion.v3.AnnotationIterator
 import com.amazon.ion.v3.ArgumentReader
 import com.amazon.ion.v3.TokenTypeConst
 import com.amazon.ion.v3.ValueReader
-import com.amazon.ion.v3.impl_1_1.MacroInvocationReader
 import java.io.Closeable
 
 class TemplateResourcePool private constructor(): Closeable {
 
     companion object {
+        // TODO: See if it's cheaper to just allocate a new one.
+
         @JvmStatic
         private val cached: ThreadLocal<TemplateResourcePool?> = ThreadLocal.withInitial { null }
 
@@ -44,11 +45,10 @@ class TemplateResourcePool private constructor(): Closeable {
         override var arguments: ArgumentReader,
     ): TemplateInvocationInfo
 
-    val invocations = ArrayList<MacroInvocationReader>(8)
-    val structs = ArrayList<TemplateStructReaderImpl>(8)
-    val sequences = ArrayList<TemplateSequenceReaderImpl>(8)
-    val annotations = ArrayList<AnnotationIterator>(8)
-    val variables = ArrayList<TemplateVariableReaderImpl>(8)
+    val structs = ArrayList<TemplateStructReaderImpl>()
+    val sequences = ArrayList<TemplateSequenceReaderImpl>()
+    val annotations = ArrayList<AnnotationIterator>()
+    val variables = ArrayList<TemplateVariableReaderImpl>()
     val arguments = ArrayList<TemplateArgumentReaderImpl>()
 
     /**
@@ -64,6 +64,7 @@ class TemplateResourcePool private constructor(): Closeable {
                 SystemMacro.Values -> getVariable(arguments, 0, isArgumentOwner = true)
                 SystemMacro.None -> {
                     arguments.close()
+                    // TODO? Make sure that there are no args?
                     NoneReader
                 }
                 SystemMacro.Meta -> {
@@ -88,15 +89,17 @@ class TemplateResourcePool private constructor(): Closeable {
     }
 
     private fun invokeTemplate(macro: Macro, arguments: ArgumentReader): ValueReader {
-        val reader = invocations.removeLastOrNull()
+        val reader = sequences.removeLastOrNull()
         if (reader != null) {
             reader.init(
                 TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments),
-                0, macro.body!!.size,
-                isArgumentOwner = true)
+                0,
+                macro.body!!.size,
+                isArgumentOwner = true
+            )
             return reader
         } else {
-            return MacroInvocationReader(
+            return TemplateSequenceReaderImpl(
                 this,
                 TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments),
                 0,
@@ -113,9 +116,12 @@ class TemplateResourcePool private constructor(): Closeable {
         // TODO: This doesn't properly handle the case where there's an empty expression group in binary
         //       Same thing for all of the `if` macros
 
-//        println("Checking first arg for 'default': ${TokenTypeConst(arguments.currentToken())}")
+//        println("<><><><><><><><><><><><><> Checking first arg for 'default': ${TokenTypeConst(arguments.currentToken())}")
 
-        if (firstArg == TokenTypeConst.NOP_EMPTY_ARGUMENT) {
+        // TODO: Actually evaluate the first argument until we've found the first value token or else END
+        if (firstArg == TokenTypeConst.ABSENT_ARGUMENT) {
+//            println("<><><><><><><><><><><><><> Returning the second argument for 'default'")
+//            println(arguments)
             return getVariable(arguments, 1, isArgumentOwner = true)
         } else {
             return getVariable(arguments, 0, isArgumentOwner = true)
@@ -126,7 +132,7 @@ class TemplateResourcePool private constructor(): Closeable {
         arguments.seekToBeforeArgument(0)
         val firstArg = arguments.nextToken()
 //        println("Checking first arg for 'if_none': ${TokenTypeConst(arguments.currentToken())}")
-        return if (firstArg == TokenTypeConst.NOP_EMPTY_ARGUMENT) {
+        return if (firstArg == TokenTypeConst.ABSENT_ARGUMENT) {
             getVariable(arguments, 1, isArgumentOwner = true)
         } else {
             getVariable(arguments, 2, isArgumentOwner = true)
@@ -137,7 +143,7 @@ class TemplateResourcePool private constructor(): Closeable {
         arguments.seekToBeforeArgument(0)
         val firstArg = arguments.nextToken()
 //        println("Checking first arg for 'if_some': ${TokenTypeConst(arguments.currentToken())}")
-        return if (firstArg != TokenTypeConst.NOP_EMPTY_ARGUMENT) {
+        return if (firstArg != TokenTypeConst.ABSENT_ARGUMENT) {
             getVariable(arguments, 1, isArgumentOwner = true)
         } else {
             getVariable(arguments, 2, isArgumentOwner = true)
@@ -161,9 +167,11 @@ class TemplateResourcePool private constructor(): Closeable {
             reader.init(info, startInclusive, endExclusive, isArgumentOwner = false)
             return reader
         } else {
-            return TemplateStructReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)
+            return TemplateStructReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false, n++)
         }
     }
+
+    private var n = 0
 
     fun getAnnotations(annotationSymbols: List<SymbolToken>): AnnotationIterator {
         val reader = annotations.removeLastOrNull() as TemplateAnnotationIteratorImpl?

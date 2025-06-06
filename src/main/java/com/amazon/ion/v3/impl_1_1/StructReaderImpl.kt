@@ -15,6 +15,7 @@ class StructReaderImpl internal constructor(
     private var flexSymMode: Boolean = false
 
     override fun close() {
+        if (this in pool.structs) throw IllegalStateException("Already closed: $this")
         pool.structs.add(this)
     }
 

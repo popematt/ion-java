@@ -84,12 +84,12 @@ internal class EncodingContextManager(
      */
     fun addOrSetSymbols(argReader: ArgumentReader, append: Boolean) {
         val newSymbols = if (append) defaultModule.symbols.toMutableList() else mutableListOf()
-        val t = argReader.seekToArgument(0)
-//        println(TokenTypeConst(t))
-        argReader.expressionGroup().use { sl ->
-            ionReaderShim.init(sl)
-            moduleReader.readSymbolsList(newSymbols)
-        }
+        argReader.seekToArgument(0)
+        val sl = argReader.expressionGroup()
+        // IonReaderShim will take care of closing the expression group instance.
+        ionReaderShim.init(sl)
+        moduleReader.readSymbolsList(newSymbols)
+
         // TODO: Should this be a copy-on-write instead of mutation?
         //       I don't think so, because it's not modifying any references to the existing list.
         defaultModule.symbols = newSymbols
@@ -101,16 +101,17 @@ internal class EncodingContextManager(
     fun addOrSetMacros(argReader: ArgumentReader, append: Boolean) {
         val moduleMacros = if (append) defaultModule.macros.toMutableList() else mutableListOf()
         argReader.seekToArgument(0)
-        argReader.expressionGroup().use { sl ->
-            ionReaderShim.init(sl)
+        val sl = argReader.expressionGroup()
+        // IonReaderShim will take care of closing the expression group instance.
+        ionReaderShim.init(sl)
 
-            // TODO: I wonder if we can get a performance improvement by using a threadlocal cache of
-            //       bytes to macro definitions. A radix tree could be a very quick lookup. We would
-            //       only need to use the signature and body as the key. This makes the assumption that
-            //       the same macros are usually defined the same way. However, this breaks if there's
-            //       a dependency that is different. :/
-            moduleReader.populateMacros(availableModules, moduleMacros)
-        }
+        // TODO: I wonder if we can get a performance improvement by using a threadlocal cache of
+        //       bytes to macro definitions. A radix tree could be a very quick lookup. We would
+        //       only need to use the signature and body as the key. This makes the assumption that
+        //       the same macros are usually defined the same way. However, this breaks if there's
+        //       a dependency that is different. :/
+        moduleReader.populateMacros(availableModules, moduleMacros)
+
         // TODO: Should this be a copy-on-write instead of mutation?
         //       I don't think so, because it's not modifying any references to the existing list.
         defaultModule.macros = moduleMacros

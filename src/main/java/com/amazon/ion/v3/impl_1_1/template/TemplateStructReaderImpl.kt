@@ -2,15 +2,21 @@ package com.amazon.ion.v3.impl_1_1.template
 
 import com.amazon.ion.impl.macro.Expression
 import com.amazon.ion.v3.*
+import java.lang.IllegalStateException
 
 class TemplateStructReaderImpl(
     pool: TemplateResourcePool,
     info: TemplateResourcePool.TemplateInvocationInfo,
     startInclusive: Int,
     endExclusive: Int,
-    isArgumentOwner: Boolean
+    isArgumentOwner: Boolean,
+    private val structId: Int,
 ): ValueReader, StructReader, TemplateReaderBase(pool, info, startInclusive, endExclusive, isArgumentOwner),
     SequenceReader {
+
+    override fun toString(): String {
+        return "TemplateStructReaderImpl(structId=$structId, startInclusive=$startInclusive, endExclusive=$endExclusive)"
+    }
 
     override fun fieldName(): String? = consumeCurrentExpression(
         { it.symbolValue() },
@@ -34,6 +40,9 @@ class TemplateStructReaderImpl(
 
 
     override fun returnToPool() {
+        if (pool.structs.contains(this)) {
+            throw IllegalStateException("Cannot doubly add to the pool.")
+        }
         pool.structs.add(this)
     }
 }

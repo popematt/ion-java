@@ -36,11 +36,21 @@ class DelimitedSequenceReaderImpl(
         return token
     }
 
+
+    private var e: String = "unknown"
+
     override fun close() {
+        if (this in pool.delimitedLists) {
+            System.err.println("Previously closed at: $e")
+            throw IllegalStateException("Already closed: $this")
+        }
         while (nextToken() != TokenTypeConst.END) {
             skip()
         }
         parent.source.position(this.source.position())
+
+//        e = Exception().stackTraceToString()
+
         pool.delimitedLists.add(this)
     }
 }

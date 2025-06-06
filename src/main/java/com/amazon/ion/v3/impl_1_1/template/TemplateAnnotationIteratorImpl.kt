@@ -28,6 +28,7 @@ internal class TemplateAnnotationIteratorImpl(
     override fun getText(): String? = currentAnnotation.text
 
     override fun close() {
+        if (this in pool.annotations) throw IllegalStateException("Already closed: $this")
         pool.annotations.add(this)
     }
 

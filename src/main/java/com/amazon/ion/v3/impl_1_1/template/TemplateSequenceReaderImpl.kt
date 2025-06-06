@@ -12,6 +12,7 @@ class TemplateSequenceReaderImpl(
     isArgumentOwner: Boolean,
 ): ValueReader, ListReader, SexpReader, TemplateReaderBase(pool, info, startInclusive, endExclusive, isArgumentOwner) {
     override fun returnToPool() {
+        if (this in pool.sequences) throw IllegalStateException("Already closed: $this")
         pool.sequences.add(this)
     }
 }

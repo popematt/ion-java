@@ -7,7 +7,10 @@ import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.v3.*
 import java.nio.ByteBuffer
 
-object NoneReader: TemplateReader {
+/**
+ * Singleton for empty expression groups.
+ */
+object NoneReader: TemplateReader, SequenceReader {
     override fun macroValue(): Macro {
         TODO("Not yet implemented")
     }

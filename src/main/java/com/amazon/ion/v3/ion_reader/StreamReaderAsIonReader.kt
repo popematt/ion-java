@@ -147,6 +147,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 null
             }
             TokenTypeConst.END -> {
+                // Something is wrong with how we're stepping out of things.
                 if (readerManager.isTopAContainer()) {
                     return null
                 } else if (readerManager.readerDepth == 1) {
@@ -164,16 +165,11 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 handleMacro()
                 null
             }
-            TokenTypeConst.VARIABLE_REF -> {
-                null
-            }
+            TokenTypeConst.ABSENT_ARGUMENT,
             TokenTypeConst.EXPRESSION_GROUP -> {
                 val expressionGroup = reader.expressionGroup()
                 readerManager.pushReader(expressionGroup)
                 this.reader = expressionGroup
-                null
-            }
-            TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
                 null
             }
             else -> {
@@ -331,7 +327,13 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         val text = if (sid < 0) {
             reader.symbolValue()
         } else {
-            reader.lookupSid(sid)
+            try {
+                reader.lookupSid(sid)
+            } catch (e: IndexOutOfBoundsException) {
+                println(reader)
+                println(readerManager)
+                throw e
+            }
         }
         return _Private_Utils.newSymbolToken(text, sid)
     }

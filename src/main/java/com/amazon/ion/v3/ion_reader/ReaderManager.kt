@@ -22,6 +22,10 @@ internal class ReaderManager: Closeable {
         }
     }
 
+    override fun toString(): String {
+        return "ReaderManager(readerStackSize=${readerStackSize}, containerStackSize=$containerStackSize, containerIndices=${containerStack.contentToString()})"
+    }
+
     // The top of the readerStack always contains the current reader, so it's never truly empty.
     private var readerStack = arrayOfNulls<ValueReader>(32)
     // Contains indices of `readerStack` that are containers.
@@ -113,7 +117,7 @@ internal class ReaderManager: Closeable {
     }
 
     override fun close() {
-        readerStack.forEach { it?.close() }
+        // readerStack.forEach { it?.close() }
         readerStack = arrayOfNulls(0)
         containerStackSize = 0
         readerStackSize = 0

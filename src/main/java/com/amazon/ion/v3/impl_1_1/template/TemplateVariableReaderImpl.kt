@@ -15,7 +15,7 @@ class TemplateVariableReaderImpl(
     val pool: TemplateResourcePool,
     var signatureIndex: Int,
     var arguments: ArgumentReader,
-    var isArgumentOwner: Boolean,
+    private var isArgumentOwner: Boolean,
 ): ValueReader, ListReader, SexpReader {
     var hasAnnotations = false
 
@@ -30,6 +30,12 @@ class TemplateVariableReaderImpl(
         this.hasAnnotations = false
     }
 
+    /**
+     * There are 3 states.
+     *  1. Ready            (indicated by signatureIndex >= 0 and hasAnnotations == false)
+     *  2. Seen Annotations (indicated by signatureIndex >= 0 hasAnnotations = true)
+     *  3. Seen value       (indicated by signatureIndex < 0)
+     */
     override fun nextToken(): Int {
         val i = signatureIndex
         // TODO: Is this the correct order?
@@ -49,7 +55,7 @@ class TemplateVariableReaderImpl(
             return token
         } else {
             val token = arguments.nextToken()
-            hasAnnotations = false
+            // hasAnnotations = false
             signatureIndex = -1
             return token
         }
@@ -78,7 +84,12 @@ class TemplateVariableReaderImpl(
     override fun doubleValue(): Double = arguments.doubleValue()
     override fun decimalValue(): Decimal = arguments.decimalValue()
     override fun macroValue(): Macro = arguments.macroValue()
-    override fun macroArguments(signature: List<Macro.Parameter>) = arguments.macroArguments(signature)
+
+    override fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader {
+//        println("Getting argument reader from variable reader.")
+        return arguments.macroArguments(signature)
+    }
+
     override fun expressionGroup(): SequenceReader = arguments.expressionGroup()
 
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")
@@ -89,6 +100,7 @@ class TemplateVariableReaderImpl(
     override fun position(): Int  = TODO("This method only applies to raw readers.")
 
     override fun close() {
+        if (this in pool.variables) throw IllegalStateException("Already closed: $this")
         pool.variables.add(this)
     }
 }

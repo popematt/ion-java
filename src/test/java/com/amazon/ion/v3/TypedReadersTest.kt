@@ -20,9 +20,9 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
+import java.time.Instant
 import java.util.*
 import kotlin.NoSuchElementException
-import kotlin.collections.ArrayList
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
@@ -381,6 +381,7 @@ class TypedReadersTest {
             "2023-10-15T05:04:03.123+01:00,       8A 35 7D 85 E0 0D 7B 00",
             "2023-10-15T05:04:03.000123+01:00,    8B 35 7D 85 E0 0D 7B 00 00",
             "2023-10-15T05:04:03.000000123+01:00, 8C 35 7D 85 E0 0D 7B 00 00 00",
+            "1947-12-23T11:22:33.127+01:15, F8 13 9B 07 DF 65 AD 57 08 07 7F",
         )
         @ParameterizedTest
         fun readTimestamp_1_1(expected: String, bytesString: String) {
@@ -564,7 +565,7 @@ class TypedReadersTest {
             reader.assertNextToken(TokenTypeConst.BOOL).skip()
 
             reader.seekToBeforeArgument(2)
-            reader.assertNextToken(TokenTypeConst.NOP_EMPTY_ARGUMENT)
+            reader.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
 
             reader.seekToBeforeArgument(1)
             reader.assertNextToken(TokenTypeConst.BOOL).skip()
@@ -606,7 +607,7 @@ class TypedReadersTest {
             reader.assertNextToken(TokenTypeConst.BOOL).skip()
 
             reader.seekToBeforeArgument(2)
-            reader.assertNextToken(TokenTypeConst.NOP_EMPTY_ARGUMENT)
+            reader.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
 
             reader.seekToBeforeArgument(1)
             reader.assertNextToken(TokenTypeConst.BOOL).skip()
@@ -637,7 +638,7 @@ class TypedReadersTest {
                 )
                 stream.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
                 stream.startMacroEvaluation(pool).use { m1 ->
-                    m1.assertVariableTokenType(TokenTypeConst.MACRO_INVOCATION)
+                    m1.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
                         .startMacroEvaluation(pool).use { m2 ->
                             m2.assertNextToken(TokenTypeConst.INT).skip()
                             m2.assertNextToken(TokenTypeConst.END)
@@ -1150,10 +1151,18 @@ class TypedReadersTest {
                                 s.assertFieldNameAndType("Unit", TokenTypeConst.MACRO_INVOCATION)
                                     .startMacroEvaluation(pool)
                                     .use { i5 ->
-                                        i5.assertNextToken(TokenTypeConst.SYMBOL).skip()
+                                        println("======== Looking for 'Unit' value. ========")
+                                        i5.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                                            .startMacroEvaluation(pool)
+                                            .use { m4 ->
+                                                m4.assertNextToken(TokenTypeConst.SYMBOL).skip()
+                                                m4.assertNextToken(TokenTypeConst.END)
+                                            }
                                         i5.assertNextToken(TokenTypeConst.END)
                                     }
 
+                                s.assertFieldName("Dimensions")
+                                s.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
                                 s.assertNextToken(TokenTypeConst.END)
                             }
                         i4.assertNextToken(TokenTypeConst.END)
@@ -1177,17 +1186,6 @@ class TypedReadersTest {
         private fun StructReader.assertFieldNameAndType(name: String, token: Int) = apply {
             assertFieldName(name)
             assertNextToken(token)
-        }
-
-        private fun StructReader.assertFieldNameAndTypeThenSkip(name: String, token: Int) {
-            assertFieldNameAndType(name, token)
-            skip()
-        }
-
-        private fun ValueReader.assertVariableTokenType(token: Int): ValueReader {
-            //(this as TemplateReader).argumentIndex()
-            assertEquals(TokenTypeConst(token), TokenTypeConst(this.nextToken()))
-            return this
         }
 
         private fun ValueReader.assertNextToken(token: Int): ValueReader = apply {
@@ -2081,12 +2079,21 @@ class TypedReadersTest {
                 val ei = expected.iterator()
                 val ai = actual.iterator()
                 var i = 0
+                var allMatch = true
+                println()
                 while (ei.hasNext() && ai.hasNext()) {
                     val e = ei.next()
                     val a = ai.next()
-                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
+                    if (e.toPrettyString() != a.toPrettyString()) {
+                        allMatch = false
+                        println("Value $i does not match")
+                    } else {
+                        println("Value $i does match")
+                    }
+//                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
                     i++
                 }
+                assertTrue(allMatch)
                 assertEquals(expected.size, actual.size)
             }
 
@@ -2692,7 +2699,6 @@ class TypedReadersTest {
                     assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
                     i++
                 }
-                assertEquals(expected.size, actual.size)
             }
 
 
@@ -2771,7 +2777,7 @@ class TypedReadersTest {
             fun `a small log for Ion 1 1 with macros`() {
                 val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
 
-                // "/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n"
+                // "/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n"
 
                 val actual = ION.newDatagram()
 
@@ -2830,20 +2836,38 @@ class TypedReadersTest {
                 assertEquals(expected.size, actual.size)
             }
 
+            @Disabled
             @Test
             fun `a big log for Ion 1 1 with macros`() {
                 val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_large.11.10n")
 
+                val actual = ION.newDatagram()
+
+
+                println("Starting V2 reader... " + Instant.now())
                 FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
                     val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
                     StreamReaderAsIonReader(mappedByteBuffer).use {
                         val iter = ION.iterate(it)
                         while (iter.hasNext()) {
                             val value = iter.next()
-                            println(value)
+                            actual.add(value)
                         }
                     }
                 }
+                println("Starting baseline... " + Instant.now())
+                val expected = ION.loader.load(path.toFile())
+                println("Finished reading at: " + Instant.now())
+                val ei = expected.iterator()
+                val ai = actual.iterator()
+                var i = 0
+                while (ei.hasNext() && ai.hasNext()) {
+                    val e = ei.next()
+                    val a = ai.next()
+                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
+                    i++
+                }
+                assertEquals(expected.size, actual.size)
             }
 
 

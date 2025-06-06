@@ -8,7 +8,6 @@ import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTE
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.util.UUID
 
 object Debug {
     var enabled = false
@@ -61,9 +60,10 @@ abstract class ValueReaderBase(
     /**
      * Either the current opcode/typeId (if positive) or some other indicator, if negative.
      */
+    @JvmField
     internal var opcode: Short = TID_UNSET
 
-    internal var id = UUID.randomUUID().toString().take(8)
+    internal var id = "" // UUID.randomUUID().toString().take(8)
 
     internal fun init(
         start: Int,
@@ -72,7 +72,7 @@ abstract class ValueReaderBase(
         source.limit(start + length)
         source.position(start)
         opcode = TID_UNSET
-        id = UUID.randomUUID().toString().take(8)
+//        id = UUID.randomUUID().toString().take(8)
         resetState()
     }
 
@@ -115,7 +115,7 @@ abstract class ValueReaderBase(
                 TID_END.toInt() -> TokenTypeConst.END
                 TID_ON_FIELD_NAME.toInt() -> TokenTypeConst.FIELD_NAME
                 TID_EXPRESSION_GROUP.toInt() -> TokenTypeConst.EXPRESSION_GROUP
-                TID_EMPTY_ARGUMENT.toInt() -> TokenTypeConst.NOP_EMPTY_ARGUMENT
+                TID_EMPTY_ARGUMENT.toInt() -> TokenTypeConst.ABSENT_ARGUMENT
                 else -> TokenTypeConst.UNSET
             }
         }
@@ -190,6 +190,12 @@ abstract class ValueReaderBase(
                     if (sid < 0) r.fieldName()
                     return
                 }
+                TokenTypeConst.SYMBOL -> {
+                    if (symbolValueSid() < 0) {
+                        // Length prefixed symbols and system symbols are already covered, so this should be unreachable.
+                        TODO("Skipping Symbols for opcode ${opcode.toString(16)}")
+                    }
+                }
                 // TODO: make this better for delimited containers. Because of the way that `listValue()`
                 //   et al are implemented for delimited containers, this does a double read of the delimited
                 //   containers in order to skip it once. This problem is compounded when nested. Delimited
@@ -218,12 +224,6 @@ abstract class ValueReaderBase(
         }
         this.opcode = TID_UNSET
     }
-
-    private fun skipDelimitedListOrSexp() {
-
-    }
-
-
 
     override fun nullValue(): IonType {
         val opcode = opcode.toInt()
@@ -309,9 +309,8 @@ abstract class ValueReaderBase(
         try {
             return symbolTable[sid]
         } catch (t: Throwable) {
-            println("Failed SID Lookup")
-            println(sid)
-            println(symbolTable.contentToString())
+            println("Failed SID Lookup for $sid")
+            println("There are ${symbolTable.size} symbols: ${symbolTable.contentToString()}")
             throw t
         }
     }
@@ -428,19 +427,9 @@ abstract class ValueReaderBase(
             this.opcode = TID_UNSET
 
             val sacrificialReader = pool.getDelimitedStruct(start, symbolTable, macroTable)
-//            while (true) {
-//                val next = sacrificialReader.nextToken()
-//                if (next == TokenTypeConst.END) break
-//                sacrificialReader.fieldNameSid()
-//                sacrificialReader.nextToken()
-//                sacrificialReader.skip()
-//            }
             while (sacrificialReader.nextToken() != TokenTypeConst.END) {
-                // sacrificialReader.fieldNameSid()
-                // if (sacrificialReader.nextToken() == TokenTypeConst.ANNOTATIONS) sacrificialReader.nextToken()
                 sacrificialReader.skip()
             }
-
 
             val endPosition = sacrificialReader.source.position()
             sacrificialReader.close()
@@ -507,31 +496,14 @@ abstract class ValueReaderBase(
         val length = IdMappings.length(opcode, source)
         val position = source.position()
         val reader = if (length < 0) {
-            // TODO: Calculate end position more efficiently.
             val maxPossibleLength = source.limit() - position
-
-//            val sacrificialReader = pool.getEExpArgs(position, maxPossibleLength, signature, symbolTable, macroTable)
-//            println("Seeking end of E-Expression arguments")
-//            while (sacrificialReader.nextToken() != TokenTypeConst.END) {
-//                println("Found ${TokenTypeConst(sacrificialReader.currentToken())}")
-//                sacrificialReader.skip()
-//            }
-//            sacrificialReader.close()
-//            val newPosition = sacrificialReader.position()
-//
-//            source.position(newPosition)
             val args = pool.getEExpArgs(position, maxPossibleLength, signature, symbolTable, macroTable)
             source.position(args.calculateEndPosition())
-//            println("Setting up arg reader...")
-//            println(source)
-//            println(args.presence.contentToString())
-//            println(args.argumentIndices.contentToString())
             args
         } else {
             source.position(position + length)
             pool.getEExpArgs(position, length, signature, symbolTable, macroTable)
         }
-//        println("Returning E-Expression arguments reader")
         return reader
     }
 

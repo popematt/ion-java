@@ -155,6 +155,8 @@ interface ValueReader: AutoCloseable {
      * Very low level API. Do not use unless you are trying to bypass macro evaluation.
      * For example, you would use this for transcoding E-expressions between text and binary or
      * for hydrating a POJO with a known macro definition without using the evaluator.
+     *
+     * If passing this off to a macro evaluator, the macro evaluator is responsible for closing it.
      */
     fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader = TODO()
 

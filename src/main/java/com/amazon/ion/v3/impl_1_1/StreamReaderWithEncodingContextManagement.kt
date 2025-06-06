@@ -47,7 +47,7 @@ class StreamReaderWithEncodingContextManagement(source: ByteBuffer): ValueReader
                 stack.add(delegate)
                 this.delegate = (delegate as ArgumentReader).expressionGroup()
             }
-            TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
+            TokenTypeConst.ABSENT_ARGUMENT -> {
                 this.delegate = stack.removeLast()
             }
             TokenTypeConst.ANNOTATIONS -> {

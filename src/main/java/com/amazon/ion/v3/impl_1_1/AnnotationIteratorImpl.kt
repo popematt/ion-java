@@ -141,6 +141,7 @@ internal class AnnotationIteratorImpl(
     override fun getText(): String? = _text
 
     override fun close() {
+        if (this in pool.annotations) throw IllegalStateException("Already closed: $this")
         pool.annotations.add(this)
     }
 

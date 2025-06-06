@@ -37,9 +37,14 @@ abstract class TemplateReaderBase(
         this.isArgumentOwner = isArgumentOwner
         i = startInclusive
         currentExpression = null
-        id = UUID.randomUUID().toString().take(8)
+//        id = UUID.randomUUID().toString().take(8)
+        reinitState()
     }
-    internal var id = UUID.randomUUID().toString().take(8)
+
+    protected open fun reinitState() {}
+
+
+    internal var id = "" //UUID.randomUUID().toString().take(8)
 
 
 
@@ -62,19 +67,6 @@ abstract class TemplateReaderBase(
 
     override fun nextToken(): Int {
         var expr: Expression? = this.currentExpression
-//        if (expr is Expression.VariableRef) {
-//            val nextArgToken = info.arguments.nextToken()
-//            // println(TokenTypeConst(nextArgToken))
-//            if (nextArgToken == TokenTypeConst.END) {
-//                currentExpression = null
-//                expr = null
-//            } else if (nextArgToken == TokenTypeConst.VARIABLE_REF) {
-//                println("[$id] Variable references another variable")
-//                return nextArgToken
-//            } else {
-//                return nextArgToken
-//            }
-//        }
         if (i >= endExclusive) {
             return TokenTypeConst.END
         }

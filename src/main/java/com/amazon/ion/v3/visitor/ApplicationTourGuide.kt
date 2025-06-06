@@ -1,7 +1,6 @@
 package com.amazon.ion.v3.visitor
 
 import com.amazon.ion.*
-import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.*
@@ -313,7 +312,7 @@ class ApplicationTourGuide @JvmOverloads constructor(
                     v.onEnd()
                     r.close()
                 }
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
+                TokenTypeConst.ABSENT_ARGUMENT -> {
                     // Do nothing
                 }
                 TokenTypeConst.EXPRESSION_GROUP -> {
@@ -430,7 +429,7 @@ class ApplicationTourGuide @JvmOverloads constructor(
                         reader.lookupSid(fieldNameSid)
                     }
                 }
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
+                TokenTypeConst.ABSENT_ARGUMENT -> {
                     // Do nothing
                 }
                 TokenTypeConst.EXPRESSION_GROUP -> {

@@ -271,6 +271,64 @@ object TimestampHelper {
     @JvmStatic
     private fun readLongTimestamp(source: ByteBuffer): Timestamp {
         val length = IdMappings.length(0xF8, source)
+        return when (length) {
+            0, 1 -> throw IonException("Invalid Timestamp length")
+            2 -> readLongTimestampL2(source)
+            3 -> readLongTimestampL3(source)
+            4, 5, -> throw IonException("Invalid Timestamp length")
+            6 -> readLongTimestampL6(source)
+            7 -> readLongTimestampL7(source)
+            else -> readLongTimestampL8(length, source)
+        }
+    }
+
+    @JvmStatic
+    private fun readLongTimestampL2(source: ByteBuffer): Timestamp {
         TODO()
+    }
+    @JvmStatic
+    private fun readLongTimestampL3(source: ByteBuffer): Timestamp {
+        TODO()
+    }
+    @JvmStatic
+    private fun readLongTimestampL6(source: ByteBuffer): Timestamp {
+        TODO()
+    }
+
+    /** Seconds precision */
+    @JvmStatic
+    private fun readLongTimestampL7(source: ByteBuffer): Timestamp {
+        TODO()
+    }
+
+    @JvmStatic
+    private fun readLongTimestampL8(length: Int, source: ByteBuffer): Timestamp {
+        val start = source.position()
+        val data = source.getLong(start) // and 0xFF_FF_FF_FF_FF_FF_FFL
+
+        val year = (data.toInt() and L_TIMESTAMP_YEAR_MASK)
+        val month = (data.toInt() and L_TIMESTAMP_MONTH_MASK) ushr L_TIMESTAMP_MONTH_BIT_OFFSET
+        val day = (data.toInt() and L_TIMESTAMP_DAY_MASK) ushr L_TIMESTAMP_DAY_BIT_OFFSET
+        val hour = (data.toInt() and L_TIMESTAMP_HOUR_MASK) ushr L_TIMESTAMP_HOUR_BIT_OFFSET
+        val minute = ((data and L_TIMESTAMP_MINUTE_MASK) ushr L_TIMESTAMP_MINUTE_BIT_OFFSET).toInt()
+        val offset = readLongOffset(data)
+        val second = ((data and L_TIMESTAMP_SECOND_MASK) ushr L_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
+
+        source.position(start + 7)
+
+        val fractionalSecondScale = IntHelper.readFlexInt(source)
+        val coefficientLength = start + length - source.position()
+        val fractionalSecondCoefficient = IntHelper.readFixedUInt(source, coefficientLength)
+        val fractionalSecond = BigDecimal.valueOf(fractionalSecondCoefficient.toLong(), fractionalSecondScale)
+
+        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
+    }
+
+    private fun readLongOffset(data: Long): Int? {
+        val offset = ((data and L_TIMESTAMP_OFFSET_MASK) ushr L_TIMESTAMP_OFFSET_BIT_OFFSET).toInt()
+        if (offset == L_TIMESTAMP_UNKNOWN_OFFSET_VALUE) {
+            return null
+        }
+        return offset - L_TIMESTAMP_OFFSET_BIAS
     }
 }

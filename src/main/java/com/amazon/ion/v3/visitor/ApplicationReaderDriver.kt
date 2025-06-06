@@ -378,7 +378,7 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     }
                 }
             }
-            TokenTypeConst.NOP_EMPTY_ARGUMENT -> return false
+            TokenTypeConst.ABSENT_ARGUMENT -> return false
             TokenTypeConst.END -> return false
             TokenTypeConst.VARIABLE_REF -> {
                 readValue(reader, visitor, alreadyOnToken = false)
@@ -474,7 +474,7 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     }
                 }
                 // TODO: Merge with NOP?
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
+                TokenTypeConst.ABSENT_ARGUMENT -> {
                     continue
                 }
                 TokenTypeConst.END -> {
@@ -517,7 +517,7 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     }
                 }
 
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
+                TokenTypeConst.ABSENT_ARGUMENT -> {
                     // Do nothing
                 }
                 TokenTypeConst.EXPRESSION_GROUP -> {
@@ -613,7 +613,7 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                         reader.lookupSid(fieldNameSid)
                     }
                 }
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
+                TokenTypeConst.ABSENT_ARGUMENT -> {
                     // Do nothing
                 }
                 TokenTypeConst.EXPRESSION_GROUP -> {

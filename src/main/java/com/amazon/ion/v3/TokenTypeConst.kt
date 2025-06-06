@@ -32,7 +32,7 @@ object TokenTypeConst {
     const val MACRO_INVOCATION = 20
     const val EXPRESSION_GROUP = 21
 
-    const val NOP_EMPTY_ARGUMENT = 22 // Try making this the same number as NOP
+    const val ABSENT_ARGUMENT = 22 // Try making this the same number as NOP
     const val VARIABLE_REF = 23
 
     // TODO: Do we need END_OF_INVOCATION, or could we just re-use END?

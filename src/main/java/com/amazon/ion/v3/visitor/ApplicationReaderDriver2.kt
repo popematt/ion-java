@@ -137,21 +137,10 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     }
 
     private fun maybeVisitSexp(reader: ValueReader, visitor: VisitingReaderCallback) {
-        val v = visitor.onValue(TokenType.LIST)
+        val v = visitor.onValue(TokenType.SEXP)
         if (v != null) {
-            reader.sexpValue().use { r ->
-                val nextToken = r.nextToken()
-                val tailVisitor = if (nextToken == TokenTypeConst.SYMBOL) {
-                    val sid = r.symbolValueSid()
-                    val text = if (sid < 0) r.symbolValue() else r.lookupSid(sid)
-                    v.onClause(text, sid)
-                } else {
-                    v.onSexpStart()
-                    readValue(r, v, alreadyOnToken = true)
-                    v
-                }
-                readAllValues(r, tailVisitor)
-            }
+            v.onSexpStart()
+            reader.sexpValue().use { r -> readAllValues(r, v) }
             v.onSexpEnd()
         } else {
             reader.skip()
@@ -162,10 +151,8 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         val v = visitor.onValue(TokenType.STRUCT)
         if (v != null) {
             v.onStructStart()
-            reader.structValue().use { r ->
-                readAllTheFields(r, v)
-                v.onStructEnd()
-            }
+            reader.structValue().use { r -> readAllTheFields(r, v) }
+            v.onStructEnd()
         } else {
             reader.skip()
         }
@@ -174,8 +161,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     /**
      * Returns the number of application values that were read.
      *
-     * TODO: This is the way to go to avoid making a method call in a tight loop, However, this seems to have some
-     *       trouble with IVMs.
+     * TODO: See if we can make this tailrec, or delegate to a function that is tailrec, or put a stack in here.
      */
     private fun readTopLevelValues(originalReader: ValueReader, originalVisitor: VisitingReaderCallback, max: Int = Int.MAX_VALUE): Int {
         var reader = originalReader
@@ -320,115 +306,52 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                                 // TODO: Since we're at the top level, we need to read as top-level values in case a directive
                                 //       is produced.
                                 // Start a macro evaluation session
-                                reader.macroArguments(macro.signature).use { args ->
-                                    templateReaderPool
-                                        .startEvaluation(macro, args)
-                                        .use { macroInvocation ->
+                                val args = reader.macroArguments(macro.signature)
+                                templateReaderPool.startEvaluation(macro, args)
+                                    .use { macroInvocation ->
 //                                            println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
-                                            i += readTopLevelValues(macroInvocation, visitor, max - i)
-                                        }
-                                }
+                                        i += readTopLevelValues(macroInvocation, visitor, max - i)
+                                    }
+
                             }
                         }
                     }
                 }
                 TokenTypeConst.END -> return i
+                TokenTypeConst.ABSENT_ARGUMENT,
                 TokenTypeConst.EXPRESSION_GROUP -> {
                     i += readTopLevelValues(reader.expressionGroup(), visitor, max - i)
                 }
-                TokenTypeConst.VARIABLE_REF -> {
-                    // (reader as TemplateReader).argumentIndex()
-                    // No-Op. We'll just go again to get the next token.
-                    // Subtract 1 because
-                    i--
-                }
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
-                    return i
-                }
+//                TokenTypeConst.VARIABLE_REF -> {
+//                    // (reader as TemplateReader).argumentIndex()
+//                    // No-Op. We'll just go again to get the next token.
+//                    // Subtract 1 because
+//                    i--
+//                }
                 else -> TODO("Unreachable: ${TokenTypeConst(token)}")
             }
         }
         return i
     }
 
-    private fun readValue(reader: ValueReader, visitor: VisitingReaderCallback, alreadyOnToken: Boolean): Boolean {
-        val token = if (alreadyOnToken) reader.currentToken() else reader.nextToken()
-
-        when (token) {
-            TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue()) ?: reader.skip()
-            TokenTypeConst.BOOL -> visitor.onValue(TokenType.BOOL)?.onBoolean(reader.booleanValue()) ?: reader.skip()
-            TokenTypeConst.INT -> visitor.onValue(TokenType.INT)?.onLongInt(reader.longValue()) ?: reader.skip()
-            TokenTypeConst.FLOAT -> visitor.onValue(TokenType.FLOAT)?.onFloat(reader.doubleValue()) ?: reader.skip()
-            TokenTypeConst.DECIMAL -> visitor.onValue(TokenType.DECIMAL)?.onDecimal(reader.decimalValue()) ?: reader.skip()
-            TokenTypeConst.TIMESTAMP -> visitor.onValue(TokenType.TIMESTAMP)?.onTimestamp(reader.timestampValue()) ?: reader.skip()
-            TokenTypeConst.STRING -> visitor.onValue(TokenType.STRING)?.onString(reader.stringValue()) ?: reader.skip()
-            TokenTypeConst.SYMBOL -> visitor.onValue(TokenType.SYMBOL)?.let {
-                val sid = reader.symbolValueSid()
-                val text = if (sid < 0) {
-                    reader.symbolValue()
-                } else {
-                    reader.lookupSid(sid)
-                }
-                it.onSymbol(text, sid)
-            } ?: reader.skip()
-            TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)?.onClob(reader.clobValue()) ?: reader.skip()
-            TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)?.onBlob(reader.blobValue()) ?: reader.skip()
-            // IMPLEMENTATION NOTE:
-            //     For containers, we're going to step in, and then immediately step out if we need to skip.
-            //     This might be slightly less efficient, but it works for both delimited and prefixed containers.
-            TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
-            TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
-            TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
-            TokenTypeConst.ANNOTATIONS -> reader.annotations().use { a ->
-                val v = visitor.onAnnotation(a)
-                if (v != null) {
-                    readValue(reader, v, alreadyOnToken = false)
-                } else {
-                    reader.nextToken()
-                    reader.skip()
-                }
-            }
-            TokenTypeConst.MACRO_INVOCATION -> {
-                val macro = reader.macroValue()
-                val macroVisitor = visitor.onEExpression(macro)
-                reader.macroArguments(macro.signature).use { args ->
-                    if (macroVisitor != null) {
-                        readAllValues(args, macroVisitor);
-                    } else {
-                        templateReaderPool.startEvaluation(macro, args).use {
-                                evaluator -> readAllValues(evaluator, visitor)
-                        }
-                    }
-                }
-            }
-            TokenTypeConst.NOP_EMPTY_ARGUMENT -> return false
-            TokenTypeConst.END -> return false
-            TokenTypeConst.VARIABLE_REF -> {
-                readValue(reader, visitor, alreadyOnToken = false)
-            }
-            else -> TODO("Unreachable: ${TokenTypeConst(token)}")
-        }
-        return true
-    }
-
-    private fun visitSexp(reader: ValueReader, v: VisitingReaderCallback) {
-        reader.sexpValue().use { r ->
-            if (r.nextToken() == TokenTypeConst.SYMBOL) {
-                val sid = r.symbolValueSid()
-                val text = if (sid < 0) {
-                    r.symbolValue()
-                } else {
-                    r.lookupSid(sid)
-                }
-                val vTail = v.onClause(text, sid)
-                readAllValues(r, vTail)
-            } else {
-                v.onSexpStart()
-                readAllValues(r, v)
-            }
-        }
-        v.onSexpEnd()
-    }
+//    private fun visitSexp(reader: ValueReader, v: VisitingReaderCallback) {
+//        reader.sexpValue().use { r ->
+//            if (r.nextToken() == TokenTypeConst.SYMBOL) {
+//                val sid = r.symbolValueSid()
+//                val text = if (sid < 0) {
+//                    r.symbolValue()
+//                } else {
+//                    r.lookupSid(sid)
+//                }
+//                val vTail = v.onClause(text, sid)
+//                readAllValues(r, vTail)
+//            } else {
+//                v.onSexpStart()
+//                readAllValues(r, v)
+//            }
+//        }
+//        v.onSexpEnd()
+//    }
 
     private fun readAllValues(initialReader: ValueReader, visitor: VisitingReaderCallback) {
         var annotatedValueVisitor: VisitingReaderCallback? = null
@@ -497,9 +420,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     }
                 }
 
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
-                    // Do nothing
-                }
+                TokenTypeConst.ABSENT_ARGUMENT,
                 TokenTypeConst.EXPRESSION_GROUP -> {
                     pushReaderToStack()
                     (reader as ArgumentReader)
@@ -518,15 +439,10 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                         reader = invocation
                     }
                 }
-                TokenTypeConst.VARIABLE_REF -> {
-//                    pushReaderToStack()
-//                    (reader as TemplateReader)
-//                    reader = reader.variableValue()
-                }
 
                 TokenTypeConst.END -> {
-                    reader.close()
                     if (stackSize > 0) {
+                        reader.close()
                         reader = stack[--stackSize]!!
                     } else {
                         break
@@ -537,14 +453,11 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         }
     }
 
-    private fun readAllTheFields(
-        initialReader: ValueReader,
-        initialVisitor: VisitingReaderCallback,
-        initialFieldName: String? = null,
-        initialFieldNameSid: Int = -1,
-    ) {
-        var fieldName: String? = initialFieldName
-        var fieldNameSid = initialFieldNameSid
+    var units = 0
+
+    private fun readAllTheFields(initialReader: ValueReader, initialVisitor: VisitingReaderCallback) {
+        var fieldName: String? = null
+        var fieldNameSid = -1
         var stack = Array<ValueReader?>(0) { null }
         var stackSize = 0
         var reader: ValueReader = initialReader
@@ -564,10 +477,15 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             val visitor = annotatedValueVisitor ?: initialVisitor
             val token = reader.nextToken()
 
+            if (fieldName == "Unit") {
+                val x = 1
+            }
+
             when (token) {
                 TokenTypeConst.END -> {
-                    reader.close()
+//                    print(" %% END ${reader} %%")
                     if (stackSize > 0) {
+                        reader.close()
 //                        println("Popping from stack")
                         reader = stack[--stackSize]!!
                     } else {
@@ -628,43 +546,36 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                         TokenTypeConst.CLOB -> fieldValueVisitor.onClob(reader.clobValue())
                         TokenTypeConst.BLOB -> fieldValueVisitor.onBlob(reader.blobValue())
                         TokenTypeConst.LIST -> {
-                            val r = reader.listValue()
-                            fieldValueVisitor.onListStart()
-                            readAllValues(r, fieldValueVisitor)
-                            fieldValueVisitor.onListEnd()
-                            r.close()
+                            reader.listValue().use { r ->
+                                fieldValueVisitor.onListStart()
+                                readAllValues(r, fieldValueVisitor)
+                                fieldValueVisitor.onListEnd()
+                            }
                         }
                         TokenTypeConst.SEXP -> {
-                            val r = reader.sexpValue()
-                            fieldValueVisitor.onSexpStart()
-                            readAllValues(r, fieldValueVisitor)
-                            fieldValueVisitor.onSexpEnd()
-                            r.close()
+                            reader.sexpValue().use { r ->
+                                fieldValueVisitor.onSexpStart()
+                                readAllValues(r, fieldValueVisitor)
+                                fieldValueVisitor.onSexpEnd()
+                            }
                         }
                         TokenTypeConst.STRUCT -> {
-                            val r = reader.structValue()
-                            fieldValueVisitor.onStructStart()
-                            readAllTheFields(r, fieldValueVisitor)
-                            fieldValueVisitor.onStructEnd()
-                            r.close()
+                            reader.structValue().use { r ->
+                                fieldValueVisitor.onStructStart()
+                                readAllTheFields(r, fieldValueVisitor)
+                                fieldValueVisitor.onStructEnd()
+                            }
                         }
                     }
-                }
-
-                TokenTypeConst.NOP_EMPTY_ARGUMENT -> {
-                    // Is this correct?
-                    fieldName = null
-                    fieldNameSid = -1
-                    reader.skip()
-                    TODO()
                 }
                 TokenTypeConst.NOP -> {
                     fieldName = null
                     fieldNameSid = -1
                 }
+                TokenTypeConst.ABSENT_ARGUMENT,
                 TokenTypeConst.EXPRESSION_GROUP -> {
                     pushReaderToStack()
-                    (reader as ArgumentReader)
+//                    (reader as ArgumentReader)
                     reader = reader.expressionGroup()
                 }
                 TokenTypeConst.MACRO_INVOCATION -> {
@@ -735,7 +646,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         }
     }
 
-
     private fun readSymbolTable10(structReader: StructReader): Array<String?> {
         val newSymbols = ArrayList<String?>()
         var isLstAppend = false
@@ -795,4 +705,88 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             ion11Reader.close()
         }
     }
+
+    /**
+     * This is too complicated to have a "readClause" method, even though it does seem pretty useful.
+     */
+    private fun maybeVisitSexpClause(reader: ValueReader, visitor: VisitingReaderCallback) {
+        val v = visitor.onValue(TokenType.LIST)
+        if (v != null) {
+            reader.sexpValue().use { r ->
+                val nextToken = r.nextToken()
+                val tailVisitor = if (nextToken == TokenTypeConst.SYMBOL) {
+                    val sid = r.symbolValueSid()
+                    val text = if (sid < 0) r.symbolValue() else r.lookupSid(sid)
+                    v.onClause(text, sid)
+                } else {
+                    v.onSexpStart()
+                    readValue(r, v, alreadyOnToken = true)
+                    v
+                }
+                readAllValues(r, tailVisitor)
+            }
+            v.onSexpEnd()
+        } else {
+            reader.skip()
+        }
+    }
+
+    private fun readValue(reader: ValueReader, visitor: VisitingReaderCallback, alreadyOnToken: Boolean): Boolean {
+        val token = if (alreadyOnToken) reader.currentToken() else reader.nextToken()
+
+        when (token) {
+            TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue()) ?: reader.skip()
+            TokenTypeConst.BOOL -> visitor.onValue(TokenType.BOOL)?.onBoolean(reader.booleanValue()) ?: reader.skip()
+            TokenTypeConst.INT -> visitor.onValue(TokenType.INT)?.onLongInt(reader.longValue()) ?: reader.skip()
+            TokenTypeConst.FLOAT -> visitor.onValue(TokenType.FLOAT)?.onFloat(reader.doubleValue()) ?: reader.skip()
+            TokenTypeConst.DECIMAL -> visitor.onValue(TokenType.DECIMAL)?.onDecimal(reader.decimalValue()) ?: reader.skip()
+            TokenTypeConst.TIMESTAMP -> visitor.onValue(TokenType.TIMESTAMP)?.onTimestamp(reader.timestampValue()) ?: reader.skip()
+            TokenTypeConst.STRING -> visitor.onValue(TokenType.STRING)?.onString(reader.stringValue()) ?: reader.skip()
+            TokenTypeConst.SYMBOL -> visitor.onValue(TokenType.SYMBOL)?.let {
+                val sid = reader.symbolValueSid()
+                val text = if (sid < 0) {
+                    reader.symbolValue()
+                } else {
+                    reader.lookupSid(sid)
+                }
+                it.onSymbol(text, sid)
+            } ?: reader.skip()
+            TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)?.onClob(reader.clobValue()) ?: reader.skip()
+            TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)?.onBlob(reader.blobValue()) ?: reader.skip()
+            // IMPLEMENTATION NOTE:
+            //     For containers, we're going to step in, and then immediately step out if we need to skip.
+            //     This might be slightly less efficient, but it works for both delimited and prefixed containers.
+            TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
+            TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
+            TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
+            TokenTypeConst.ANNOTATIONS -> reader.annotations().use { a ->
+                val v = visitor.onAnnotation(a)
+                if (v != null) {
+                    readValue(reader, v, alreadyOnToken = false)
+                } else {
+                    reader.nextToken()
+                    reader.skip()
+                }
+            }
+            TokenTypeConst.MACRO_INVOCATION -> {
+                val macro = reader.macroValue()
+                val macroVisitor = visitor.onEExpression(macro)
+                reader.macroArguments(macro.signature).use { args ->
+                    if (macroVisitor != null) {
+                        readAllValues(args, macroVisitor);
+                    } else {
+                        templateReaderPool.startEvaluation(macro, args).use {
+                                evaluator -> readAllValues(evaluator, visitor)
+                        }
+                    }
+                }
+            }
+            // EXPRESSION_GROUP?
+            // TokenTypeConst.ABSENT_ARGUMENT -> return false
+            TokenTypeConst.END -> return false
+            else -> TODO("Unreachable: ${TokenTypeConst(token)}")
+        }
+        return true
+    }
+
 }

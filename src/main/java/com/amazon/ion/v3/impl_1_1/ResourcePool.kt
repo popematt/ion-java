@@ -81,7 +81,10 @@ class ResourcePool(
 
     fun getEExpArgs(start: Int, maxLength: Int, signature: List<Macro.Parameter>, symbolTable: Array<String?>, macroTable: Array<Macro>): EExpArgumentReaderImpl {
         val reader = eexpArgumentReaders.removeLastOrNull()
-            ?.apply { init(start, maxLength) }
+            ?.apply {
+                init(start, maxLength)
+                initTables(symbolTable, macroTable)
+            }
             ?: EExpArgumentReaderImpl(newSlice(start, maxLength), this, symbolTable, macroTable)
         reader.initArgs(signature)
         return reader

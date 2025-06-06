@@ -3,6 +3,7 @@ package com.amazon.ion.v3.impl_1_1
 import com.amazon.ion.IonException
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.template.*
 import java.nio.ByteBuffer
 
 /**
@@ -19,22 +20,24 @@ class EExpArgumentReaderImpl(
         private set
 
     // 0, 1, or 2
+    @JvmField
     var presence = IntArray(8)
     // The position of a "not present" argument is always the first byte after the last byte of the previous argument
+    @JvmField
     var argumentIndices = IntArray(8)
     // This is specifically, the index of the parameter within the macro signature, not within the ByteBuffer.
     private var nextParameterIndex = 0
-        set(value) {
-            val e = Exception()
-            val stackFrame = e.stackTrace[1]
-            val stackFrame2 = e.stackTrace[2]
-//            println("[$id] setting nextParameterIndex $field --> $value\n    " + e.stackTrace.take(5).joinToString("\n    "))
-            field = value
-        }
+//        set(value) {
+//            // val e = Exception()
+//            //println("[$id] setting nextParameterIndex $field --> $value\n    " + e.stackTrace.take(5).joinToString("\n    "))
+//            field = value
+//        }
 
     override fun close() {
+        if (this in pool.eexpArgumentReaders) throw IllegalStateException("Already closed: $this")
+        pool.eexpArgumentReaders.add(this)
 //        println("Closing EExpArgumentReaderImpl...")
-        while (nextToken() != TokenTypeConst.END) { skip() }
+//        while (nextToken() != TokenTypeConst.END) { skip() }
 //        println("Ended: $source")
     }
 
@@ -76,8 +79,7 @@ class EExpArgumentReaderImpl(
             nextParameterIndex = i
             val argPosition = source.position()
             if (presence[i] > 0) {
-                nextToken()
-                skip()
+                if (nextToken() != TokenTypeConst.END) skip()
             }
             argumentIndices[i] = argPosition
         }
@@ -161,7 +163,7 @@ class EExpArgumentReaderImpl(
         return when (presence) {
             0 -> {
                 opcode = TID_EMPTY_ARGUMENT
-                TokenTypeConst.NOP_EMPTY_ARGUMENT
+                TokenTypeConst.ABSENT_ARGUMENT
             }
             1 -> {
                 // Assuming tagged
@@ -175,10 +177,12 @@ class EExpArgumentReaderImpl(
         }
     }
 
-    // TODO: return SequenceReader
-    override fun expressionGroup(): ListReader {
+    override fun expressionGroup(): SequenceReader {
         val opcode = this.opcode
-        // TODO: Consider returning an empty or singleton expression group if it makes the APIs easier and improves perf.
+        if (opcode == TID_EMPTY_ARGUMENT) {
+            this.opcode = TID_UNSET
+            return NoneReader
+        }
         if (opcode != TID_EXPRESSION_GROUP) throw IonException("Not positioned on an expression group")
         this.opcode = TID_UNSET
 
@@ -191,12 +195,15 @@ class EExpArgumentReaderImpl(
             val maxLength = source.limit() - position
             // TODO: Something more efficient here
             val sacrificialReader = pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
-//            while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
-//            val endPosition = sacrificialReader.source.position()
-            sacrificialReader.close()
-//            source.position(endPosition)
+            while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
+            val endPosition = sacrificialReader.source.position()
+            source.position(endPosition)
+
             pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
         } else {
+//            println(source)
+//            println("Length: $length, new position: ${position + length}")
+//            println(signature)
             source.position(position + length)
             pool.getList(position, length, symbolTable, macroTable)
         }
@@ -206,7 +213,7 @@ class EExpArgumentReaderImpl(
     // returns tagless expression group reader for other groups
 
     override fun skip() {
-        // If we know which parameter we're on, we can check to see if the start of the next parameter is already known.
+        // TODO: If we know which parameter we're on, we can check to see if the start of the next parameter is already known.
         when (opcode) {
             TID_EMPTY_ARGUMENT -> {
                 // Nothing to skip.

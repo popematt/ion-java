@@ -41,6 +41,7 @@ class DelimitedStructReaderImpl internal constructor(
         while (nextToken() != TokenTypeConst.END) {
             skip()
         }
+        if (this in pool.delimitedStructs) throw IllegalStateException("Already closed: $this")
         pool.delimitedStructs.add(this)
     }
 
