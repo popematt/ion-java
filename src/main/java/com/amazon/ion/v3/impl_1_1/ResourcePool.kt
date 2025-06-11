@@ -68,8 +68,9 @@ class ResourcePool(
     }
 
     fun getDelimitedList(start: Int, maxLength: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedSequenceReaderImpl {
-        val reader = delimitedLists.removeLastOrNull()
-        if (reader != null) {
+        val n = delimitedLists.size
+        if (n > 0) {
+            val reader = delimitedLists.removeAt(n - 1)
             reader.init(start, maxLength)
             reader.initTables(symbolTable, macroTable)
             reader.parent = parent
@@ -77,6 +78,10 @@ class ResourcePool(
         } else {
             return DelimitedSequenceReaderImpl(newSlice(start, maxLength), this, parent, symbolTable, macroTable)
         }
+    }
+
+    fun getDelimitedSeqSkipper(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedSequenceSkipperImpl {
+        return DelimitedSequenceSkipperImpl(newSlice(start), this, parent, symbolTable, macroTable)
     }
 
     fun getEExpArgs(start: Int, maxLength: Int, signature: List<Macro.Parameter>, symbolTable: Array<String?>, macroTable: Array<Macro>): EExpArgumentReaderImpl {

@@ -134,7 +134,7 @@ object IdMappings {
     fun length(typeId: Int, buffer: ByteBuffer): Int {
         return when (typeId) {
             ValueReaderBase.TID_EMPTY_ARGUMENT.toInt() -> 0
-            ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> -2
+            ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> IntHelper.readFlexUInt(buffer)
             ValueReaderBase.TID_ON_FIELD_NAME.toInt() -> -2
             ValueReaderBase.TID_UNSET.toInt() -> throw IllegalStateException("Not positioned on an expression or value")
             else -> when (val it = LENGTH_FOR_OPCODE[typeId]) {

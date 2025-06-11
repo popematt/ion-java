@@ -5,11 +5,16 @@ import com.amazon.ion.v3.AnnotationIterator
 import com.amazon.ion.v3.PrivateAnnotationIterator
 
 internal class TemplateAnnotationIteratorImpl(
+    @JvmField
     var annotations: List<SymbolToken>,
+    @JvmField
     val pool: TemplateResourcePool,
 ): AnnotationIterator, PrivateAnnotationIterator {
+    @JvmField
     var i: Int = 0
-    lateinit var currentAnnotation: SymbolToken
+
+    @JvmField
+    var currentAnnotationText: String? = null
 
     override fun clone(): AnnotationIterator {
         return pool.getAnnotations(annotations)
@@ -18,17 +23,17 @@ internal class TemplateAnnotationIteratorImpl(
     override fun hasNext(): Boolean = i < annotations.size
     override fun next(): String? {
         if (!hasNext()) throw NoSuchElementException()
-        currentAnnotation = annotations[i++]
-        return currentAnnotation.text
+        currentAnnotationText = annotations[i++].text
+        return currentAnnotationText
     }
 
     // The text should have been resolved when the macro was compiled. Even if there is a SID,
     // it doesn't necessarily correspond to the current symbol table.
     override fun getSid(): Int = -1
-    override fun getText(): String? = currentAnnotation.text
+    override fun getText(): String? = currentAnnotationText
 
     override fun close() {
-        if (this in pool.annotations) throw IllegalStateException("Already closed: $this")
+//        if (this in pool.annotations) throw IllegalStateException("Already closed: $this")
         pool.annotations.add(this)
     }
 
@@ -37,7 +42,7 @@ internal class TemplateAnnotationIteratorImpl(
         i = 0
     }
 
-    override fun peek() { currentAnnotation = annotations[0] }
+    override fun peek() { currentAnnotationText = annotations[0].text }
 
-    override fun toStringArray(): Array<String?> = Array(annotations.size) { next(); getText() }
+    override fun toStringArray(): Array<String?> = Array(annotations.size) { next() }
 }

@@ -24,27 +24,29 @@ class TemplateArgumentReaderImpl(
         // TODO: See if we can eliminate this.
         signature = emptyList()
         nextParameterIndex = 0
-        presence = IntArray(8)
+//        presence = ByteArray(8)
+        presence = 0
         argumentIndices = IntArray(8)
     }
 
     override var signature: List<Macro.Parameter> = emptyList()
         private set
 
-    private var presence = IntArray(8)
+    // private var presence = ByteArray(8)
+    private var presence = 0L
     // The position of a "not present" argument is always the first byte after the last byte of the previous argument
-    private var argumentIndices = IntArray(8)
+    private var argumentIndices = IntArray(signature.size)
 
     // The position in the _signature_
     private var nextParameterIndex = 0
 
 
-    private var e: String = "unknown"
+//    private var e: String = "unknown"
     override fun returnToPool() {
-        if (this in pool.arguments) {
-            System.err.println("Previously closed at: $e")
-            throw IllegalStateException("Already closed: $this")
-        }
+//        if (this in pool.arguments) {
+//            System.err.println("Previously closed at: $e")
+//            throw IllegalStateException("Already closed: $this")
+//        }
         // e = Exception().stackTraceToString()
         pool.arguments.add(this)
     }
@@ -55,35 +57,83 @@ class TemplateArgumentReaderImpl(
         // Make sure we have enough space in our arrays
         if (signature.size > argumentIndices.size) {
             argumentIndices = IntArray(signature.size)
-            presence = IntArray(signature.size)
+            // Max signature size is 32? That might be okay. We could have another implementation
+            // for handling larger signature sizes that uses a byte array even if that is a little slower.
+            presence = 0 // ByteArray(signature.size)
         }
+
+        // Local references
+        // var presence = presence
+        val argumentIndices = argumentIndices
+        val info = info
+        val source = info.source
+        val endExclusive = endExclusive
+        val signatureSize = signature.size
+        var presence = 0L
+
         // TODO: Make this lazy or precompute this
+        //       Actually, this will be rendered mostly obsolete with nested template invocation flattening.
+        //       But it might be useful to make it lazy for system macro invocations.
         var position = startInclusive
-        for (i in signature.indices) {
+        for (i in 0 until signatureSize) {
             if (position < endExclusive) {
                 argumentIndices[i] = position
-                val currentExpression = info.source[position]
-                position++
+                val currentExpression = source[position]
                 if (currentExpression is Expression.HasStartAndEnd) {
                     val argEndExclusive = currentExpression.endExclusive
                     if (currentExpression is Expression.ExpressionGroup) {
-                        if (argEndExclusive == position) {
-                            presence[i] = 0
+                        if (argEndExclusive == position + 1) {
+                            // Set the presence bits to 0
+                            // It's actually a no-op
+                            // presence = presence or (0L shl (i * 2))
                         } else {
-                            presence[i] = 2
+                            // Set the presence bits to 2
+                            presence = presence or (2L shl (i * 2))
                         }
                     } else {
-                        presence[i] = 1
+                        presence = presence or (1L shl (i * 2))
                     }
                     position = argEndExclusive
                 } else {
-                    presence[i] = 1
+                    position++
+                    presence = presence or (1L shl (i * 2))
                 }
             } else {
-                presence[i] = 0
+                // Presence = 0
+                // presence = presence or (0L shl (i * 2))
                 argumentIndices[i] = endExclusive
             }
         }
+        this.presence = presence
+
+        // Using a byteArray instead of a long for presence:
+//        for (i in 0 until signatureSize) {
+//            if (position < endExclusive) {
+//                argumentIndices[i] = position
+//                val currentExpression = source[position]
+//                position++
+//                if (currentExpression is Expression.HasStartAndEnd) {
+//                    val argEndExclusive = currentExpression.endExclusive
+//                    if (currentExpression is Expression.ExpressionGroup) {
+//                        if (argEndExclusive == position) {
+//                            presence[i] = 0
+//                        } else {
+//                            presence[i] = 2
+//                        }
+//                    } else {
+//                        presence[i] = 1
+//                    }
+//                    position = argEndExclusive
+//                } else {
+//                    presence[i] = 1
+//                }
+//            } else {
+//                presence[i] = 0
+//                argumentIndices[i] = endExclusive
+//            }
+//        }
+
+
 //        println("Setting up template arg reader... $id")
 //        println(signature)
 //        println(presence.contentToString())
@@ -114,8 +164,10 @@ class TemplateArgumentReaderImpl(
 
         nextParameterIndex++
 
-        this.i = argumentIndices[currentParameterIndex]
-        val tokenType = when (presence[currentParameterIndex]) {
+        val i = argumentIndices[currentParameterIndex]
+        this.i = i
+        val p = (presence ushr (currentParameterIndex * 2)) and 3L
+        val tokenType = when (p.toInt()) {
             2 -> {
                 currentExpression = info.source[i]
                 TokenTypeConst.EXPRESSION_GROUP
@@ -127,7 +179,7 @@ class TemplateArgumentReaderImpl(
                 currentExpression = null
                 TokenTypeConst.ABSENT_ARGUMENT
             }
-            else -> throw IonException("Invalid presence bits for parameter $currentParameterIndex; was ${presence[currentParameterIndex]}")
+            else -> throw IonException("Invalid presence bits for parameter $currentParameterIndex; was ${p}")
         }
         return tokenType
     }

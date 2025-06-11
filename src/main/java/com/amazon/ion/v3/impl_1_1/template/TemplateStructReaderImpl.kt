@@ -10,12 +10,11 @@ class TemplateStructReaderImpl(
     startInclusive: Int,
     endExclusive: Int,
     isArgumentOwner: Boolean,
-    private val structId: Int,
 ): ValueReader, StructReader, TemplateReaderBase(pool, info, startInclusive, endExclusive, isArgumentOwner),
     SequenceReader {
 
     override fun toString(): String {
-        return "TemplateStructReaderImpl(structId=$structId, startInclusive=$startInclusive, endExclusive=$endExclusive)"
+        return "TemplateStructReaderImpl(startInclusive=$startInclusive, endExclusive=$endExclusive)"
     }
 
     override fun fieldName(): String? = consumeCurrentExpression(
@@ -40,9 +39,9 @@ class TemplateStructReaderImpl(
 
 
     override fun returnToPool() {
-        if (pool.structs.contains(this)) {
-            throw IllegalStateException("Cannot doubly add to the pool.")
-        }
+//        if (pool.structs.contains(this)) {
+//            throw IllegalStateException("Cannot doubly add to the pool.")
+//        }
         pool.structs.add(this)
     }
 }

@@ -575,6 +575,38 @@ class TypedReadersTest {
         }
 
         @Test
+        fun readPrefixedExprGroup() {
+            val data = """
+                02  | Presence Bits -- one group arg
+                05  | Group length = 2
+                60
+                6E
+            """
+            val signature = template("foo*"){}.signature
+
+            val source = toByteBuffer(data)
+
+            val reader = EExpArgumentReaderImpl(
+                source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
+                ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN)),
+                symbolTable = arrayOf(),
+                macroTable = arrayOf(),
+            )
+            reader.initArgs(signature)
+            reader.calculateEndPosition()
+
+            reader.seekToBeforeArgument(0)
+            reader.assertNextToken(TokenTypeConst.EXPRESSION_GROUP)
+                .expressionGroup()
+                .use { eg ->
+                    eg.assertNextToken(TokenTypeConst.INT).skip()
+                    eg.assertNextToken(TokenTypeConst.BOOL).skip()
+                    eg.assertNextToken(TokenTypeConst.END)
+                }
+
+        }
+
+        @Test
         fun readTemplateArgs() {
             val data = "00"
             val signature = template("foo", "bar?", "baz?"){}.signature

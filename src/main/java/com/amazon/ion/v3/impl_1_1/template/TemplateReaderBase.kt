@@ -10,20 +10,30 @@ import java.util.*
 import kotlin.math.sign
 
 abstract class TemplateReaderBase(
+    @JvmField
     val pool: TemplateResourcePool,
     // TODO: consider flattening this
+    @JvmField
     var info: TemplateResourcePool.TemplateInvocationInfo,
+    @JvmField
     var startInclusive: Int,
+    @JvmField
     var endExclusive: Int,
+    @JvmField
     var isArgumentOwner: Boolean,
     // TODO: Can we manage the expansion limit through the template resource pool?
+    @JvmField
     var expansionLimit: Int = 1_000_000,
     // Available modules? No. That's already resolved in the compiler.
     // Macro table? No. That's already resolved in the compiler.
 ): ValueReader, TemplateReader {
 
+    @JvmField
     var i = startInclusive
+    @JvmField
     var currentExpression: Expression? = null
+
+    private var source = info.source
 
     fun init(
         templateInvocationInfo: TemplateResourcePool.TemplateInvocationInfo,
@@ -35,6 +45,7 @@ abstract class TemplateReaderBase(
         this.startInclusive = startInclusive
         this.endExclusive = endExclusive
         this.isArgumentOwner = isArgumentOwner
+        this.source = templateInvocationInfo.source
         i = startInclusive
         currentExpression = null
 //        id = UUID.randomUUID().toString().take(8)
@@ -43,58 +54,44 @@ abstract class TemplateReaderBase(
 
     protected open fun reinitState() {}
 
-
-    internal var id = "" //UUID.randomUUID().toString().take(8)
-
-
-
-    protected inline fun <reified T: Expression, U> consumeCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (T) -> U, ): U {
-        val result = inspectCurrentExpression(argMethod, bodyMethod)
-        // if (currentExpression !is Expression.VariableRef) {
-            currentExpression = null
-        //}
-        return result
+    protected fun <T: Expression, U> consumeCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (T) -> U, ): U {
+        val expr = currentExpression
+        currentExpression = null
+        return when (expr!!.tokenType) {
+            TokenTypeConst.VARIABLE_REF -> argMethod(info.arguments)
+            else -> bodyMethod(expr as T)
+//            else -> throw IonException("Not positioned on a ${T::class.simpleName}")
+        }
     }
 
-    protected inline fun <reified T: Expression, U> inspectCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (T) -> U, ): U {
+    protected fun <T: Expression, U> inspectCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (T) -> U, ): U {
         val expr = currentExpression
-        return when (expr) {
-            is Expression.VariableRef -> argMethod(info.arguments)
-            is T -> bodyMethod(expr)
-            else -> throw IonException("Not positioned on a ${T::class.simpleName}")
+        return when (expr!!.tokenType) {
+            TokenTypeConst.VARIABLE_REF -> argMethod(info.arguments)
+            else -> bodyMethod(expr as T)
+//            else -> throw IonException("Not positioned on a ${T::class.simpleName}")
         }
     }
 
     override fun nextToken(): Int {
-        var expr: Expression? = this.currentExpression
+        // val info = this.info
+        var i = this.i
         if (i >= endExclusive) {
             return TokenTypeConst.END
         }
+        var expr: Expression? = this.currentExpression
         if (expr == null) {
-            expr = info.source[i++]
+            expr = source[i]
 //            if (Debug.enabled) println("[$id ${this::class.simpleName}] At position ${i}, read expression $expr")
+            i++
             if (expr is Expression.HasStartAndEnd) i = expr.endExclusive
+            this.i = i
             currentExpression = expr
         }
         if (expr is Expression.VariableRef) {
-            val childArgId = when (val args = info.arguments) {
-                is TemplateReaderBase -> args.id
-                is EExpArgumentReaderImpl -> args.id
-                else -> TODO()
-            }
-//            println("[$id] nextToken() seeking in ${childArgId} for child argument: ${expr.signatureIndex}")
-//            println(info.signature)
-//            println(info.arguments.signature)
-//
-//            if (info.arguments.signature.size <= expr.signatureIndex) {
-//                println("Dumping Info: ($i)")
-//                println(info.signature)
-//                println(info.source.joinToString("\n  ", prefix = "  "))
-//                println(info.arguments.signature)
-//            }
-
-            info.arguments.seekToBeforeArgument(expr.signatureIndex)
-            return info.arguments.nextToken()
+            val args = info.arguments
+            args.seekToBeforeArgument(expr.signatureIndex)
+            return args.nextToken()
         }
 
         return expr.tokenType
@@ -104,7 +101,7 @@ abstract class TemplateReaderBase(
         if (isArgumentOwner) {
             info.arguments.close()
         }
-        returnToPool()
+         returnToPool()
     }
 
     protected abstract fun returnToPool()
@@ -127,7 +124,7 @@ abstract class TemplateReaderBase(
 
     override fun valueSize(): Int = inspectCurrentExpression<Expression.DataModelValue, _>(ArgumentReader::valueSize) {
         // This is mostly only used for Ints... and Lobs?
-        return when (val expr = currentExpression) {
+        return@inspectCurrentExpression when (val expr = currentExpression) {
             is Expression.LongIntValue -> 8
             is Expression.BigIntValue -> 9
             is Expression.LobValue -> expr.value.size
@@ -142,14 +139,16 @@ abstract class TemplateReaderBase(
     override fun macroValue(): Macro = inspectCurrentExpression(ArgumentReader::macroValue, Expression.InvokableExpression::macro)
 
     override fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader {
-        return consumeCurrentExpression(
-            {
-//                println("Getting arguments from variable: $signature")
-                it.macroArguments(signature) },
-            { expr : Expression.InvokableExpression ->
-//                println("Getting arguments from template: ${signature}")
-                pool.getArguments(info, signature, expr.startInclusive, expr.endExclusive) }
-        )
+        val expr = currentExpression!!
+        currentExpression = null
+        return when (expr.tokenType) {
+            TokenTypeConst.VARIABLE_REF -> info.arguments.macroArguments(signature)
+            else -> {
+                expr as Expression.InvokableExpression
+                // FIXME: 10% of all
+                pool.getArguments(info, signature, expr.startInclusive, expr.endExclusive)
+            }
+        }
     }
 
     override fun expressionGroup(): SequenceReader = consumeCurrentExpression(ArgumentReader::expressionGroup) {

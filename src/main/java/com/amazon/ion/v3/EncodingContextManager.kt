@@ -32,7 +32,7 @@ internal class EncodingContextManager(
         @JvmStatic
         private val ION_1_1_SYSTEM_MODULE = ModuleReader2.Module(
             "\$ion",
-            SystemSymbols_1_1.allSymbolTexts().toMutableList(),
+            ION_1_1_SYSTEM_SYMBOLS,
             ION_1_1_SYSTEM_MACROS.map { it.systemSymbol.text to it },
         )
 
@@ -53,7 +53,7 @@ internal class EncodingContextManager(
 
 
     private val moduleReader = ModuleReader2(ReaderAdapterIonReader(ionReaderShim))
-    var defaultModule = ModuleReader2.Module("_", emptyList(), emptyList())
+    var defaultModule = ModuleReader2.Module("_", emptyArray(), emptyList())
         private set
     private val availableModules = mutableMapOf<String, ModuleReader2.Module>()
     private val activeModules = mutableListOf<ModuleReader2.Module>()
@@ -67,10 +67,9 @@ internal class EncodingContextManager(
      * Reset the encoding context for Ion 1.1
      */
     fun ivm() {
-        defaultModule = ModuleReader2.Module("_", emptyList(), emptyList())
+        defaultModule = ModuleReader2.Module("_", ION_1_1_SYSTEM_SYMBOLS, emptyList())
         availableModules.clear()
         availableModules["\$ion"] = ION_1_1_SYSTEM_MODULE
-        defaultModule.symbols = ION_1_1_SYSTEM_SYMBOLS.toList()
         defaultModule.macros = ION_1_1_SYSTEM_MODULE.macros
 
 //        TODO: use "active modules"
@@ -83,16 +82,27 @@ internal class EncodingContextManager(
      * Short-circuit evaluation of `add_symbols` and `set_symbols`.
      */
     fun addOrSetSymbols(argReader: ArgumentReader, append: Boolean) {
-        val newSymbols = if (append) defaultModule.symbols.toMutableList() else mutableListOf()
+        val newSymbols = mutableListOf<String?>()
         argReader.seekToArgument(0)
         val sl = argReader.expressionGroup()
         // IonReaderShim will take care of closing the expression group instance.
         ionReaderShim.init(sl)
         moduleReader.readSymbolsList(newSymbols)
 
+
+        val newSymbolTableSize = newSymbols.size + if (append) defaultModule.symbols.size else 0
+
+        val startOfNewSymbolTable = if (append) defaultModule.symbols else arrayOf()
+        val newSymbolTable = Array<String?>(newSymbolTableSize) { null }
+        if (append) {
+            System.arraycopy(defaultModule.symbols, 0, newSymbolTable, 0, startOfNewSymbolTable.size)
+        }
+        System.arraycopy(newSymbols.toTypedArray(), 0, newSymbolTable, startOfNewSymbolTable.size, newSymbols.size)
+        defaultModule.symbols = newSymbolTable
+
         // TODO: Should this be a copy-on-write instead of mutation?
         //       I don't think so, because it's not modifying any references to the existing list.
-        defaultModule.symbols = newSymbols
+//        defaultModule.symbols = newSymbols
     }
 
     /**
@@ -178,11 +188,11 @@ internal class EncodingContextManager(
             }
         }
 
-        val startOfNewSymbolTable = if (isLstAppend) defaultModule.symbols.toTypedArray() else arrayOf<String?>(null)
+        val startOfNewSymbolTable = if (isLstAppend) defaultModule.symbols else arrayOf<String?>(null)
         val newSymbolTable = Array<String?>(newSymbols.size + startOfNewSymbolTable.size) { null }
         System.arraycopy(startOfNewSymbolTable, 0, newSymbolTable, 0, startOfNewSymbolTable.size)
         System.arraycopy(newSymbols.toArray(), 0, newSymbolTable, startOfNewSymbolTable.size, newSymbols.size)
-        defaultModule.symbols = newSymbolTable.toList()
+        defaultModule.symbols = newSymbolTable
         defaultModule.macros = emptyList()
     }
 
@@ -214,20 +224,43 @@ internal class EncodingContextManager(
         }
     }
 
-    fun updateFlattenedTables(valueReaderBase: ValueReaderBase, additionalMacros: List<Macro>) {
-        // TODO: Switch to use active encoding modules. Code is below.
-        val symbols = ArrayList<String?>()
-        symbols.add(null)
-        symbols.addAll(defaultModule.symbols)
+    fun replaceSymbolTableAppend(valueReaderBase: ValueReaderBase) {
 
-        valueReaderBase.initTables(
-            symbols.toTypedArray(),
-            defaultModule.macros.map { (_, m) -> m }
-                .toMutableList()
-                .also { it.addAll(additionalMacros) }
-                .toTypedArray()
-        )
-        // Active encoding modules code
+        // [a, b, c, d]
+        val defaultModuleSymbols = defaultModule.symbols
+
+        // [null, a, b]
+        val existingSymbolTable = valueReaderBase.symbolTable
+        val symbols = existingSymbolTable.copyOf(defaultModuleSymbols.size + 1)
+
+        // 3
+        val appendStart = existingSymbolTable.size
+        // 4
+        val appendEnd = symbols.size
+
+        for (i in appendStart until appendEnd) {
+            symbols[i] = defaultModuleSymbols[i - 1]
+        }
+    }
+
+    fun updateFlattenedTables(valueReaderBase: ValueReaderBase, additionalMacros: List<Macro>) {
+        // TODO: See if we can avoid rebuilding symbol tables and/or macro tables that haven't changed.
+        //       This might require an API change.
+
+        val defaultModuleSymbols = defaultModule.symbols
+
+        val symbols = arrayOfNulls<String>(defaultModuleSymbols.size + 1)
+        System.arraycopy(defaultModuleSymbols, 0, symbols, 1, defaultModuleSymbols.size)
+
+        val macros = defaultModule.macros.map { (_, m) -> m }
+            .toMutableList()
+            .also { it.addAll(additionalMacros) }
+            .toTypedArray()
+
+        valueReaderBase.initTables(symbols, macros)
+
+        // TODO: Switch to use active encoding modules. Code is below.
+
 //        // TODO: Make this less wasteful in terms of allocations.
 //        val symbols = ArrayList<String?>()
 //        val macros = ArrayList<Macro>()

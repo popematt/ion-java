@@ -109,7 +109,7 @@ abstract class ValueReaderBase(
     }
 
     //  Returns the TokenType constant.
-    private fun type(state: Int): Int {
+    protected fun type(state: Int): Int {
         if (state < 0) {
             return when (state) {
                 TID_END.toInt() -> TokenTypeConst.END
@@ -182,28 +182,38 @@ abstract class ValueReaderBase(
         if (length >= 0) {
             source.position(source.position() + length)
         } else {
-            when (val token = type(opcode)) {
-                TokenTypeConst.FIELD_NAME -> {
-                    // TODO: Move this to the StructReader if we can.
-                    val r = (this as StructReader)
-                    val sid = r.fieldNameSid()
-                    if (sid < 0) r.fieldName()
-                    return
-                }
-                TokenTypeConst.SYMBOL -> {
-                    if (symbolValueSid() < 0) {
-                        // Length prefixed symbols and system symbols are already covered, so this should be unreachable.
-                        TODO("Skipping Symbols for opcode ${opcode.toString(16)}")
-                    }
-                }
+            if (opcode == TID_ON_FIELD_NAME.toInt()) {
+                // TODO: Move this to the StructReader if we can.
+                val r = (this as StructReader)
+                val sid = r.fieldNameSid()
+                if (sid < 0) r.fieldName()
+                return
+            } else if (opcode < 0x60) {
+                val macro = macroValue()
+                val end = macroArguments(macro.signature).use { it.calculateEndPosition() }
+                source.position(end)
+            } else when (opcode) {
+                // Symbol with FlexUInt SID
+                0xE3 -> symbolValueSid()
+
                 // TODO: make this better for delimited containers. Because of the way that `listValue()`
                 //   et al are implemented for delimited containers, this does a double read of the delimited
                 //   containers in order to skip it once. This problem is compounded when nested. Delimited
                 //   containers that are nested 1 layer deep will be skipped with a double read for each read
                 //   of the parent, so 4 reads to skip it once.
-                TokenTypeConst.LIST -> listValue().use {  }
-                TokenTypeConst.SEXP -> sexpValue().use {  }
-                TokenTypeConst.STRUCT -> structValue().use {
+                // FIXME: 14% of all
+
+                // Delimited List and sexp
+                0xF1, 0xF2 -> {
+                    val start = source.position()
+                    val s = pool.getDelimitedSeqSkipper(start, this, symbolTable, macroTable)
+                    while (s.nextToken() != TokenTypeConst.END) {
+                        s.skip()
+                    }
+                    s.close()
+                }
+                // Opcode F3
+                0xF3 -> structValue().use {
                     while (it.nextToken() != TokenTypeConst.END) {
 //                        it.fieldName()
 //                        it.nextToken()
@@ -211,19 +221,75 @@ abstract class ValueReaderBase(
                     }
                     source.position((it as ValueReaderBase).source.position())
                 }
-                TokenTypeConst.ANNOTATIONS -> annotations().use {  }
-                TokenTypeConst.MACRO_INVOCATION -> {
+                0xE4, 0xE5, 0xE6,
+                0xE7, 0xE8, 0xE9  -> annotations().close()
+                0xEF, 0xF4 -> {
                     val macro = macroValue()
                     val end = macroArguments(macro.signature).use { it.calculateEndPosition() }
                     source.position(end)
                 }
                 else -> {
-                    TODO("Skipping a ${TokenTypeConst(token)} [opcode: 0x${opcode.toString(16)}]")
+                    TODO("Skipping an opcode: 0x${opcode.toString(16)}")
                 }
             }
         }
         this.opcode = TID_UNSET
     }
+
+//    override fun skip() {
+//        val opcode = opcode.toInt()
+//        if (this.opcode == TID_END) {
+//            TODO()
+//        }
+//        val length = IdMappings.length(opcode, source)
+//        if (length >= 0) {
+//            source.position(source.position() + length)
+//        } else {
+//            when (val token = type(opcode)) {
+//                TokenTypeConst.FIELD_NAME -> {
+//                    // TODO: Move this to the StructReader if we can.
+//                    val r = (this as StructReader)
+//                    val sid = r.fieldNameSid()
+//                    if (sid < 0) r.fieldName()
+//                    return
+//                }
+//                TokenTypeConst.SYMBOL -> {
+//                    if (symbolValueSid() < 0) {
+//                        // Length prefixed symbols and system symbols are already covered, so this should be unreachable.
+//                        TODO("Skipping Symbols for opcode ${opcode.toString(16)}")
+//                    }
+//                }
+//                // TODO: make this better for delimited containers. Because of the way that `listValue()`
+//                //   et al are implemented for delimited containers, this does a double read of the delimited
+//                //   containers in order to skip it once. This problem is compounded when nested. Delimited
+//                //   containers that are nested 1 layer deep will be skipped with a double read for each read
+//                //   of the parent, so 4 reads to skip it once.
+//                // FIXME: 14% of all
+//                TokenTypeConst.LIST -> {
+//                    listValue().use {  }
+//                }
+//                TokenTypeConst.SEXP -> sexpValue().use {  }
+//                TokenTypeConst.STRUCT -> structValue().use {
+//                    while (it.nextToken() != TokenTypeConst.END) {
+////                        it.fieldName()
+////                        it.nextToken()
+//                        it.skip()
+//                    }
+//                    source.position((it as ValueReaderBase).source.position())
+//                }
+//                TokenTypeConst.ANNOTATIONS -> annotations().use {  }
+//                TokenTypeConst.MACRO_INVOCATION -> {
+//                    val macro = macroValue()
+//                    val end = macroArguments(macro.signature).use { it.calculateEndPosition() }
+//                    source.position(end)
+//                }
+//                else -> {
+//                    TODO("Skipping a ${TokenTypeConst(token)} [opcode: 0x${opcode.toString(16)}]")
+//                }
+//            }
+//        }
+//        this.opcode = TID_UNSET
+//    }
 
     override fun nullValue(): IonType {
         val opcode = opcode.toInt()

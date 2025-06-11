@@ -182,15 +182,19 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         return _next()
     }
 
+    // FIXME: 53% of All
     private fun handleMacro() {
         val macro = reader.macroValue()
 //        println("Evaluating macro $macro")
 
+        // FIXME: 31% of ALL
         val args = reader.macroArguments(macro.signature)
 
         val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro) {
             SystemMacro.AddSymbols -> {
+                // FIXME: 6% of All
                 encodingContextManager.addOrSetSymbols(args, append = true)
+                // FIXME: 5% of All
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
 //                        println("Add symbols: ${ion11Reader.symbolTable.contentToString()}")
                 true
@@ -216,6 +220,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         }
 
         if (!isShortCircuitEvaluation) {
+            // FIXME: 7% of all
             val eexp = templateReaderPool.startEvaluation(macro, args)
             readerManager.pushReader(eexp)
             reader = eexp

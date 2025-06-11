@@ -38,10 +38,10 @@ class DelimitedStructReaderImpl internal constructor(
     private var flexSymReader: FlexSymReader = FlexSymReader(pool)
 
     override fun close() {
-        while (nextToken() != TokenTypeConst.END) {
-            skip()
-        }
-        if (this in pool.delimitedStructs) throw IllegalStateException("Already closed: $this")
+//        while (nextToken() != TokenTypeConst.END) {
+//            skip()
+//        }
+//        if (this in pool.delimitedStructs) throw IllegalStateException("Already closed: $this")
         pool.delimitedStructs.add(this)
     }
 

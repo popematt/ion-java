@@ -284,6 +284,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                         }
                         SystemMacro.AddSymbols -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetSymbols(it, append = true)
+//                            encodingContextManager.replaceSymbolTableAppend(ion11Reader)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
                         SystemMacro.SetMacros -> reader.macroArguments(macro.signature).use {
@@ -453,8 +454,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         }
     }
 
-    var units = 0
-
     private fun readAllTheFields(initialReader: ValueReader, initialVisitor: VisitingReaderCallback) {
         var fieldName: String? = null
         var fieldNameSid = -1
@@ -476,10 +475,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         while (true) {
             val visitor = annotatedValueVisitor ?: initialVisitor
             val token = reader.nextToken()
-
-            if (fieldName == "Unit") {
-                val x = 1
-            }
 
             when (token) {
                 TokenTypeConst.END -> {

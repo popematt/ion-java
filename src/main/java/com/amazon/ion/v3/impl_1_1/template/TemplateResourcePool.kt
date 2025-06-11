@@ -167,11 +167,9 @@ class TemplateResourcePool private constructor(): Closeable {
             reader.init(info, startInclusive, endExclusive, isArgumentOwner = false)
             return reader
         } else {
-            return TemplateStructReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false, n++)
+            return TemplateStructReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)
         }
     }
-
-    private var n = 0
 
     fun getAnnotations(annotationSymbols: List<SymbolToken>): AnnotationIterator {
         val reader = annotations.removeLastOrNull() as TemplateAnnotationIteratorImpl?

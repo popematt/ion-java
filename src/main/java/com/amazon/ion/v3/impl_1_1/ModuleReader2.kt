@@ -19,7 +19,13 @@ internal class ModuleReader2(
     private var moduleMacros: List<Pair<String?, Macro>> = emptyList()
 
     // TODO: Add a proper `Module` abstraction. For now, we'll use this.
-    internal data class Module(val name: String, var symbols: List<String?>, var macros: List<Pair<String?, Macro>>) {
+    internal data class LModule(val name: String, var symbols: List<String?>, var macros: List<Pair<String?, Macro>>) {
+        fun getMacro(id: Int): Macro = macros[id].second
+        fun getMacro(name: String): Macro? = macros.firstOrNull { it.first == name }?.second
+    }
+
+    // TODO: Add a proper `Module` abstraction. For now, we'll use this.
+    internal data class Module(val name: String, var symbols: Array<String?>, var macros: List<Pair<String?, Macro>>) {
         fun getMacro(id: Int): Macro = macros[id].second
         fun getMacro(name: String): Macro? = macros.firstOrNull { it.first == name }?.second
     }
@@ -52,7 +58,7 @@ internal class ModuleReader2(
             readerAdapter.stepOutOfContainer()
             t = readerAdapter.nextEncodingType()
         }
-        return Module(moduleName, moduleSymbols, moduleMacros)
+        return Module(moduleName, moduleSymbols.toTypedArray(), moduleMacros)
     }
 
     private fun readModuleDeclarationClause(localAvailableBindings: MutableMap<String, Module>, moduleSymbols: MutableList<String?>, moduleMacros: MutableList<Pair<String?, Macro>>, state: Int): Int {
