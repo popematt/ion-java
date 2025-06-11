@@ -93,7 +93,7 @@ internal class EncodingContextManager(
         val newSymbolTableSize = newSymbols.size + if (append) defaultModule.symbols.size else 0
 
         val startOfNewSymbolTable = if (append) defaultModule.symbols else arrayOf()
-        val newSymbolTable = Array<String?>(newSymbolTableSize) { null }
+        val newSymbolTable = arrayOfNulls<String>(newSymbolTableSize)
         if (append) {
             System.arraycopy(defaultModule.symbols, 0, newSymbolTable, 0, startOfNewSymbolTable.size)
         }

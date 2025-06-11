@@ -161,16 +161,8 @@ class EExpArgumentReaderImpl(
         //       For now, we'll assume that they are all tagged.
         return if (length == 0) {
             // TODO: We might be able to get the length based on the argument indices.
-            val maxLength = source.limit() - position
-            // TODO: Something more efficient here
-//            val sacrificialReader = pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
-//            while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
-//            val endPosition = sacrificialReader.source.position()
-//            source.position(endPosition)
-
-            pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
+            pool.getDelimitedSequence(position, this, symbolTable, macroTable)
         } else {
-//            println(signature)
             source.position(position + length)
             pool.getList(position, length, symbolTable, macroTable)
         }
@@ -192,15 +184,12 @@ class EExpArgumentReaderImpl(
                     source.position(source.position() + length)
                 } else {
                     val position = source.position()
-                    val maxLength = source.limit() - position
-                    val sacrificialReader = pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
+                    val sacrificialReader = pool.getDelimitedSequence(position, this, symbolTable, macroTable)
                     while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
-                    val endPosition = sacrificialReader.source.position()
-                    source.position(endPosition)
+                    sacrificialReader.close()
                 }
             }
             else -> super.skip()
         }
-//        println(source.position())
     }
 }

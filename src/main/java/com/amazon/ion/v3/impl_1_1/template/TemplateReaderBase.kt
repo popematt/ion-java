@@ -79,14 +79,12 @@ abstract class TemplateReaderBase(
         if (i >= endExclusive) {
             return TokenTypeConst.END
         }
-        var expr: Expression? = this.currentExpression
-        if (expr == null) {
-            expr = this.source[i]
-            i++
-            if (expr is Expression.HasStartAndEnd) i = expr.endExclusive
-            this.i = i
-            this.currentExpression = expr
-        }
+        val expr = this.source[i]
+        i++
+        if (expr is Expression.HasStartAndEnd) i = expr.endExclusive
+        this.i = i
+        this.currentExpression = expr
+
         if (expr is Expression.VariableRef) {
 //            val args = this.info.arguments
 //            args.seekToBeforeArgument(expr.signatureIndex)
@@ -98,7 +96,6 @@ abstract class TemplateReaderBase(
     }
 
     private fun resolveVariableTokenType(v: Int): Int {
-
         val args = this.info.arguments
         args.seekToBeforeArgument(v)
         return args.nextToken()

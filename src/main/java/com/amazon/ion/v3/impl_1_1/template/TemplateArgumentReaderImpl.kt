@@ -25,16 +25,17 @@ class TemplateArgumentReaderImpl(
         signature = emptyList()
         nextParameterIndex = 0
 //        presence = ByteArray(8)
-        presence = 0
-        argumentIndices = IntArray(8)
+//        presence = 0
+//        argumentIndices = IntArray(8)
     }
 
     override var signature: List<Macro.Parameter> = emptyList()
         private set
 
     // private var presence = ByteArray(8)
-    private var presence = 0
+//    private var presence = 0
     // The position of a "not present" argument is always the first byte after the last byte of the previous argument
+    // position of -1 indicates not present.
     private var argumentIndices = IntArray(signature.size)
 
     // The position in the _signature_
@@ -54,12 +55,13 @@ class TemplateArgumentReaderImpl(
     fun initArgs(signature: List<Macro.Parameter>) {
         this.signature = signature
         this.nextParameterIndex = 0
+        val signatureSize = signature.size
         // Make sure we have enough space in our arrays
-        if (signature.size > argumentIndices.size) {
+        if (signatureSize > argumentIndices.size) {
             argumentIndices = IntArray(signature.size)
             // Max signature size is 32? That might be okay. We could have another implementation
             // for handling larger signature sizes that uses a byte array even if that is a little slower.
-            presence = 0 // ByteArray(signature.size)
+//            presence = 0 // ByteArray(signature.size)
         }
 
         // Local references
@@ -68,8 +70,6 @@ class TemplateArgumentReaderImpl(
         val info = info
         val source = info.source
         val endExclusive = endExclusive
-        val signatureSize = signature.size
-        var presence = 0
 
         // TODO: Make this lazy or precompute this
         //       Actually, this will be rendered mostly obsolete with nested template invocation flattening.
@@ -86,25 +86,19 @@ class TemplateArgumentReaderImpl(
                             // Set the presence bits to 0
                             // It's actually a no-op
                             // presence = presence or (0L shl (i * 2))
-                        } else {
-                            // Set the presence bits to 2
-                            presence = presence or (2 shl (i * 2))
+                            argumentIndices[i] = -1
                         }
-                    } else {
-                        presence = presence or (1 shl (i * 2))
                     }
                     position = argEndExclusive
                 } else {
                     position++
-                    presence = presence or (1 shl (i * 2))
                 }
             } else {
                 // Presence = 0
                 // presence = presence or (0L shl (i * 2))
-                argumentIndices[i] = endExclusive
+                argumentIndices[i] = -1
             }
         }
-        this.presence = presence
 
         // Using a byteArray instead of a long for presence:
 //        for (i in 0 until signatureSize) {
@@ -160,31 +154,14 @@ class TemplateArgumentReaderImpl(
         if (currentParameterIndex >= signature.size) {
             return TokenTypeConst.END
         }
-//        println("[$id] Reading Template arg ${signature[currentParameterIndex]}($currentParameterIndex)")
-
         nextParameterIndex++
 
         val i = argumentIndices[currentParameterIndex.toInt()]
-        this.i = i
-        val p = (presence ushr (currentParameterIndex * 2)) and 3
-        val tokenType = when (p.toInt()) {
-            2 -> {
-                currentExpression = info.source[i]
-                TokenTypeConst.EXPRESSION_GROUP
-            }
-            1 -> {
-                super.nextToken()
-            }
-            0 -> {
-                currentExpression = null
-                TokenTypeConst.ABSENT_ARGUMENT
-            }
-            else -> throw IonException("Invalid presence bits for parameter $currentParameterIndex; was ${p}")
+        if (i < 0) {
+            currentExpression = null
+            return TokenTypeConst.ABSENT_ARGUMENT
         }
-        return tokenType
+        this.i = i
+        return super.nextToken()
     }
-
-//    override fun skip() {
-//        // Nothing to do?
-//    }
 }

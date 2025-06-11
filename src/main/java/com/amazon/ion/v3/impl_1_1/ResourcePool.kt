@@ -3,7 +3,6 @@ package com.amazon.ion.v3.impl_1_1
 import com.amazon.ion.impl.bin.utf8.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
-import com.amazon.ion.v3.impl_1_0.*
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -33,12 +32,19 @@ class ResourcePool(
             return _utf8Decoder
         }
 
+    @JvmField
     val scratchBuffer: ByteBuffer = source.asReadOnlyBuffer()
+    @JvmField
     val structs = ArrayList<StructReaderImpl>(32)
+    @JvmField
     val delimitedStructs = ArrayList<DelimitedStructReaderImpl>(32)
+    @JvmField
     val lists = ArrayList<SeqReaderImpl>(32)
+    @JvmField
     val delimitedLists = ArrayList<DelimitedSequenceReaderImpl>(32)
+    @JvmField
     val eexpArgumentReaders = ArrayList<EExpArgumentReaderImpl>(8)
+    @JvmField
     val annotations = ArrayList<AnnotationIterator>(8)
 
     private fun newSlice(start: Int): ByteBuffer {
@@ -67,21 +73,17 @@ class ResourcePool(
         }
     }
 
-    fun getDelimitedList(start: Int, maxLength: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedSequenceReaderImpl {
+    fun getDelimitedSequence(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedSequenceReaderImpl {
         val n = delimitedLists.size
         if (n > 0) {
             val reader = delimitedLists.removeAt(n - 1)
-            reader.init(start, maxLength)
+            reader.init(start, source.limit() - start)
             reader.initTables(symbolTable, macroTable)
             reader.parent = parent
             return reader
         } else {
-            return DelimitedSequenceReaderImpl(newSlice(start, maxLength), this, parent, symbolTable, macroTable)
+            return DelimitedSequenceReaderImpl(newSlice(start), this, parent, symbolTable, macroTable)
         }
-    }
-
-    fun getDelimitedSeqSkipper(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedSequenceSkipperImpl {
-        return DelimitedSequenceSkipperImpl(newSlice(start), this, parent, symbolTable, macroTable)
     }
 
     fun getEExpArgs(start: Int, maxLength: Int, signature: List<Macro.Parameter>, symbolTable: Array<String?>, macroTable: Array<Macro>): EExpArgumentReaderImpl {

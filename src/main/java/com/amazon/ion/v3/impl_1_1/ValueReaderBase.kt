@@ -190,7 +190,9 @@ abstract class ValueReaderBase(
                 return
             } else if (opcode < 0x60) {
                 val macro = macroValue()
-                val end = macroArguments(macro.signature).use { it.calculateEndPosition() }
+                val args = macroArguments(macro.signature)
+                val end = args.calculateEndPosition()
+                args.close()
                 source.position(end)
             } else when (opcode) {
                 // Symbol with FlexUInt SID
@@ -206,7 +208,7 @@ abstract class ValueReaderBase(
                 // Delimited List and sexp
                 0xF1, 0xF2 -> {
                     val start = source.position()
-                    val s = pool.getDelimitedSeqSkipper(start, this, symbolTable, macroTable)
+                    val s = pool.getDelimitedSequence(start, this, symbolTable, macroTable)
                     while (s.nextToken() != TokenTypeConst.END) {
                         s.skip()
                     }
@@ -223,10 +225,11 @@ abstract class ValueReaderBase(
                 }
                 0xE4, 0xE5, 0xE6,
                 0xE7, 0xE8, 0xE9  -> annotations().close()
+                // E-Expressions that do not have a length prefix.
                 0xEF, 0xF4 -> {
                     val macro = macroValue()
-                    val end = macroArguments(macro.signature).use { it.calculateEndPosition() }
-                    source.position(end)
+                    // TODO: If we stop eagerly calculating the size of macro args, this may need to change.
+                    macroArguments(macro.signature).close()
                 }
                 else -> {
                     TODO("Skipping an opcode: 0x${opcode.toString(16)}")
@@ -459,7 +462,7 @@ abstract class ValueReaderBase(
             IntHelper.readFlexUInt(source)
         } else if (opcode == 0xF1) {
             val start = source.position()
-            return pool.getDelimitedList(start, source.limit() - start, this, symbolTable, macroTable)
+            return pool.getDelimitedSequence(start, this, symbolTable, macroTable)
         } else {
             throw IonException("Not positioned on a list")
         }
@@ -564,6 +567,7 @@ abstract class ValueReaderBase(
         val reader = if (length < 0) {
             val maxPossibleLength = source.limit() - position
             val args = pool.getEExpArgs(position, maxPossibleLength, signature, symbolTable, macroTable)
+            // TODO: See if we can avoid eagerly calculating the length of the arguments
             source.position(args.calculateEndPosition())
             args
         } else {

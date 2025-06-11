@@ -541,25 +541,25 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                         TokenTypeConst.CLOB -> fieldValueVisitor.onClob(reader.clobValue())
                         TokenTypeConst.BLOB -> fieldValueVisitor.onBlob(reader.blobValue())
                         TokenTypeConst.LIST -> {
-                            reader.listValue().use { r ->
-                                fieldValueVisitor.onListStart()
-                                readAllValues(r, fieldValueVisitor)
-                                fieldValueVisitor.onListEnd()
-                            }
+                            val r = reader.listValue()
+                            fieldValueVisitor.onListStart()
+                            readAllValues(r, fieldValueVisitor)
+                            fieldValueVisitor.onListEnd()
+                            r.close()
                         }
                         TokenTypeConst.SEXP -> {
-                            reader.sexpValue().use { r ->
-                                fieldValueVisitor.onSexpStart()
-                                readAllValues(r, fieldValueVisitor)
-                                fieldValueVisitor.onSexpEnd()
-                            }
+                            val r = reader.sexpValue()
+                            fieldValueVisitor.onSexpStart()
+                            readAllValues(r, fieldValueVisitor)
+                            fieldValueVisitor.onSexpEnd()
+                            r.close()
                         }
                         TokenTypeConst.STRUCT -> {
-                            reader.structValue().use { r ->
-                                fieldValueVisitor.onStructStart()
-                                readAllTheFields(r, fieldValueVisitor)
-                                fieldValueVisitor.onStructEnd()
-                            }
+                            val r = reader.structValue()
+                            fieldValueVisitor.onStructStart()
+                            readAllTheFields(r, fieldValueVisitor)
+                            fieldValueVisitor.onStructEnd()
+                            r.close()
                         }
                     }
                 }
@@ -570,7 +570,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 TokenTypeConst.ABSENT_ARGUMENT,
                 TokenTypeConst.EXPRESSION_GROUP -> {
                     pushReaderToStack()
-//                    (reader as ArgumentReader)
                     reader = reader.expressionGroup()
                 }
                 TokenTypeConst.MACRO_INVOCATION -> {
