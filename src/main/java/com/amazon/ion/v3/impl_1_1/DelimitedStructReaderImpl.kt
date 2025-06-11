@@ -19,6 +19,8 @@ import java.nio.ByteBuffer
 class DelimitedStructReaderImpl internal constructor(
     source: ByteBuffer,
     pool: ResourcePool,
+    @JvmField
+    var parent: ValueReaderBase,
     symbolTable: Array<String?>,
     macroTable: Array<Macro>,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), StructReader {
@@ -38,10 +40,11 @@ class DelimitedStructReaderImpl internal constructor(
     private var flexSymReader: FlexSymReader = FlexSymReader(pool)
 
     override fun close() {
-//        while (nextToken() != TokenTypeConst.END) {
-//            skip()
-//        }
+        while (nextToken() != TokenTypeConst.END) {
+            skip()
+        }
 //        if (this in pool.delimitedStructs) throw IllegalStateException("Already closed: $this")
+        parent.source.position(source.position())
         pool.delimitedStructs.add(this)
     }
 

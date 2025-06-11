@@ -139,14 +139,15 @@ class ResourcePool(
         }
     }
 
-    fun getDelimitedStruct(start: Int, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedStructReaderImpl {
+    fun getDelimitedStruct(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedStructReaderImpl {
         val reader = delimitedStructs.removeLastOrNull()
         if (reader != null) {
             reader.init(start, source.limit() - start)
+            reader.parent = parent
             reader.initTables(symbolTable, macroTable)
             return reader
         } else {
-            return DelimitedStructReaderImpl(newSlice(start), this, symbolTable, macroTable)
+            return DelimitedStructReaderImpl(newSlice(start), this, parent, symbolTable, macroTable)
         }
     }
 

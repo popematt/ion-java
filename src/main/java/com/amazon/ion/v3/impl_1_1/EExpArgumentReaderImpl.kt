@@ -5,6 +5,7 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import java.nio.ByteBuffer
+import java.util.*
 
 /**
  * Reads the raw E-expression arguments
@@ -51,8 +52,10 @@ class EExpArgumentReaderImpl(
         }
         var presenceByteOffset = 8
         var presenceByte = 0
+
+        Arrays.fill(argumentIndices, -1)
+
         for (i in signature.indices) {
-            argumentIndices[i] = -1
             if (signature[i].cardinality != Macro.ParameterCardinality.ExactlyOne) {
                 // Read a value from the presence bitmap
                 // But we might need to "refill" our presence byte first
@@ -160,10 +163,10 @@ class EExpArgumentReaderImpl(
             // TODO: We might be able to get the length based on the argument indices.
             val maxLength = source.limit() - position
             // TODO: Something more efficient here
-            val sacrificialReader = pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
-            while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
-            val endPosition = sacrificialReader.source.position()
-            source.position(endPosition)
+//            val sacrificialReader = pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
+//            while (sacrificialReader.nextToken() != TokenTypeConst.END) { sacrificialReader.skip() };
+//            val endPosition = sacrificialReader.source.position()
+//            source.position(endPosition)
 
             pool.getDelimitedList(position, maxLength, this, symbolTable, macroTable)
         } else {

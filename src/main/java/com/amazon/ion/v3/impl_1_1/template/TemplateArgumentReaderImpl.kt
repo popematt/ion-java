@@ -33,12 +33,12 @@ class TemplateArgumentReaderImpl(
         private set
 
     // private var presence = ByteArray(8)
-    private var presence = 0L
+    private var presence = 0
     // The position of a "not present" argument is always the first byte after the last byte of the previous argument
     private var argumentIndices = IntArray(signature.size)
 
     // The position in the _signature_
-    private var nextParameterIndex = 0
+    private var nextParameterIndex: Short = 0
 
 
 //    private var e: String = "unknown"
@@ -69,7 +69,7 @@ class TemplateArgumentReaderImpl(
         val source = info.source
         val endExclusive = endExclusive
         val signatureSize = signature.size
-        var presence = 0L
+        var presence = 0
 
         // TODO: Make this lazy or precompute this
         //       Actually, this will be rendered mostly obsolete with nested template invocation flattening.
@@ -88,15 +88,15 @@ class TemplateArgumentReaderImpl(
                             // presence = presence or (0L shl (i * 2))
                         } else {
                             // Set the presence bits to 2
-                            presence = presence or (2L shl (i * 2))
+                            presence = presence or (2 shl (i * 2))
                         }
                     } else {
-                        presence = presence or (1L shl (i * 2))
+                        presence = presence or (1 shl (i * 2))
                     }
                     position = argEndExclusive
                 } else {
                     position++
-                    presence = presence or (1L shl (i * 2))
+                    presence = presence or (1 shl (i * 2))
                 }
             } else {
                 // Presence = 0
@@ -146,7 +146,7 @@ class TemplateArgumentReaderImpl(
         if (signatureIndex >= signature.size) throw IllegalStateException("Not in the signature")
 //        println("[$id] Seeking to before template arg $signatureIndex of $signature")
 //         println("${signature[signatureIndex]}($signatureIndex)")
-        nextParameterIndex = signatureIndex
+        nextParameterIndex = signatureIndex.toShort()
         currentExpression = null
     }
 
@@ -164,9 +164,9 @@ class TemplateArgumentReaderImpl(
 
         nextParameterIndex++
 
-        val i = argumentIndices[currentParameterIndex]
+        val i = argumentIndices[currentParameterIndex.toInt()]
         this.i = i
-        val p = (presence ushr (currentParameterIndex * 2)) and 3L
+        val p = (presence ushr (currentParameterIndex * 2)) and 3
         val tokenType = when (p.toInt()) {
             2 -> {
                 currentExpression = info.source[i]

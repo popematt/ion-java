@@ -33,22 +33,24 @@ class TemplateResourcePool private constructor(): Closeable {
             }
         }
     }
+    class TemplateInvocationInfo(
+        @JvmField
+        val source: List<Expression.TemplateBodyExpression>,
+        @JvmField
+        val signature: List<Macro.Parameter>,
+        @JvmField
+        val arguments: ArgumentReader,
+    )
 
-    interface TemplateInvocationInfo {
-        val source: List<Expression.TemplateBodyExpression>
-        val signature: List<Macro.Parameter>
-        val arguments: ArgumentReader
-    }
-    internal class TemplateInvocationInfoImpl(
-        override var source: List<Expression.TemplateBodyExpression>,
-        override var signature: List<Macro.Parameter>,
-        override var arguments: ArgumentReader,
-    ): TemplateInvocationInfo
-
+    @JvmField
     val structs = ArrayList<TemplateStructReaderImpl>()
+    @JvmField
     val sequences = ArrayList<TemplateSequenceReaderImpl>()
+    @JvmField
     val annotations = ArrayList<AnnotationIterator>()
+    @JvmField
     val variables = ArrayList<TemplateVariableReaderImpl>()
+    @JvmField
     val arguments = ArrayList<TemplateArgumentReaderImpl>()
 
     /**
@@ -92,7 +94,7 @@ class TemplateResourcePool private constructor(): Closeable {
         val reader = sequences.removeLastOrNull()
         if (reader != null) {
             reader.init(
-                TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments),
+                TemplateInvocationInfo(macro.body!!, macro.signature, arguments),
                 0,
                 macro.body!!.size,
                 isArgumentOwner = true
@@ -101,7 +103,7 @@ class TemplateResourcePool private constructor(): Closeable {
         } else {
             return TemplateSequenceReaderImpl(
                 this,
-                TemplateInvocationInfoImpl(macro.body!!, macro.signature, arguments),
+                TemplateInvocationInfo(macro.body!!, macro.signature, arguments),
                 0,
                 macro.body!!.size,
                 isArgumentOwner = true

@@ -615,7 +615,7 @@ class TypedReadersTest {
 
             val reader = TemplateArgumentReaderImpl(
                 TemplateResourcePool.getInstance(),
-                TemplateResourcePool.TemplateInvocationInfoImpl(
+                TemplateResourcePool.TemplateInvocationInfo(
                     listOf(
                         Expression.LongIntValue(value = 0),
                         Expression.BoolValue(value = false),

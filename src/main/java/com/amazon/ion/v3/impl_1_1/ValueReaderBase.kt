@@ -63,7 +63,7 @@ abstract class ValueReaderBase(
     @JvmField
     internal var opcode: Short = TID_UNSET
 
-    internal var id = "" // UUID.randomUUID().toString().take(8)
+//    internal var id = "" // UUID.randomUUID().toString().take(8)
 
     internal fun init(
         start: Int,
@@ -492,16 +492,16 @@ abstract class ValueReaderBase(
             val start = source.position()
             this.opcode = TID_UNSET
 
-            val sacrificialReader = pool.getDelimitedStruct(start, symbolTable, macroTable)
-            while (sacrificialReader.nextToken() != TokenTypeConst.END) {
-                sacrificialReader.skip()
-            }
+//            val sacrificialReader = pool.getDelimitedStruct(start, this, symbolTable, macroTable)
+//            while (sacrificialReader.nextToken() != TokenTypeConst.END) {
+//                sacrificialReader.skip()
+//            }
+//
+//            val endPosition = sacrificialReader.source.position()
+//            sacrificialReader.close()
+//            source.position(endPosition)
 
-            val endPosition = sacrificialReader.source.position()
-            sacrificialReader.close()
-            source.position(endPosition)
-
-            return pool.getDelimitedStruct(start, symbolTable, macroTable)
+            return pool.getDelimitedStruct(start, this, symbolTable, macroTable)
         } else {
             // Length prefixed container
             val start = source.position()

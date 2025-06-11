@@ -65,6 +65,7 @@ abstract class TemplateReaderBase(
     }
 
     protected fun <T: Expression, U> inspectCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (T) -> U, ): U {
+        // Try class check
         val expr = currentExpression
         return when (expr!!.tokenType) {
             TokenTypeConst.VARIABLE_REF -> argMethod(info.arguments)
@@ -74,27 +75,33 @@ abstract class TemplateReaderBase(
     }
 
     override fun nextToken(): Int {
-        // val info = this.info
         var i = this.i
         if (i >= endExclusive) {
             return TokenTypeConst.END
         }
         var expr: Expression? = this.currentExpression
         if (expr == null) {
-            expr = source[i]
-//            if (Debug.enabled) println("[$id ${this::class.simpleName}] At position ${i}, read expression $expr")
+            expr = this.source[i]
             i++
             if (expr is Expression.HasStartAndEnd) i = expr.endExclusive
             this.i = i
-            currentExpression = expr
+            this.currentExpression = expr
         }
         if (expr is Expression.VariableRef) {
-            val args = info.arguments
-            args.seekToBeforeArgument(expr.signatureIndex)
-            return args.nextToken()
+//            val args = this.info.arguments
+//            args.seekToBeforeArgument(expr.signatureIndex)
+//            return args.nextToken()
+            return resolveVariableTokenType(expr.signatureIndex)
         }
 
         return expr.tokenType
+    }
+
+    private fun resolveVariableTokenType(v: Int): Int {
+
+        val args = this.info.arguments
+        args.seekToBeforeArgument(v)
+        return args.nextToken()
     }
 
     final override fun close() {
