@@ -108,7 +108,7 @@ sealed interface Expression {
     data class ExpressionGroup(override var selfIndex: Int, override var endExclusive: Int) : EExpressionBodyExpression, TemplateBodyExpression, HasStartAndEnd, ExpressionBase(TokenTypeConst.EXPRESSION_GROUP, endExclusive - selfIndex)
 
     // Scalars
-    data class NullValue(override var annotations: List<SymbolToken> = emptyList(), override val type: IonType) : DataModelValue, ExpressionBase(TokenTypeConst.NULL, 1) {
+    data class NullValue(override var annotations: List<SymbolToken> = emptyList(), override var type: IonType) : DataModelValue, ExpressionBase(TokenTypeConst.NULL, 1) {
         override fun withAnnotations(annotations: List<SymbolToken>) = copy(annotations = annotations)
     }
 

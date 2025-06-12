@@ -2,6 +2,7 @@ package com.amazon.ion.v3.impl_1_1
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
+import com.amazon.ion.impl.macro.SystemMacro
 import com.amazon.ion.impl.macro.MacroCompiler
 
 /**

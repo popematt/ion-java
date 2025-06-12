@@ -5,8 +5,8 @@ import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.*
-import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.ValueReaderBase
+import com.amazon.ion.v3.impl_1_1.binary.*
+import com.amazon.ion.v3.impl_1_1.binary.ValueReaderBase
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.ion_reader.*
 import java.io.ByteArrayOutputStream

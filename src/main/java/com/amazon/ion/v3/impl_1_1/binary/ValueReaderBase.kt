@@ -1,4 +1,4 @@
-package com.amazon.ion.v3.impl_1_1
+package com.amazon.ion.v3.impl_1_1.binary
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*

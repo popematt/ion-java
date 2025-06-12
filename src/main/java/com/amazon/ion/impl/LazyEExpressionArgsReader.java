@@ -155,7 +155,7 @@ abstract class LazyEExpressionArgsReader {
      * Reads a scalar value from the stream into an expression.
      */
     private void readScalarValueAsExpression(SymbolToken fieldName) {
-        expressionTape.add(reader.valueTid, ExpressionType.DATA_MODEL_SCALAR_ORDINAL, (int) reader.valueMarker.startIndex, (int) reader.valueMarker.endIndex, fieldName);
+        expressionTape.add(reader.valueMarker.typeId, ExpressionType.DATA_MODEL_SCALAR_ORDINAL, (int) reader.valueMarker.startIndex, (int) reader.valueMarker.endIndex, fieldName);
     }
 
     /**
@@ -168,7 +168,7 @@ abstract class LazyEExpressionArgsReader {
         if (isExpressionGroup) {
             expressionTape.add(null, ExpressionType.EXPRESSION_GROUP_ORDINAL, -1, -1, fieldName);
         } else {
-            expressionTape.add(reader.valueTid, ExpressionType.DATA_MODEL_CONTAINER_ORDINAL, -1, -1, fieldName);
+            expressionTape.add(reader.valueMarker.typeId, ExpressionType.DATA_MODEL_CONTAINER_ORDINAL, -1, -1, fieldName);
         }
         // TODO if the container is prefixed, don't recursively step through it
         stepInRaw();
@@ -475,7 +475,7 @@ abstract class LazyEExpressionArgsReader {
         expressionTape = verbatimExpressionTape;
         int start = (int) reader.valueMarker.startIndex;
         int end = (int) reader.valueMarker.endIndex;
-        IonTypeID typeID = reader.valueTid;
+        IonTypeID typeID = reader.valueMarker.typeId;
         long macroAddress = reader.getMacroInvocationId();
         boolean isSystemMacro = reader.isSystemInvocation();
         Macro macro = loadMacro();

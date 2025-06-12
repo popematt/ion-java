@@ -6,7 +6,7 @@ import com.amazon.ion.v3.TokenType
 import com.amazon.ion.v3.TokenTypeConst
 import com.amazon.ion.v3.ValueReader
 import com.amazon.ion.v3.impl_1_0.*
-import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.binary.*
 import java.nio.ByteBuffer
 
 // TODO: Make sure we can unify this over text and binary

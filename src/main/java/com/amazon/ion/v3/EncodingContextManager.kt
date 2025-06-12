@@ -3,8 +3,10 @@ package com.amazon.ion.v3
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
+import com.amazon.ion.impl.macro.SystemMacro
 import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.ModuleReader2
+import com.amazon.ion.v3.impl_1_1.binary.ValueReaderBase
 import com.amazon.ion.v3.ion_reader.*
 
 /**

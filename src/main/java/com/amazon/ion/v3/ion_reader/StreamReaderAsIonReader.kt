@@ -10,9 +10,11 @@ import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
+import com.amazon.ion.impl.macro.SystemMacro
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver
 import java.math.BigDecimal
