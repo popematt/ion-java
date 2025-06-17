@@ -3,6 +3,7 @@ package com.amazon.ion.v3.impl_1_1.binary
 import com.amazon.ion.IonException
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import java.nio.ByteBuffer
 import java.util.*
@@ -14,10 +15,10 @@ class EExpArgumentReaderImpl(
     source: ByteBuffer,
     pool: ResourcePool,
     symbolTable: Array<String?>,
-    macroTable: Array<Macro>,
+    macroTable: Array<MacroV2>,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), ArgumentReader {
 
-    override var signature: List<Macro.Parameter> = emptyList()
+    override var signature: Array<Macro.Parameter> = emptyArray()
         private set
 
     // 0, 1, or 2
@@ -42,7 +43,7 @@ class EExpArgumentReaderImpl(
 //        println("Ended: $source")
     }
 
-    fun initArgs(signature: List<Macro.Parameter>) {
+    fun initArgs(signature: Array<Macro.Parameter>) {
         this.signature = signature
         this.nextParameterIndex = 0
         // Make sure we have enough space in our arrays
@@ -96,6 +97,7 @@ class EExpArgumentReaderImpl(
     }
 
     override fun seekToBeforeArgument(signatureIndex: Int) {
+        if (signatureIndex > signature.size) throw IllegalArgumentException("signatureIndex is greater than signature size")
         nextParameterIndex = signatureIndex
 
         var argumentPosition = argumentIndices[signatureIndex]

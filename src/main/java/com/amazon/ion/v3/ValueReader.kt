@@ -149,7 +149,7 @@ interface ValueReader: AutoCloseable {
     // TODO: Re-introduce a function that can get a macro reference. Used for informational purposes only,
     //       and/or system-level transcoding.
 
-    fun macroValue(): Macro = throw IonException("Macro invocations are not supported by this reader.")
+    fun macroValue(): MacroV2 = throw IonException("Macro invocations are not supported by this reader.")
 
     /**
      * Very low level API. Do not use unless you are trying to bypass macro evaluation.
@@ -158,7 +158,7 @@ interface ValueReader: AutoCloseable {
      *
      * If passing this off to a macro evaluator, the macro evaluator is responsible for closing it.
      */
-    fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader = TODO()
+    fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader = TODO()
 
     /**
      * Returns a sequence of values.
@@ -227,7 +227,7 @@ interface ArgumentReader: ValueReader {
 
     fun seekToBeforeArgument(signatureIndex: Int)
 
-    val signature: List<Macro.Parameter>
+    val signature: Array<Macro.Parameter>
 }
 
 interface StructReader: ValueReader {

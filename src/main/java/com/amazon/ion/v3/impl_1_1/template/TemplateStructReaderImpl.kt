@@ -19,7 +19,7 @@ class TemplateStructReaderImpl(
 
     override fun fieldName(): String? = consumeCurrentExpression(
         { it.symbolValue() },
-        { expr: Expression.FieldName -> expr.value.text }
+        { it.fieldName }
     )
 
     override fun fieldNameSid(): Int {
@@ -27,7 +27,7 @@ class TemplateStructReaderImpl(
             { it.symbolValueSid() },
             // The text should have been resolved when the macro was compiled. Even if there is a SID,
             // it doesn't necessarily correspond to the current symbol table.
-            { expr: Expression.FieldName -> -1 }
+            { -1 }
         )
         if (sid >= 0) {
             currentExpression = null

@@ -3,10 +3,10 @@ package com.amazon.ion.v3.visitor
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.impl.macro.SystemMacro
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.*
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.SystemMacro
 import com.amazon.ion.v3.impl_1_1.binary.ValueReaderBase
 import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.*
@@ -21,14 +21,14 @@ import java.nio.ByteBuffer
  */
 class ApplicationReaderDriver2 @JvmOverloads constructor(
     private val source: ByteBuffer,
-    private val additionalMacros: List<Macro> = emptyList()
+    private val additionalMacros: List<MacroV2> = emptyList()
     // TODO: Catalog, options?
 ): AutoCloseable {
     constructor(outputStream: ByteArrayOutputStream): this(ByteBuffer.wrap(outputStream.toByteArray()))
 
     companion object {
         @JvmStatic
-        internal val ION_1_1_SYSTEM_MACROS: Array<Macro> = SystemMacro.entries.filter { it.id >= 0 }.sortedBy { it.id }.toTypedArray()
+        internal val ION_1_1_SYSTEM_MACROS: Array<MacroV2> = SystemMacro.MACROS_BY_ID
         @JvmStatic
         internal val ION_1_1_SYSTEM_SYMBOLS = SystemSymbols_1_1.allSymbolTexts()
             .toMutableList()
@@ -279,24 +279,24 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     val macro = reader.macroValue()
                     // TODO: Check for macros that could produce system values
                     // TODO: When there's a system value, decrement i
-                    when (macro) {
-                        SystemMacro.SetSymbols -> reader.macroArguments(macro.signature).use {
+                    when (macro.systemAddress) {
+                        SystemMacro.SET_SYMBOLS_ADDRESS -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetSymbols(it, append = false)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
-                        SystemMacro.AddSymbols -> reader.macroArguments(macro.signature).use {
+                        SystemMacro.ADD_SYMBOLS_ADDRESS -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetSymbols(it, append = true)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
-                        SystemMacro.SetMacros -> reader.macroArguments(macro.signature).use {
+                        SystemMacro.SET_MACROS_ADDRESS -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetMacros(it, append = false)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
-                        SystemMacro.AddMacros -> reader.macroArguments(macro.signature).use {
+                        SystemMacro.ADD_MACROS_ADDRESS -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.addOrSetMacros(it, append = true)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
-                        SystemMacro.Use -> reader.macroArguments(macro.signature).use {
+                        SystemMacro.USE_ADDRESS -> reader.macroArguments(macro.signature).use {
                             encodingContextManager.invokeUse(it)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }

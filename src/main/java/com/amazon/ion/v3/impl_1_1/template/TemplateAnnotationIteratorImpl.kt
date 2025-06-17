@@ -6,7 +6,7 @@ import com.amazon.ion.v3.PrivateAnnotationIterator
 
 internal class TemplateAnnotationIteratorImpl(
     @JvmField
-    var annotations: List<SymbolToken>,
+    var annotations: Array<String?>,
     @JvmField
     val pool: TemplateResourcePool,
 ): AnnotationIterator, PrivateAnnotationIterator {
@@ -23,7 +23,7 @@ internal class TemplateAnnotationIteratorImpl(
     override fun hasNext(): Boolean = i < annotations.size
     override fun next(): String? {
         if (!hasNext()) throw NoSuchElementException()
-        currentAnnotationText = annotations[i++].text
+        currentAnnotationText = annotations[i++]
         return currentAnnotationText
     }
 
@@ -37,12 +37,13 @@ internal class TemplateAnnotationIteratorImpl(
         pool.annotations.add(this)
     }
 
-    fun init(annotations: List<SymbolToken>) {
+    fun init(annotations: Array<String?>) {
         this.annotations = annotations
         i = 0
     }
 
-    override fun peek() { currentAnnotationText = annotations[0].text }
+    override fun peek() { currentAnnotationText = annotations[0] }
 
-    override fun toStringArray(): Array<String?> = Array(annotations.size) { next() }
+    // TODO: Make a defensive copy?
+    override fun toStringArray(): Array<String?> = annotations
 }

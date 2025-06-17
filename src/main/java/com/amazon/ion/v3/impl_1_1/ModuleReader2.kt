@@ -2,8 +2,6 @@ package com.amazon.ion.v3.impl_1_1
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.impl.macro.SystemMacro
-import com.amazon.ion.impl.macro.MacroCompiler
 
 /**
  * Work in progress class that can read module definitions.
@@ -11,36 +9,31 @@ import com.amazon.ion.impl.macro.MacroCompiler
  * This does not support e-expressions in the module definition.
  */
 internal class ModuleReader2(
-    private val readerAdapter: ReaderAdapter,
+    private val readerAdapter: IonReader,
 ) {
-    private val macroCompiler: MacroCompiler = MacroCompiler(this::getMacro, readerAdapter)
+    private val macroCompiler: FlatMacroCompiler = FlatMacroCompiler(this::getMacro, readerAdapter)
 
     // var symbolTable: (Int) -> String? = { null }
     private var localAvailableBindings: Map<String, Module> = emptyMap()
-    private var moduleMacros: List<Pair<String?, Macro>> = emptyList()
+    private var moduleMacros: List<Pair<String?, MacroV2>> = emptyList()
+
 
     // TODO: Add a proper `Module` abstraction. For now, we'll use this.
-    internal data class LModule(val name: String, var symbols: List<String?>, var macros: List<Pair<String?, Macro>>) {
-        fun getMacro(id: Int): Macro = macros[id].second
-        fun getMacro(name: String): Macro? = macros.firstOrNull { it.first == name }?.second
-    }
-
-    // TODO: Add a proper `Module` abstraction. For now, we'll use this.
-    internal data class Module(val name: String, var symbols: Array<String?>, var macros: List<Pair<String?, Macro>>) {
-        fun getMacro(id: Int): Macro = macros[id].second
-        fun getMacro(name: String): Macro? = macros.firstOrNull { it.first == name }?.second
+    internal data class Module(val name: String, var symbols: Array<String?>, var macros: List<Pair<String?, MacroV2>>) {
+        fun getMacro(id: Int): MacroV2 = macros[id].second
+        fun getMacro(name: String): MacroV2? = macros.firstOrNull { it.first == name }?.second
     }
 
     /**
      * Must be positioned in module sexp, after module keyword, but before the module name
      */
     fun readModule(availableBindings: Map<String, Module>): Module {
-        readerAdapter.nextValue()
+        readerAdapter.next()
         val moduleName = readerAdapter.symbolValue().assumeText()
         val localAvailableBindings = mutableMapOf<String, Module>()
         localAvailableBindings.putAll(availableBindings)
         val moduleSymbols = ArrayList<String?>()
-        val moduleMacros = ArrayList<Pair<String?, Macro>>()
+        val moduleMacros = ArrayList<Pair<String?, MacroV2>>()
 
         // state:
         // 0 -> before imports
@@ -49,22 +42,22 @@ internal class ModuleReader2(
         // 3 -> seen macro table
         // 4 -> seen symbol table
         var state = 0
-        var t = readerAdapter.nextEncodingType()
+        var t = readerAdapter.next()
         while (t != null) {
-            if (readerAdapter.encodingType() != IonType.SEXP) {
+            if (readerAdapter.type != IonType.SEXP) {
                 throw IonException("Invalid module definition; expected SEXP found $t")
             }
-            readerAdapter.stepIntoContainer()
+            readerAdapter.stepIn()
             state = readModuleDeclarationClause(localAvailableBindings, moduleSymbols, moduleMacros, state)
-            readerAdapter.stepOutOfContainer()
-            t = readerAdapter.nextEncodingType()
+            readerAdapter.stepOut()
+            t = readerAdapter.next()
         }
         return Module(moduleName, moduleSymbols.toTypedArray(), moduleMacros)
     }
 
-    private fun readModuleDeclarationClause(localAvailableBindings: MutableMap<String, Module>, moduleSymbols: MutableList<String?>, moduleMacros: MutableList<Pair<String?, Macro>>, state: Int): Int {
-        if (readerAdapter.nextEncodingType() != IonType.SYMBOL) {
-            throw IonException("Invalid module definition; expected SYMBOL found ${readerAdapter.encodingType()}")
+    private fun readModuleDeclarationClause(localAvailableBindings: MutableMap<String, Module>, moduleSymbols: MutableList<String?>, moduleMacros: MutableList<Pair<String?, MacroV2>>, state: Int): Int {
+        if (readerAdapter.next() != IonType.SYMBOL) {
+            throw IonException("Invalid module definition; expected SYMBOL found ${readerAdapter.type}")
         }
         val clauseType = readerAdapter.symbolValue().assumeText()
 
@@ -96,11 +89,11 @@ internal class ModuleReader2(
         }
     }
 
-    fun populateMacros(localAvailableBindings: Map<String, Module>, moduleMacros: MutableList<Pair<String?, Macro>>) {
+    fun populateMacros(localAvailableBindings: Map<String, Module>, moduleMacros: MutableList<Pair<String?, MacroV2>>) {
         this.localAvailableBindings = localAvailableBindings
         this.moduleMacros = moduleMacros
         while (true) {
-            when (val valueType = readerAdapter.nextEncodingType()) {
+            when (val valueType = readerAdapter.next()) {
                 IonType.SEXP -> {
                     // TODO: `export` clause
                     val macro = macroCompiler.compileMacro()
@@ -118,16 +111,16 @@ internal class ModuleReader2(
 
     private fun populateSymbols(localAvailableBindings: Map<String, Module>, moduleSymbols: MutableList<String?>) {
         while (true) {
-            when (readerAdapter.nextEncodingType()) {
+            when (readerAdapter.next()) {
                 IonType.SYMBOL -> {
                     val moduleName = readerAdapter.symbolValue().text ?: throw IonException("Module name must have known text")
                     val module = localAvailableBindings[moduleName] ?: throw IonException("No module named $moduleName is available")
                     moduleSymbols.addAll(module.symbols)
                 }
                 IonType.LIST -> {
-                    readerAdapter.stepIntoContainer()
+                    readerAdapter.stepIn()
                     readSymbolsList(moduleSymbols)
-                    readerAdapter.stepOutOfContainer()
+                    readerAdapter.stepOut()
                 }
                 null -> return
                 else -> throw IonException("Invalid symbol table declaration")
@@ -137,7 +130,7 @@ internal class ModuleReader2(
 
     fun readSymbolsList(into: MutableList<String?>) {
         while (true) {
-            when (val valueType = readerAdapter.nextEncodingType()) {
+            when (val valueType = readerAdapter.next()) {
                 IonType.SYMBOL -> into.add(readerAdapter.symbolValue().text)
                 IonType.STRING -> into.add(readerAdapter.stringValue())
                 null -> return
@@ -151,7 +144,7 @@ internal class ModuleReader2(
         TODO("imports not implemented yet")
     }
 
-    private fun getMacro(macroRef: MacroRef): Macro? {
+    private fun getMacro(macroRef: MacroRef): MacroV2? {
         val moduleName = macroRef.module
         val macroName = macroRef.name
         return if (moduleName != null) {

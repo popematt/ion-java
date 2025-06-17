@@ -15,36 +15,68 @@ import com.amazon.ion.v3.impl_1_1.ExpressionBuilderDsl.Companion.templateBody
  * Macros that are built in, rather than being defined by a template.
  */
 object SystemMacro {
+
+    const val IF_NONE_ADDRESS: Int = -5
+    const val IF_SOME_ADDRESS: Int = -2
+    const val IF_SINGLE_ADDRESS: Int = -3
+    const val IF_MULTI_ADDRESS: Int = -4
+    const val NONE_ADDRESS: Int = 0
+    const val VALUES_ADDRESS: Int = 1
+    const val DEFAULT_ADDRESS: Int = 2
+    const val META_ADDRESS: Int = 3
+    const val REPEAT_ADDRESS: Int = 4
+    const val FLATTEN_ADDRESS: Int = 5
+    const val DELTA_ADDRESS: Int = 6
+    const val SUM_ADDRESS: Int = 7
+    const val ANNOTATE_ADDRESS: Int = 8
+    const val MAKE_STRING_ADDRESS: Int = 9
+    const val MAKE_SYMBOL_ADDRESS: Int = 10
+    const val MAKE_DECIMAL_ADDRESS: Int = 11
+    const val MAKE_TIMESTAMP_ADDRESS: Int = 12
+    const val MAKE_BLOB_ADDRESS: Int = 13
+    const val MAKE_LIST_ADDRESS: Int = 14
+    const val MAKE_SEXP_ADDRESS: Int = 15
+    const val MAKE_FIELD_ADDRESS: Int = 16
+    const val MAKE_STRUCT_ADDRESS: Int = 17
+    const val PARSE_ION_ADDRESS: Int = 18
+    const val SET_SYMBOLS_ADDRESS: Int = 19
+    const val ADD_SYMBOLS_ADDRESS: Int = 20
+    const val SET_MACROS_ADDRESS: Int = 21
+    const val ADD_MACROS_ADDRESS: Int = 22
+    const val USE_ADDRESS: Int = 23
+
+
+
     @JvmStatic
     // Technically not system macros, but special forms. However, it's easier to model them as if they are macros in TDL.
-    // We give them an ID of -1 to distinguish that they are not addressable outside TDL.
+    // We give them negative addresses to distinguish that they are not addressable outside TDL.
     val IfNone = MacroV2(
-        listOf(zeroToManyTagged("stream"), zeroToManyTagged("true_branch"), zeroToManyTagged("false_branch")),
+        arrayOf(zeroToManyTagged("stream"), zeroToManyTagged("true_branch"), zeroToManyTagged("false_branch")),
         body = null,
         systemName = IF_NONE,
-        systemAddress = -1,
+        systemAddress = IF_NONE_ADDRESS,
     )
 
     @JvmStatic
     val IfSome = MacroV2(
-        signature = listOf(zeroToManyTagged("stream"), zeroToManyTagged("true_branch"), zeroToManyTagged("false_branch")),
+        signature = arrayOf(zeroToManyTagged("stream"), zeroToManyTagged("true_branch"), zeroToManyTagged("false_branch")),
         body = null,
         systemName = IF_SOME,
-        systemAddress = -1,
+        systemAddress = IF_SOME_ADDRESS,
     )
     @JvmStatic
     val IfSingle = MacroV2(
-        signature = listOf(zeroToManyTagged("stream"), zeroToManyTagged("true_branch"), zeroToManyTagged("false_branch")),
+        signature = arrayOf(zeroToManyTagged("stream"), zeroToManyTagged("true_branch"), zeroToManyTagged("false_branch")),
         body = null,
         systemName = IF_SINGLE,
-        systemAddress = -1,
+        systemAddress = IF_SINGLE_ADDRESS,
     )
     @JvmStatic
     val IfMulti = MacroV2(
-        signature = listOf(zeroToManyTagged("stream"), zeroToManyTagged("true_branch"), zeroToManyTagged("false_branch")),
+        signature = arrayOf(zeroToManyTagged("stream"), zeroToManyTagged("true_branch"), zeroToManyTagged("false_branch")),
         body = null,
         systemName = IF_MULTI,
-        systemAddress = -1,
+        systemAddress = IF_MULTI_ADDRESS,
     )
 
     // Unnameable, unaddressable macros used for the internals of certain other system macros
@@ -57,31 +89,31 @@ object SystemMacro {
         signature = emptyList(),
         body = null,
         systemName = NONE,
-        systemAddress = 0,
+        systemAddress = NONE_ADDRESS,
     )
 
     @JvmStatic
     val Values = MacroV2(
-        signature = listOf(zeroToManyTagged("values")),
+        signature = arrayOf(zeroToManyTagged("values")),
         body = templateBody { variable(0) },
         systemName = VALUES,
-        systemAddress = 1
+        systemAddress = VALUES_ADDRESS
     )
 
     @JvmStatic
     val Default = MacroV2(
-        signature = listOf(zeroToManyTagged("expr"), zeroToManyTagged("default_expr")),
+        signature = arrayOf(zeroToManyTagged("expr"), zeroToManyTagged("default_expr")),
         body = null,
         systemName = DEFAULT,
-        systemAddress = 2,
+        systemAddress = DEFAULT_ADDRESS,
     )
 
     @JvmStatic
     val Meta = MacroV2(
-        signature = listOf(zeroToManyTagged("values")),
+        signature = arrayOf(zeroToManyTagged("values")),
         body = templateBody { macro(None) {} },
         systemName = META,
-        systemAddress = 3,
+        systemAddress = META_ADDRESS,
     )
 
     @JvmStatic
@@ -89,23 +121,23 @@ object SystemMacro {
         listOf(exactlyOneTagged("n"), zeroToManyTagged("value")),
         body = null,
         systemName = REPEAT,
-        systemAddress = 4,
+        systemAddress = REPEAT_ADDRESS,
     )
 
     @JvmStatic
     val Flatten = MacroV2(
-        listOf(zeroToManyTagged("values")),
+        arrayOf(zeroToManyTagged("values")),
         body = null,
         systemName = FLATTEN,
-        systemAddress = 5,
+        systemAddress = FLATTEN_ADDRESS,
     )
 
     @JvmStatic
     val Delta = MacroV2(
-        listOf(zeroToManyTagged("deltas")),
+        arrayOf(zeroToManyTagged("deltas")),
         body = null,
         systemName = DELTA,
-        systemAddress = 6,
+        systemAddress = DELTA_ADDRESS,
     )
 
     @JvmStatic
@@ -113,31 +145,31 @@ object SystemMacro {
         signature = listOf(exactlyOneTagged("a"), exactlyOneTagged("b")),
         body = null,
         systemName = SUM,
-        systemAddress = 7,
+        systemAddress = SUM_ADDRESS,
     )
 
     @JvmStatic
     val Annotate = MacroV2(
-        listOf(zeroToManyTagged("ann"), exactlyOneTagged("value")),
+        arrayOf(zeroToManyTagged("ann"), exactlyOneTagged("value")),
         body = null,
         systemName = ANNOTATE,
-        systemAddress = 8,
+        systemAddress = ANNOTATE_ADDRESS,
     )
 
     @JvmStatic
     val MakeString = MacroV2(
-        listOf(zeroToManyTagged("text")),
+        arrayOf(zeroToManyTagged("text")),
         body = null,
         systemName = MAKE_STRING,
-        systemAddress = 9,
+        systemAddress = MAKE_STRING_ADDRESS,
     )
 
     @JvmStatic
     val MakeSymbol = MacroV2(
-        listOf(zeroToManyTagged("text")),
+        arrayOf(zeroToManyTagged("text")),
         body = null,
         systemName = MAKE_SYMBOL,
-        systemAddress = 10,
+        systemAddress = MAKE_SYMBOL_ADDRESS,
     )
 
     @JvmStatic
@@ -145,7 +177,7 @@ object SystemMacro {
         listOf(exactlyOneTagged("coefficient"), exactlyOneTagged("exponent")),
         body = null,
         systemName = MAKE_DECIMAL,
-        systemAddress = 11,
+        systemAddress = MAKE_DECIMAL_ADDRESS,
     )
 
     @JvmStatic
@@ -161,20 +193,20 @@ object SystemMacro {
         ),
         body = null,
         systemName = MAKE_TIMESTAMP,
-        systemAddress = 12,
+        systemAddress = MAKE_TIMESTAMP_ADDRESS,
     )
 
     @JvmStatic
     val MakeBlob = MacroV2(
-        listOf(zeroToManyTagged("bytes")),
+        arrayOf(zeroToManyTagged("bytes")),
         body = null,
         systemName = MAKE_BLOB,
-        systemAddress = 13,
+        systemAddress = MAKE_BLOB_ADDRESS,
     )
 
     @JvmStatic
     val MakeList = MacroV2(
-        listOf(zeroToManyTagged("sequences")),
+        arrayOf(zeroToManyTagged("sequences")),
         body = templateBody {
             list {
                 macro(Flatten) {
@@ -183,12 +215,12 @@ object SystemMacro {
             }
         },
         systemName = MAKE_LIST,
-        systemAddress = 14,
+        systemAddress = MAKE_LIST_ADDRESS,
     )
 
     @JvmStatic
     val MakeSExp = MacroV2(
-        listOf(zeroToManyTagged("sequences")),
+        arrayOf(zeroToManyTagged("sequences")),
         templateBody {
             sexp {
                 macro(Flatten) {
@@ -197,31 +229,31 @@ object SystemMacro {
             }
         },
         systemName = MAKE_SEXP,
-        systemAddress = 15,
+        systemAddress = MAKE_SEXP_ADDRESS,
     )
 
     @JvmStatic
     val MakeField = MacroV2(
         listOf(exactlyOneTagged("fieldName"), exactlyOneTagged("value")),
         body = null,
-        systemName = MAKE_SYMBOL,
-        systemAddress = 17,
+        systemName = MAKE_FIELD,
+        systemAddress = MAKE_FIELD_ADDRESS,
     )
 
     @JvmStatic
     val MakeStruct = MacroV2(
-        listOf(zeroToManyTagged("structs")),
+        arrayOf(zeroToManyTagged("structs")),
         body = null,
         systemName = MAKE_STRUCT,
-        systemAddress = 18,
+        systemAddress = MAKE_STRUCT_ADDRESS,
     )
 
     @JvmStatic
     val ParseIon = MacroV2(
-        listOf(zeroToManyTagged("data")),
+        arrayOf(zeroToManyTagged("data")),
         body = null,
         systemName = PARSE_ION,
-        systemAddress = 19,
+        systemAddress = PARSE_ION_ADDRESS,
     )
 
     /**
@@ -235,7 +267,7 @@ object SystemMacro {
      */
     @JvmStatic
     val SetSymbols = MacroV2(
-        listOf(zeroToManyTagged("symbols")),
+        arrayOf(zeroToManyTagged("symbols")),
         templateBody {
             annotated(ION, ::sexp) {
                 symbol(MODULE)
@@ -251,7 +283,7 @@ object SystemMacro {
             }
         },
         systemName = SET_SYMBOLS,
-        systemAddress = 20,
+        systemAddress = SET_SYMBOLS_ADDRESS,
     )
 
     /**
@@ -265,7 +297,7 @@ object SystemMacro {
      */
     @JvmStatic
     val AddSymbols = MacroV2(
-        listOf(zeroToManyTagged("symbols")),
+        arrayOf(zeroToManyTagged("symbols")),
         templateBody {
             annotated(ION, ::sexp) {
                 symbol(MODULE)
@@ -282,7 +314,7 @@ object SystemMacro {
             }
         },
         systemName = ADD_SYMBOLS,
-        systemAddress = 21,
+        systemAddress = ADD_SYMBOLS_ADDRESS,
     )
 
     /**
@@ -296,7 +328,7 @@ object SystemMacro {
      */
     @JvmStatic
     val SetMacros = MacroV2(
-        listOf(zeroToManyTagged("macros")),
+        arrayOf(zeroToManyTagged("macros")),
         templateBody {
             annotated(ION, ::sexp) {
                 symbol(MODULE)
@@ -312,7 +344,7 @@ object SystemMacro {
             }
         },
         systemName = SET_MACROS,
-        systemAddress = 22,
+        systemAddress = SET_MACROS_ADDRESS,
     )
 
     /**
@@ -326,7 +358,7 @@ object SystemMacro {
      */
     @JvmStatic
     val AddMacros = MacroV2(
-        listOf(zeroToManyTagged("macros")),
+        arrayOf(zeroToManyTagged("macros")),
         templateBody {
             annotated(ION, ::sexp) {
                 symbol(MODULE)
@@ -343,7 +375,7 @@ object SystemMacro {
             }
         },
         systemName = ADD_MACROS,
-        systemAddress = 23,
+        systemAddress = ADD_MACROS_ADDRESS,
     )
 
     /**
@@ -358,7 +390,7 @@ object SystemMacro {
      */
     @JvmStatic
     val Use = MacroV2(
-        listOf(exactlyOneTagged("catalog_key"), zeroOrOneTagged("version")),
+        arrayOf(exactlyOneTagged("catalog_key"), zeroOrOneTagged("version")),
         templateBody {
             val theModule = "the_module"
             annotated(ION, ::sexp) {
@@ -384,7 +416,7 @@ object SystemMacro {
             }
         },
         systemName = USE,
-        systemAddress = 24,
+        systemAddress = USE_ADDRESS,
     )
 
 

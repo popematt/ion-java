@@ -5,6 +5,8 @@ import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.*
+import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.SystemMacro
 import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.binary.ValueReaderBase
 import com.amazon.ion.v3.impl_1_1.template.*
@@ -19,14 +21,14 @@ import java.nio.ByteBuffer
  */
 class ApplicationReaderDriver @JvmOverloads constructor(
     private val source: ByteBuffer,
-    private val additionalMacros: List<Macro> = emptyList()
+    private val additionalMacros: List<MacroV2> = emptyList()
     // TODO: Catalog, options?
 ): AutoCloseable {
     constructor(outputStream: ByteArrayOutputStream): this(ByteBuffer.wrap(outputStream.toByteArray()))
 
     companion object {
         @JvmStatic
-        internal val ION_1_1_SYSTEM_MACROS: Array<Macro> = SystemMacro.entries.filter { it.id >= 0 }.sortedBy { it.id }.toTypedArray()
+        internal val ION_1_1_SYSTEM_MACROS: Array<MacroV2> = SystemMacro.MACROS_BY_ID
         @JvmStatic
         internal val ION_1_1_SYSTEM_SYMBOLS = SystemSymbols_1_1.allSymbolTexts()
             .toMutableList()

@@ -6,6 +6,7 @@ import com.amazon.ion.Timestamp
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.AnnotationIterator
 import com.amazon.ion.v3.TokenType
+import com.amazon.ion.v3.impl_1_1.*
 import java.math.BigInteger
 import java.nio.ByteBuffer
 
@@ -166,7 +167,7 @@ interface VisitingReaderCallback {
     /**
      * Only implement this method if you want to bypass the macro evaluation
      */
-    fun onEExpression(macro: Macro): VisitingReaderCallback? = null
+    fun onEExpression(macro: MacroV2): VisitingReaderCallback? = null
 
     // TODO: For bypassing macro evaluation?
     //  fun onEExpressionArgument(name: String): VisitingReaderCallback? = null

@@ -4,10 +4,14 @@ import com.amazon.ion.*
 import com.amazon.ion.TestUtils.*
 import com.amazon.ion.impl.bin.*
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.impl.macro.ExpressionBuilderDsl.Companion.templateBody
+import com.amazon.ion.impl.macro.ExpressionBuilderDsl
 import com.amazon.ion.system.*
 import com.amazon.ion.v3.TypedReadersTest.TestExpectationVisitor.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
+import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.ExpressionBuilderDsl.Companion.templateBody
+import com.amazon.ion.v3.impl_1_1.SystemMacro
+import com.amazon.ion.v3.impl_1_1.TemplateDsl
 import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.ion_reader.*
@@ -523,7 +527,7 @@ class TypedReadersTest {
                 f0 ef 00 ef 00 f1 07 00 e1 20 6a 07 00 e1 21 6a f0 ef 00
             """.trimIndent()
 
-        private fun template(vararg parameters: String, body: TemplateDsl.() -> Unit): Macro {
+        private fun template(vararg parameters: String, body: TemplateDsl.() -> Unit): MacroV2 {
             val signature = parameters.map {
                 val cardinality = Macro.ParameterCardinality.fromSigil("${it.last()}")
                 if (cardinality == null) {
@@ -532,7 +536,7 @@ class TypedReadersTest {
                     Macro.Parameter(it.dropLast(1), Macro.ParameterEncoding.Tagged, cardinality)
                 }
             }
-            return TemplateMacro(signature, templateBody(body))
+            return MacroV2(signature, templateBody(body))
         }
 
         @Test
@@ -616,10 +620,10 @@ class TypedReadersTest {
             val reader = TemplateArgumentReaderImpl(
                 TemplateResourcePool.getInstance(),
                 TemplateResourcePool.TemplateInvocationInfo(
-                    listOf(
-                        Expression.LongIntValue(value = 0),
-                        Expression.BoolValue(value = false),
-                    ),
+                    templateBody {
+                        int(0)
+                        bool(false)
+                    },
                     signature,
                     EExpArgumentReaderImpl(source, ResourcePool(source), emptyArray(), emptyArray())
                 ),
@@ -716,10 +720,10 @@ class TypedReadersTest {
 
         @Test
         fun smallLog() {
-            val placeholder = TemplateMacro(emptyList(), listOf(Expression.LongIntValue(value = 0)))
+            val placeholder = MacroV2(emptyList(), templateBody { int(0) } )
 
             // (macro one ( ) '' )
-            val one = template() { symbol("") }
+            val one = template { symbol("") }
 
             // (macro entry
             //        (
@@ -842,7 +846,7 @@ class TypedReadersTest {
                 }
             }
 
-            val macroTable = arrayOf<Macro>(
+            val macroTable = arrayOf<MacroV2>(
                 /* 00 */ one,
                 /* 01 */ entry,
                 /* 02 */ summary,
@@ -1568,9 +1572,9 @@ class TypedReadersTest {
 
             @Test
             fun constantScalarTemplateMacro() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         int(1)
                     }
                 )
@@ -1594,9 +1598,9 @@ class TypedReadersTest {
 
             @Test
             fun constantListTemplateMacro() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         list {
                             int(1)
                             int(2)
@@ -1626,9 +1630,9 @@ class TypedReadersTest {
 
             @Test
             fun constantSexpTemplateMacro() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         sexp {
                             int(1)
                             int(2)
@@ -1658,9 +1662,9 @@ class TypedReadersTest {
 
             @Test
             fun constantStructTemplateMacro() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         struct {
                             fieldName("foo")
                             int(1)
@@ -1718,12 +1722,12 @@ class TypedReadersTest {
 
             @Test
             fun templateMacroWithMultipleVariables() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(
                         Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
                         Macro.Parameter("bar", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
                     ),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         struct {
                             fieldName("foo")
                             variable(0)
@@ -1792,7 +1796,7 @@ class TypedReadersTest {
 
             @Test
             fun smallLog() {
-                val placeholder = TemplateMacro(emptyList(), listOf(Expression.LongIntValue(value = 0)))
+                val placeholder = MacroV2(emptyList(), templateBody { int(0) })
 
                 // (macro one ( ) '' )
                 val one = template() { symbol("") }
@@ -1887,7 +1891,7 @@ class TypedReadersTest {
                     }
                 }
 
-                val macroTable = arrayOf<Macro>(
+                val macroTable = arrayOf<MacroV2>(
                     /* 00 */ one,
                     /* 01 */ entry,
                     /* 02 */ summary,
@@ -2449,13 +2453,55 @@ class TypedReadersTest {
                     value("[bar]")
                 }
             }
+            @Test
+            fun constantScalarTemplateMacro() {
+                val macro = MacroV2(
+                    signature = listOf(),
+                    body = templateBody {
+                        int(1)
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 03
+                """)
 
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("1")
+                    value("3")
+                }
+            }
+
+            @Test
+            fun constantEmptyListTemplateMacro() {
+                val macro = MacroV2(
+                    signature = listOf(),
+                    body = templateBody {
+                        list {}
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 03
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("[]")
+                    value("3")
+                }
+            }
 
             @Test
             fun constantListTemplateMacro() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         list {
                             int(1)
                             int(2)
@@ -2478,9 +2524,9 @@ class TypedReadersTest {
 
             @Test
             fun constantSexpTemplateMacro() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         sexp {
                             int(1)
                             int(2)
@@ -2503,9 +2549,9 @@ class TypedReadersTest {
 
             @Test
             fun constantStructTemplateMacro() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         struct {
                             fieldName("foo")
                             int(1)
@@ -2550,12 +2596,12 @@ class TypedReadersTest {
 
             @Test
             fun templateMacroWithMultipleVariables() {
-                val macro = TemplateMacro(
+                val macro = MacroV2(
                     signature = listOf(
                         Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
                         Macro.Parameter("bar", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
                     ),
-                    body = ExpressionBuilderDsl.templateBody {
+                    body = templateBody {
                         struct {
                             fieldName("foo")
                             variable(0)
@@ -2580,7 +2626,7 @@ class TypedReadersTest {
 
             @Test
             fun smallLog() {
-                val placeholder = TemplateMacro(emptyList(), listOf(Expression.LongIntValue(value = 0)))
+                val placeholder = MacroV2(emptyList(), templateBody { int(0) })
 
                 // (macro one ( ) '' )
                 val one = template() { symbol("") }
@@ -2675,7 +2721,7 @@ class TypedReadersTest {
                     }
                 }
 
-                val macroTable = arrayOf<Macro>(
+                val macroTable = arrayOf<MacroV2>(
                     /* 00 */ one,
                     /* 01 */ entry,
                     /* 02 */ summary,

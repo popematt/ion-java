@@ -7,6 +7,7 @@ import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.Expression.*
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.nio.ByteBuffer
 import kotlin.reflect.KFunction1
 
 /**
@@ -33,8 +34,10 @@ internal interface ValuesDsl {
     fun symbol(value: String?)
     fun symbol(value: SystemSymbols_1_1) = symbol(value.text)
     fun string(value: String)
-    fun clob(value: ByteArray)
-    fun blob(value: ByteArray)
+    fun clob(value: ByteArray) = clob(ByteBuffer.wrap(value))
+    fun blob(value: ByteArray) = blob(ByteBuffer.wrap(value))
+    fun clob(value: ByteBuffer)
+    fun blob(value: ByteBuffer)
 
     /** Helper interface for use when building the content of a struct */
     interface Fields {
@@ -56,7 +59,7 @@ internal interface DataModelDsl : ValuesDsl {
 /** DSL for building [TemplateBodyExpression] lists. */
 @ExpressionBuilderDslMarker
 internal interface TemplateDsl : ValuesDsl {
-    fun macro(macro: FlatMacro, arguments: TemplateDsl.() -> Unit)
+    fun macro(macro: MacroV2, arguments: TemplateDsl.() -> Unit)
     fun variable(signatureIndex: Int)
     fun list(content: TemplateDsl.() -> Unit)
     fun sexp(content: TemplateDsl.() -> Unit)
@@ -80,7 +83,7 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
 
     companion object {
         // Entry points to the DSL builders.
-        fun templateBody(block: TemplateDsl.() -> Unit): List<TemplateBodyExpressionModel> = Template().apply(block).build()
+        fun templateBody(block: TemplateDsl.() -> Unit) = Template().apply(block).build()
     }
 
     protected val expressions = mutableListOf<TemplateBodyExpressionModel>()
@@ -88,43 +91,58 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
     private var pendingFieldName: String? = null
 
     override fun <T> annotated(annotations: Array<String?>, valueFn: KFunction1<T, Unit>, value: T) {
-        pendingAnnotations = annotations
+        expressions.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.ANNOTATIONS, 0, null, annotations, null))
+        // pendingAnnotations = annotations
         valueFn.invoke(value)
     }
 
     override fun nullValue(value: IonType) = scalar(TemplateBodyExpressionModel.Kind.NULL, value)
-    override fun bool(value: Boolean) = scalar(TemplateBodyExpressionModel.Kind.BOOL, value)
-    override fun int(value: Long) = scalar(TemplateBodyExpressionModel.Kind.INT, value)
+    override fun bool(value: Boolean) = scalarPrimitive(TemplateBodyExpressionModel.Kind.BOOL, if (value) 1 else 0)
+    override fun int(value: Long) = scalarPrimitive(TemplateBodyExpressionModel.Kind.INT, primitiveValue = value)
     override fun int(value: BigInteger) = scalar(TemplateBodyExpressionModel.Kind.INT, value)
-    override fun float(value: Double) = scalar(TemplateBodyExpressionModel.Kind.FLOAT, value)
+    override fun float(value: Double) = scalarPrimitive(TemplateBodyExpressionModel.Kind.FLOAT, value.toRawBits())
     override fun decimal(value: Decimal) = scalar(TemplateBodyExpressionModel.Kind.DECIMAL, value)
     override fun timestamp(value: Timestamp) = scalar(TemplateBodyExpressionModel.Kind.TIMESTAMP, value)
     override fun symbol(value: String?) = scalar(TemplateBodyExpressionModel.Kind.SYMBOL, value)
     override fun string(value: String) = scalar(TemplateBodyExpressionModel.Kind.STRING, value)
-    override fun clob(value: ByteArray) = scalar(TemplateBodyExpressionModel.Kind.CLOB, value)
-    override fun blob(value: ByteArray) = scalar(TemplateBodyExpressionModel.Kind.BLOB, value)
+    override fun clob(value: ByteBuffer) = scalar(TemplateBodyExpressionModel.Kind.CLOB, value)
+    override fun blob(value: ByteBuffer) = scalar(TemplateBodyExpressionModel.Kind.BLOB, value)
 
-    override fun fieldName(fieldName: String?) { pendingFieldName = fieldName }
+    override fun fieldName(fieldName: String?) {
+        expressions.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.FIELD_NAME, 0, fieldName, emptyArray(), null))
+//        pendingFieldName = fieldName
+    }
 
     protected fun newStruct(annotations: Array<String?>, structStart: Int, structEndExclusive: Int): TemplateBodyExpressionModel {
         return TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.STRUCT, structEndExclusive - structStart, pendingFieldName, annotations, null)
     }
 
-    fun build(): List<TemplateBodyExpressionModel> = expressions.toList()
+    fun build(): Array<TemplateBodyExpressionModel> = expressions.toTypedArray()
 
     // Helpers
-    private fun takePendingAnnotations(): Array<String?> = pendingAnnotations.also { pendingAnnotations = emptyArray() }
+    private fun takePendingAnnotations(): Array<String?> {
+        val ann = pendingAnnotations.also { pendingAnnotations = emptyArray() }
+//        expressions.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.ANNOTATIONS, 1, null, ann, null))
+        return emptyArray()
+    }
 
-    private fun takePendingFieldName(): String? = pendingFieldName.also { pendingFieldName = null }
+    private fun takePendingFieldName(): String? {
+//        val fname = pendingFieldName.also { pendingFieldName = null }
+//        expressions.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.FIELD_NAME, 1, fname, emptyArray(), null))
+        return null
+    }
 
     protected fun <T> scalar(kind: Int, value: T) {
-        expressions.add(TemplateBodyExpressionModel(kind, 1, takePendingFieldName(), takePendingAnnotations(), value))
+        expressions.add(TemplateBodyExpressionModel(kind, 0, takePendingFieldName(), takePendingAnnotations(), value))
+    }
+    protected fun scalarPrimitive(kind: Int, primitiveValue: Long) {
+        expressions.add(TemplateBodyExpressionModel(kind, 0, takePendingFieldName(), takePendingAnnotations(), primitiveValue = primitiveValue))
     }
 
     protected fun <T> container(kind: Int, content: T.() -> Unit) {
-        val start = expressions.size
-        val startExpression = TemplateBodyExpressionModel(kind, 1, takePendingFieldName(), takePendingAnnotations(), null)
+        val startExpression = TemplateBodyExpressionModel(kind, 0, takePendingFieldName(), takePendingAnnotations(), null)
         expressions.add(startExpression)
+        val start = expressions.size
         (this as T).content()
         val end = expressions.size
         startExpression.length = end - start
@@ -137,7 +155,14 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
         override fun sexp(content: TemplateDsl.() -> Unit) = container(TemplateBodyExpressionModel.Kind.SEXP, content)
         override fun struct(content: TemplateDsl.Fields.() -> Unit) = container(TemplateBodyExpressionModel.Kind.STRUCT, content)
         override fun variable(signatureIndex: Int) { scalar(TemplateBodyExpressionModel.Kind.VARIABLE, signatureIndex) }
-        override fun macro(macro: FlatMacro, arguments: TemplateDsl.() -> Unit) = container(TemplateBodyExpressionModel.Kind.INVOCATION, arguments)
+        override fun macro(macro: MacroV2, arguments: TemplateDsl.() -> Unit) {
+            val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.INVOCATION, 0, null, emptyArray(), macro)
+            expressions.add(startExpression)
+            val start = expressions.size
+            this.arguments()
+            val end = expressions.size
+            startExpression.length = end - start
+        }
         override fun expressionGroup(content: TemplateDsl.() -> Unit) = container(TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP, content)
     }
 }

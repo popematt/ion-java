@@ -3,12 +3,12 @@ package com.amazon.ion.v3.impl_1_1.template
 import com.amazon.ion.SymbolToken
 import com.amazon.ion.impl.macro.Expression
 import com.amazon.ion.impl.macro.Macro
-import com.amazon.ion.impl.macro.SystemMacro
 import com.amazon.ion.impl.macro.TemplateMacro
 import com.amazon.ion.v3.AnnotationIterator
 import com.amazon.ion.v3.ArgumentReader
 import com.amazon.ion.v3.TokenTypeConst
 import com.amazon.ion.v3.ValueReader
+import com.amazon.ion.v3.impl_1_1.*
 import java.io.Closeable
 
 class TemplateResourcePool private constructor(): Closeable {
@@ -35,9 +35,9 @@ class TemplateResourcePool private constructor(): Closeable {
     }
     class TemplateInvocationInfo(
         @JvmField
-        val source: List<Expression.TemplateBodyExpression>,
+        val source: Array<TemplateBodyExpressionModel>,
         @JvmField
-        val signature: List<Macro.Parameter>,
+        val signature: Array<Macro.Parameter>,
         @JvmField
         val arguments: ArgumentReader,
     )
@@ -56,47 +56,43 @@ class TemplateResourcePool private constructor(): Closeable {
     /**
      * This takes ownership of the ArgumentReader and closes it when this evaluator is closed.
      */
-    fun startEvaluation(macro: Macro, arguments: ArgumentReader): ValueReader {
-        return when (macro) {
-            is TemplateMacro -> return invokeTemplate(macro, arguments)
-            is SystemMacro -> when (macro) {
-                // All system macros that produce system values are evaluated using templates because
-                // the hard-coded implementation only applies at the top level of the stream, and is
-                // handled elsewhere
-                SystemMacro.Values -> getVariable(arguments, 0, isArgumentOwner = true)
-                SystemMacro.None -> {
-                    arguments.close()
-                    // TODO? Make sure that there are no args?
-                    NoneReader
-                }
-                SystemMacro.Meta -> {
-                    arguments.close()
-                    NoneReader
-                }
-                SystemMacro.Default -> invokeDefault(arguments)
-                SystemMacro.IfNone -> invokeIfNone(arguments)
-                SystemMacro.IfSome -> invokeIfSome(arguments)
-
-                // TODO: Remove null check once all hard coded implementations are complete
-                else -> if (macro.body != null) {
+    fun startEvaluation(macro: MacroV2, arguments: ArgumentReader): ValueReader {
+        return when (macro.systemAddress) {
+            SystemMacro.VALUES_ADDRESS -> {
+                getVariable(arguments, 0, isArgumentOwner = true)
+            }
+            // All system macros that produce system values are evaluated using templates because
+            // the hard-coded implementation only applies at the top level of the stream, and is
+            // handled elsewhere
+            SystemMacro.NONE_ADDRESS -> {
+                arguments.close()
+                // TODO? Make sure that there are no args?
+                NoneReader
+            }
+            SystemMacro.META_ADDRESS -> {
+                arguments.close()
+                NoneReader
+            }
+            SystemMacro.DEFAULT_ADDRESS -> invokeDefault(arguments)
+            SystemMacro.IF_NONE_ADDRESS -> invokeIfNone(arguments)
+            SystemMacro.IF_SOME_ADDRESS -> invokeIfSome(arguments)
+            else -> {
+                if (macro.body != null) {
                     invokeTemplate(macro, arguments)
                 } else {
-                    // TODO:
-                    //  * `values` should be elided
-                    //  * `none` should be replaced with an empty stream of some sort
-                    TODO("System macros with hard coded implementations: $macro")
+                    TODO("System macro with hard coded implementation: $macro")
                 }
             }
         }
     }
 
-    private fun invokeTemplate(macro: Macro, arguments: ArgumentReader): ValueReader {
+    private fun invokeTemplate(macro: MacroV2, arguments: ArgumentReader): ValueReader {
         val reader = sequences.removeLastOrNull()
         if (reader != null) {
             reader.init(
                 TemplateInvocationInfo(macro.body!!, macro.signature, arguments),
                 0,
-                macro.body!!.size,
+                macro.body.size,
                 isArgumentOwner = true
             )
             return reader
@@ -105,7 +101,7 @@ class TemplateResourcePool private constructor(): Closeable {
                 this,
                 TemplateInvocationInfo(macro.body!!, macro.signature, arguments),
                 0,
-                macro.body!!.size,
+                macro.body.size,
                 isArgumentOwner = true
             )
         }
@@ -173,7 +169,7 @@ class TemplateResourcePool private constructor(): Closeable {
         }
     }
 
-    fun getAnnotations(annotationSymbols: List<SymbolToken>): AnnotationIterator {
+    fun getAnnotations(annotationSymbols: Array<String?>): AnnotationIterator {
         val reader = annotations.removeLastOrNull() as TemplateAnnotationIteratorImpl?
         if (reader != null) {
             reader.init(annotationSymbols)
@@ -194,7 +190,7 @@ class TemplateResourcePool private constructor(): Closeable {
         }
     }
 
-    fun getArguments(info: TemplateInvocationInfo, signature: List<Macro.Parameter>, startInclusive: Int, endExclusive: Int): ArgumentReader {
+    fun getArguments(info: TemplateInvocationInfo, signature: Array<Macro.Parameter>, startInclusive: Int, endExclusive: Int): ArgumentReader {
         val argReader = arguments.removeLastOrNull()
             ?.apply { init(info, startInclusive, endExclusive, isArgumentOwner = false) }
             ?: TemplateArgumentReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)

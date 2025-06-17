@@ -2,6 +2,7 @@ package com.amazon.ion.v3.impl_1_1.binary
 
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
 import java.nio.ByteBuffer
 
 /**
@@ -22,7 +23,7 @@ class DelimitedStructReaderImpl internal constructor(
     @JvmField
     var parent: ValueReaderBase,
     symbolTable: Array<String?>,
-    macroTable: Array<Macro>,
+    macroTable: Array<MacroV2>,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), StructReader {
 
 

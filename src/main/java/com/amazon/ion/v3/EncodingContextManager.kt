@@ -3,9 +3,9 @@ package com.amazon.ion.v3
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.impl.macro.SystemMacro
 import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.ModuleReader2
+import com.amazon.ion.v3.impl_1_1.SystemMacro
 import com.amazon.ion.v3.impl_1_1.binary.ValueReaderBase
 import com.amazon.ion.v3.ion_reader.*
 
@@ -20,7 +20,7 @@ internal class EncodingContextManager(
 
     companion object {
         @JvmStatic
-        internal val ION_1_1_SYSTEM_MACROS: Array<SystemMacro> = SystemMacro.entries.filter { it.id >= 0 }.sortedBy { it.id }.toTypedArray()
+        internal val ION_1_1_SYSTEM_MACROS: Array<MacroV2> = SystemMacro.MACROS_BY_ID
 
         @JvmStatic
         internal val ION_1_1_DEFAULT_SYMBOL_TABLE = SystemSymbols_1_1.allSymbolTexts()
@@ -35,7 +35,7 @@ internal class EncodingContextManager(
         private val ION_1_1_SYSTEM_MODULE = ModuleReader2.Module(
             "\$ion",
             ION_1_1_SYSTEM_SYMBOLS,
-            ION_1_1_SYSTEM_MACROS.map { it.systemSymbol.text to it },
+            ION_1_1_SYSTEM_MACROS.map { it.systemName!!.text to it },
         )
 
         @JvmStatic
@@ -54,7 +54,7 @@ internal class EncodingContextManager(
     }
 
 
-    private val moduleReader = ModuleReader2(ReaderAdapterIonReader(ionReaderShim))
+    private val moduleReader = ModuleReader2(ionReaderShim)
     var defaultModule = ModuleReader2.Module("_", emptyArray(), emptyList())
         private set
     private val availableModules = mutableMapOf<String, ModuleReader2.Module>()
@@ -245,7 +245,7 @@ internal class EncodingContextManager(
         }
     }
 
-    fun updateFlattenedTables(valueReaderBase: ValueReaderBase, additionalMacros: List<Macro>) {
+    fun updateFlattenedTables(valueReaderBase: ValueReaderBase, additionalMacros: List<MacroV2>) {
         // TODO: See if we can avoid rebuilding symbol tables and/or macro tables that haven't changed.
         //       This might require an API change.
 

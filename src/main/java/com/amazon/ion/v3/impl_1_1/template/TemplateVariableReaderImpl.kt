@@ -6,6 +6,7 @@ import com.amazon.ion.IonType
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
 import java.nio.ByteBuffer
 
 // TODO: See if there's a good way to get rid of this and just read the values directly.
@@ -83,9 +84,9 @@ class TemplateVariableReaderImpl(
     override fun annotations(): AnnotationIterator = arguments.annotations()
     override fun doubleValue(): Double = arguments.doubleValue()
     override fun decimalValue(): Decimal = arguments.decimalValue()
-    override fun macroValue(): Macro = arguments.macroValue()
+    override fun macroValue(): MacroV2 = arguments.macroValue()
 
-    override fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader {
+    override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader {
 //        println("Getting argument reader from variable reader.")
         return arguments.macroArguments(signature)
     }

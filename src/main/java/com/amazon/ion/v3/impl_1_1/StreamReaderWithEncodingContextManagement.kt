@@ -13,7 +13,7 @@ class StreamReaderWithEncodingContextManagement(source: ByteBuffer): ValueReader
 
     private val encodingContextManager: EncodingContextManager = EncodingContextManager(StreamWrappingIonReader())
     private val pool = ResourcePool(source)
-    private var rootReader: ValueReaderBase = pool.getPrefixedSexp(0, source.remaining(), EncodingContextManager.ION_1_1_DEFAULT_SYMBOL_TABLE, EncodingContextManager.ION_1_1_SYSTEM_MACROS as Array<Macro>)
+    private var rootReader: ValueReaderBase = pool.getPrefixedSexp(0, source.remaining(), EncodingContextManager.ION_1_1_DEFAULT_SYMBOL_TABLE, EncodingContextManager.ION_1_1_SYSTEM_MACROS)
     private var delegate: ValueReader = rootReader
     private val stack = ArrayList<ValueReader>()
 
@@ -131,8 +131,8 @@ class StreamReaderWithEncodingContextManagement(source: ByteBuffer): ValueReader
     override fun isTokenSet(): Boolean = delegate.isTokenSet()
     override fun ionType(): IonType? = delegate.ionType()
 
-    override fun macroValue(): Macro = delegate.macroValue()
-    override fun macroArguments(signature: List<Macro.Parameter>): ArgumentReader = delegate.macroArguments(signature)
+    override fun macroValue(): MacroV2 = delegate.macroValue()
+    override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader = delegate.macroArguments(signature)
 
     override fun position(): Int = delegate.position()
     override fun seekTo(position: Int) = delegate.seekTo(position)

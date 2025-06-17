@@ -10,10 +10,10 @@ import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.impl.macro.SystemMacro
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.SystemMacro
 import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver
@@ -29,7 +29,7 @@ import java.util.Date
  *       keep this class below 64 bytes (the size of a typical cache line).
  */
 class StreamReaderAsIonReader @JvmOverloads constructor(
-    private val source: ByteBuffer, private val additionalMacros: List<Macro> = emptyList()
+    private val source: ByteBuffer, private val additionalMacros: List<MacroV2> = emptyList()
 ): IonReader {
     private lateinit var _ion10Reader: ValueReader
     private val ion10Reader: ValueReader
@@ -192,8 +192,8 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         // FIXME: 31% of ALL
         val args = reader.macroArguments(macro.signature)
 
-        val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro) {
-            SystemMacro.AddSymbols -> {
+        val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro.systemAddress) {
+            SystemMacro.ADD_SYMBOLS_ADDRESS -> {
                 // FIXME: 6% of All
                 encodingContextManager.addOrSetSymbols(args, append = true)
                 // FIXME: 5% of All
@@ -201,23 +201,23 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
 //                        println("Add symbols: ${ion11Reader.symbolTable.contentToString()}")
                 true
             }
-            SystemMacro.SetSymbols -> {
+            SystemMacro.SET_SYMBOLS_ADDRESS -> {
                 encodingContextManager.addOrSetSymbols(args, append = false)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
 //                        println("Set symbols: ${ion11Reader.symbolTable.contentToString()}")
                 true
             }
-            SystemMacro.AddMacros -> {
+            SystemMacro.ADD_MACROS_ADDRESS -> {
                 encodingContextManager.addOrSetMacros(args, append = true)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
             }
-            SystemMacro.SetMacros -> {
+            SystemMacro.SET_MACROS_ADDRESS -> {
                 encodingContextManager.addOrSetMacros(args, append = false)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
             }
-            SystemMacro.Use -> TODO("Use")
+            SystemMacro.USE_ADDRESS -> TODO("Use")
             else -> false
         }
 

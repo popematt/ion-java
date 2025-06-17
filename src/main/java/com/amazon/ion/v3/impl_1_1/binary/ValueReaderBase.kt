@@ -4,6 +4,7 @@ import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.nio.ByteBuffer
@@ -21,7 +22,7 @@ abstract class ValueReaderBase(
     @JvmField
     internal var symbolTable: Array<String?>,
     @JvmField
-    internal var macroTable: Array<Macro>,
+    internal var macroTable: Array<MacroV2>,
 ): ValueReader {
 
     init {
@@ -81,7 +82,7 @@ abstract class ValueReaderBase(
     // TODO: Consolidate with `init`
     internal fun initTables(
         symbolTable: Array<String?>,
-        macroTable: Array<Macro>,
+        macroTable: Array<MacroV2>,
     ) {
         check(symbolTable[0] == null)
         this.symbolTable = symbolTable
@@ -514,7 +515,8 @@ abstract class ValueReaderBase(
         }
     }
 
-    final override fun macroValue(): Macro {
+
+    final override fun macroValue(): MacroV2 {
         val opcode = opcode.toInt()
         when (opcode shr 4) {
             0x0, 0x1, 0x2, 0x3 -> return macroTable[opcode]
@@ -558,7 +560,7 @@ abstract class ValueReaderBase(
         }
     }
 
-    final override fun macroArguments(signature: List<Macro.Parameter>): EExpArgumentReaderImpl {
+    final override fun macroArguments(signature: Array<Macro.Parameter>): EExpArgumentReaderImpl {
         // TODO: Add a state value representing "start of arguments", and check for it here
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET

@@ -22,14 +22,14 @@ class TemplateArgumentReaderImpl(
 
     override fun reinitState() {
         // TODO: See if we can eliminate this.
-        signature = emptyList()
-        nextParameterIndex = 0
+//        signature = emptyArray()
+//        nextParameterIndex = 0
 //        presence = ByteArray(8)
 //        presence = 0
 //        argumentIndices = IntArray(8)
     }
 
-    override var signature: List<Macro.Parameter> = emptyList()
+    override var signature: Array<Macro.Parameter> = emptyArray()
         private set
 
     // private var presence = ByteArray(8)
@@ -52,7 +52,7 @@ class TemplateArgumentReaderImpl(
         pool.arguments.add(this)
     }
 
-    fun initArgs(signature: List<Macro.Parameter>) {
+    fun initArgs(signature: Array<Macro.Parameter>) {
         this.signature = signature
         this.nextParameterIndex = 0
         val signatureSize = signature.size
@@ -78,62 +78,15 @@ class TemplateArgumentReaderImpl(
         for (i in 0 until signatureSize) {
             if (position < endExclusive) {
                 argumentIndices[i] = position
-                val currentExpression = source[position]
-                if (currentExpression is Expression.HasStartAndEnd) {
-                    val argEndExclusive = currentExpression.endExclusive
-                    if (currentExpression is Expression.ExpressionGroup) {
-                        if (argEndExclusive == position + 1) {
-                            // Set the presence bits to 0
-                            // It's actually a no-op
-                            // presence = presence or (0L shl (i * 2))
-                            argumentIndices[i] = -1
-                        }
-                    }
-                    position = argEndExclusive
-                } else {
-                    position++
+                val currentExpression = source[position++]
+                if (currentExpression.expressionKind == TokenTypeConst.EXPRESSION_GROUP && currentExpression.length == 0) {
+                    argumentIndices[i] = -1
                 }
+                position += currentExpression.length
             } else {
-                // Presence = 0
-                // presence = presence or (0L shl (i * 2))
                 argumentIndices[i] = -1
             }
         }
-
-        // Using a byteArray instead of a long for presence:
-//        for (i in 0 until signatureSize) {
-//            if (position < endExclusive) {
-//                argumentIndices[i] = position
-//                val currentExpression = source[position]
-//                position++
-//                if (currentExpression is Expression.HasStartAndEnd) {
-//                    val argEndExclusive = currentExpression.endExclusive
-//                    if (currentExpression is Expression.ExpressionGroup) {
-//                        if (argEndExclusive == position) {
-//                            presence[i] = 0
-//                        } else {
-//                            presence[i] = 2
-//                        }
-//                    } else {
-//                        presence[i] = 1
-//                    }
-//                    position = argEndExclusive
-//                } else {
-//                    presence[i] = 1
-//                }
-//            } else {
-//                presence[i] = 0
-//                argumentIndices[i] = endExclusive
-//            }
-//        }
-
-
-//        println("Setting up template arg reader... $id")
-//        println(signature)
-//        println(presence.contentToString())
-//        println(argumentIndices.contentToString())
-//        println(info.source.mapIndexed(::Pair).joinToString("\n") { (i, it) -> "    $i = $it" })
-
     }
 
     override fun seekToBeforeArgument(signatureIndex: Int) {

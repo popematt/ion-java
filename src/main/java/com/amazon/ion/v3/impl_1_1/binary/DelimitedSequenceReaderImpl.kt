@@ -2,6 +2,7 @@ package com.amazon.ion.v3.impl_1_1.binary
 
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
 import java.nio.ByteBuffer
 
 /**
@@ -12,7 +13,7 @@ class DelimitedSequenceReaderImpl(
     pool: ResourcePool,
     var parent: ValueReaderBase,
     symbolTable: Array<String?>,
-    macroTable: Array<Macro>,
+    macroTable: Array<MacroV2>,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), ListReader, SexpReader {
 
     // TODO: What if we could make it so that it scans its own length when it is opened?

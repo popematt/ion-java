@@ -5,13 +5,14 @@ import com.amazon.ion.IonType
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
 import java.nio.ByteBuffer
 
 /**
  * Singleton for empty expression groups.
  */
 object NoneReader: TemplateReader, SequenceReader {
-    override fun macroValue(): Macro {
+    override fun macroValue(): MacroV2 {
         TODO("Not yet implemented")
     }
 

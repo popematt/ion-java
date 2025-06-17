@@ -3,6 +3,7 @@ package com.amazon.ion.v3.impl_1_1.binary
 import com.amazon.ion.impl.bin.utf8.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -62,7 +63,7 @@ class ResourcePool(
         return slice
     }
 
-    fun getList(start: Int, length: Int, symbolTable: Array<String?>, macroTable: Array<Macro>): SeqReaderImpl {
+    fun getList(start: Int, length: Int, symbolTable: Array<String?>, macroTable: Array<MacroV2>): SeqReaderImpl {
         val reader = lists.removeLastOrNull()
         if (reader != null) {
             reader.init(start, length)
@@ -73,7 +74,7 @@ class ResourcePool(
         }
     }
 
-    fun getDelimitedSequence(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedSequenceReaderImpl {
+    fun getDelimitedSequence(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<MacroV2>): DelimitedSequenceReaderImpl {
         val n = delimitedLists.size
         if (n > 0) {
             val reader = delimitedLists.removeAt(n - 1)
@@ -86,7 +87,7 @@ class ResourcePool(
         }
     }
 
-    fun getEExpArgs(start: Int, maxLength: Int, signature: List<Macro.Parameter>, symbolTable: Array<String?>, macroTable: Array<Macro>): EExpArgumentReaderImpl {
+    fun getEExpArgs(start: Int, maxLength: Int, signature: Array<Macro.Parameter>, symbolTable: Array<String?>, macroTable: Array<MacroV2>): EExpArgumentReaderImpl {
         val reader = eexpArgumentReaders.removeLastOrNull()
             ?.apply {
                 init(start, maxLength)
@@ -107,7 +108,7 @@ class ResourcePool(
         }
     }
 
-    fun getPrefixedSexp(start: Int, length: Int, symbolTable: Array<String?>, macroTable: Array<Macro>): SeqReaderImpl {
+    fun getPrefixedSexp(start: Int, length: Int, symbolTable: Array<String?>, macroTable: Array<MacroV2>): SeqReaderImpl {
         val reader = lists.removeLastOrNull()
         if (reader != null) {
             reader.init(start, length)
@@ -118,7 +119,7 @@ class ResourcePool(
         }
     }
 
-    fun getDelimitedSexp(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedSequenceReaderImpl {
+    fun getDelimitedSexp(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<MacroV2>): DelimitedSequenceReaderImpl {
         val reader = delimitedLists.removeLastOrNull()
         if (reader != null) {
             reader.init(start, source.limit() - start)
@@ -130,7 +131,7 @@ class ResourcePool(
         }
     }
 
-    fun getStruct(start: Int, length: Int, symbolTable: Array<String?>, macroTable: Array<Macro>): StructReaderImpl {
+    fun getStruct(start: Int, length: Int, symbolTable: Array<String?>, macroTable: Array<MacroV2>): StructReaderImpl {
         val reader = structs.removeLastOrNull()
         if (reader != null) {
             reader.init(start, length)
@@ -141,7 +142,7 @@ class ResourcePool(
         }
     }
 
-    fun getDelimitedStruct(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<Macro>): DelimitedStructReaderImpl {
+    fun getDelimitedStruct(start: Int, parent: ValueReaderBase, symbolTable: Array<String?>, macroTable: Array<MacroV2>): DelimitedStructReaderImpl {
         val reader = delimitedStructs.removeLastOrNull()
         if (reader != null) {
             reader.init(start, source.limit() - start)
