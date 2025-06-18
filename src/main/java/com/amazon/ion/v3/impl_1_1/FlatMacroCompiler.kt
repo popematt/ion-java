@@ -8,6 +8,7 @@ import com.amazon.ion.impl.bin.Ion_1_1_Constants.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.util.*
+import com.amazon.ion.v3.*
 import com.amazon.ion.v3.ion_reader.*
 import java.nio.ByteBuffer
 
@@ -24,7 +25,7 @@ internal class FlatMacroCompiler(
     var macroName: String? = null
         private set // Only mutable internally
 
-    private lateinit var signature: MutableList<Macro.Parameter>
+    private lateinit var signature: Array<Macro.Parameter>
 
     /**
      * Compiles a template macro definition from the reader. Caller is responsible for positioning the reader at—but not
@@ -32,7 +33,6 @@ internal class FlatMacroCompiler(
      */
     fun compileMacro(): MacroV2 {
         macroName = null
-        signature = ArrayList()
         val expressions = ArrayList<TemplateBodyExpressionModel>()
 
         confirm(reader.type == IonType.SEXP) { "macro compilation expects a sexp starting with the keyword `macro`" }
@@ -51,12 +51,12 @@ internal class FlatMacroCompiler(
             }
             reader.nextAndCheckType(IonType.SEXP, "macro signature")
             reader.confirmNoAnnotations("macro signature")
-            reader.readSignature()
+            signature = reader.readSignature()
             confirm(reader.next() != null) { "Macro definition is missing a template body expression." }
-            reader.compileTemplateBodyExpression(expressions, readLiterally = false)
+            reader.compileTemplateBodyExpression(expressions, readLiterally = false, ParentType.TopLevel)
             confirm(reader.next() == null) { "Unexpected ${reader.type} after template body expression." }
         }
-        return MacroV2(signature.toTypedArray(), expressions.toTypedArray())
+        return MacroV2(signature, expressions.toTypedArray())
 //            .also { println(it.writeMacroDefinitionToIonString(macroName)) }
     }
 
@@ -64,7 +64,8 @@ internal class FlatMacroCompiler(
      * Reads the macro signature, populating parameters in [signature].
      * Caller is responsible for making sure that the reader is positioned on (but not stepped into) the signature sexp.
      */
-    private fun IonReader.readSignature() {
+    private fun IonReader.readSignature(): Array<Macro.Parameter> {
+        val signature = mutableListOf<Macro.Parameter>()
         var pendingParameter: Macro.Parameter? = null
 
         forEachInContainer {
@@ -111,6 +112,8 @@ internal class FlatMacroCompiler(
         }
         // If we have a pending parameter than hasn't been added to the signature, add it here.
         if (pendingParameter != null) signature.add(pendingParameter!!)
+
+        return signature.toTypedArray()
     }
 
     private fun isIdentifierSymbol(symbol: String): Boolean {
@@ -131,7 +134,7 @@ internal class FlatMacroCompiler(
      *
      * If called when the reader is not positioned on any value, throws [IllegalStateException].
      */
-    private fun IonReader.compileTemplateBodyExpression(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean) {
+    private fun IonReader.compileTemplateBodyExpression(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean, parentType: ParentType) {
         val annotations = typeAnnotations
         if (annotations.isNotEmpty()) {
             destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.ANNOTATIONS, 0, annotations = annotations))
@@ -165,7 +168,7 @@ internal class FlatMacroCompiler(
             IonType.CLOB -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.CLOB, 0, value = ByteBuffer.wrap(newBytes())))
             IonType.SYMBOL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SYMBOL, 0, value = symbolValue().text))
             IonType.LIST -> compileList(destination, readLiterally)
-            IonType.SEXP -> compileSExpression(destination, annotations, readLiterally)
+            IonType.SEXP -> compileSExpression(parentType, destination, annotations, readLiterally)
             IonType.STRUCT -> compileStruct(destination, readLiterally)
             // IonType.NULL, IonType.DATAGRAM, null
             else -> throw IllegalStateException("Found $type; this should be unreachable.")
@@ -183,7 +186,7 @@ internal class FlatMacroCompiler(
         destination.add(startExpression)
         val start = destination.size
         forEachInContainer {
-            compileTemplateBodyExpression(destination, readLiterally)
+            compileTemplateBodyExpression(destination, readLiterally, ParentType.Struct)
         }
         val end = destination.size
         startExpression.length = end - start
@@ -200,10 +203,19 @@ internal class FlatMacroCompiler(
         destination.add(startExpression)
         val start = destination.size
         forEachInContainer {
-            compileTemplateBodyExpression(destination, readLiterally)
+            compileTemplateBodyExpression(destination, readLiterally, ParentType.List)
         }
         val end = destination.size
         startExpression.length = end - start
+    }
+
+    enum class ParentType {
+        List,
+        SExp,
+        Struct,
+        ExprGroup,
+        MacroInvocation,
+        TopLevel
     }
 
     /**
@@ -212,7 +224,7 @@ internal class FlatMacroCompiler(
      * If this function returns normally, it will be stepped out of the sexp.
      * Caller will need to call [IonReader.next] to get the next value.
      */
-    private fun IonReader.compileSExpression(destination: MutableList<TemplateBodyExpressionModel>, annotations: Array<String?>, readLiterally: Boolean) {
+    private fun IonReader.compileSExpression(parentType: ParentType, destination: MutableList<TemplateBodyExpressionModel>, annotations: Array<String?>, readLiterally: Boolean) {
         val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SEXP, -1, value = null)
         destination.add(startExpression)
         val start = destination.size
@@ -230,7 +242,7 @@ internal class FlatMacroCompiler(
                     TDL_EXPRESSION_GROUP_SIGIL -> {
                         confirm(annotations.isEmpty()) { "Expression group may not be annotated" }
                         confirmNoAnnotations("Expression group operator")
-                        compileExpressionTail(destination, false)
+                        compileExpressionTail(destination, false, ParentType.ExprGroup)
                         startExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
                         startExpression.length = destination.size - start
                         return
@@ -248,7 +260,7 @@ internal class FlatMacroCompiler(
                             SystemSymbols_1_1.LITERAL.text -> {
                                 // Drop the placeholder.
                                 destination.removeLastOrNull()
-                                forEachRemaining { compileTemplateBodyExpression(destination, readLiterally = true) }
+                                forEachRemaining { compileTemplateBodyExpression(destination, readLiterally = true, parentType) }
                                 stepOut()
                                 return
                             }
@@ -258,11 +270,95 @@ internal class FlatMacroCompiler(
                             ?: SystemMacro.getMacroOrSpecialForm(macroRef)
                             ?: throw IonException("Unrecognized macro: $macroRef")
 
+
+                        // TODO: coalesce these branch conditions
                         if (macro.body == null) {
-                            compileExpressionTail(destination, false)
-                            startExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                            startExpression.length = destination.size - start
-                            startExpression.value = macro
+                            when (macro.systemAddress) {
+                                SystemMacro.META_ADDRESS -> {
+                                    // Discard the arguments
+                                    // TODO: Make this cheaper by skipping rather than compiling.
+                                    compileExpressionTail(mutableListOf(), true, ParentType.MacroInvocation)
+                                    if (parentType == ParentType.MacroInvocation) {
+                                        // Replace with empty expression group.
+                                        startExpression.length = 0
+                                        startExpression.expressionKind =
+                                            TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
+                                    } else {
+                                        // Just remove it entirely
+                                        destination.removeLast()
+                                    }
+                                }
+                                SystemMacro.NONE_ADDRESS -> {
+                                    if (parentType == ParentType.MacroInvocation) {
+                                        // Replace with empty expression group.
+                                        startExpression.length = 0
+                                        startExpression.expressionKind =
+                                            TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
+                                    } else {
+                                        // Just remove it entirely
+                                        destination.removeLast()
+                                    }
+                                }
+                                SystemMacro.VALUES_ADDRESS -> {
+                                    if (parentType == ParentType.MacroInvocation) {
+                                        compileExpressionTail(destination, false, parentType)
+                                        startExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
+                                        startExpression.length = destination.size - start
+                                    } else {
+                                        destination.removeLast()
+                                        compileExpressionTail(destination, false, parentType)
+                                    }
+
+                                }
+                                SystemMacro.DEFAULT_ADDRESS -> {
+                                    val args: MutableList<TemplateBodyExpressionModel> = mutableListOf()
+                                    // TODO: Capture rest args in an expression group
+                                    compileExpressionTail(args, readLiterally = false, ParentType.MacroInvocation)
+                                    val arg0 = args[0]
+                                    when (arg0.expressionKind) {
+                                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 -> {
+                                            destination.removeLast()
+                                            // Copy in this arg, discard the other one
+                                            for (i in 0..arg0.length) {
+                                                destination.add(args[i])
+                                            }
+                                        }
+                                        TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP -> {
+                                            if (arg0.length == 0) {
+                                                destination.removeLast()
+                                                // Discard this arg, copy in the other one
+                                                for (i in 1 until args.size) {
+                                                    destination.add(args[i])
+                                                }
+                                            } else {
+                                                // Copy in a full invocation
+                                                destination.addAll(args)
+                                                startExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
+                                                startExpression.length = destination.size - start
+                                                startExpression.value = macro
+                                            }
+                                        }
+                                        else -> {
+                                            // Do a full invocation
+                                            destination.addAll(args)
+                                            startExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
+                                            startExpression.length = destination.size - start
+                                            startExpression.value = macro
+                                        }
+
+
+                                    }
+                                }
+                                // Non-inlineable system macros
+                                else -> {
+                                    compileExpressionTail(destination, false, ParentType.MacroInvocation)
+                                    startExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
+                                    startExpression.length = destination.size - start
+                                    startExpression.value = macro
+                                }
+                            }
+//                            val argumentPositions = calculateArgumentPositions(macro.signature, destination, start, destination.size)
+//                            startExpression.indices = argumentPositions
                         } else {
                             destination.removeLast()
 //                            println("Inlining: $macroRef")
@@ -273,9 +369,9 @@ internal class FlatMacroCompiler(
                 }
             }
             // Compile the value we're already positioned on before compiling the rest of the s-expression
-            compileTemplateBodyExpression(destination, readLiterally)
+            compileTemplateBodyExpression(destination, readLiterally, ParentType.SExp)
         }
-        compileExpressionTail(destination, readLiterally)
+        compileExpressionTail(destination, readLiterally, ParentType.SExp)
         startExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
         startExpression.length = destination.size - start
     }
@@ -292,7 +388,7 @@ internal class FlatMacroCompiler(
         // Read the args to the macro invocation
         val args: MutableList<TemplateBodyExpressionModel> = mutableListOf()
         // TODO: Capture rest args in an expression group
-        compileExpressionTail(args, readLiterally = false)
+        compileExpressionTail(args, readLiterally = false, ParentType.MacroInvocation)
 //        println("  " + args)
         // Build a lookup for the arguments
         val argumentIndices = IntArray(macro.signature.size)
@@ -419,9 +515,9 @@ internal class FlatMacroCompiler(
         stepOut()
     }
 
-    private fun IonReader.compileExpressionTail(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean): Int {
+    private fun IonReader.compileExpressionTail(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean, thisType: ParentType): Int {
         forEachRemaining {
-            compileTemplateBodyExpression(destination, readLiterally)
+            compileTemplateBodyExpression(destination, readLiterally, thisType)
         }
         val seqEnd = destination.size
         stepOut()

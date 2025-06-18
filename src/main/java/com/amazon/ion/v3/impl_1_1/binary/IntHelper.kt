@@ -108,7 +108,6 @@ object IntHelper {
         if (source.remaining() < (numBytes - 1)) throw IonException("Incomplete data")
         when (numBytes) {
             1 -> {
-//                source.position(position + 1)
                 return ((firstByte.toInt() and 0xFF) ushr 1).toLong()
             }
             2, 3, 4 -> {
@@ -167,7 +166,10 @@ object IntHelper {
         if (source.remaining() < numBytes) throw IonException("Incomplete data")
         source.position(position + numBytes)
         when (numBytes) {
-            1, 2, 3, 4 -> {
+            1 -> {
+                return firstByte.toLong() shr 1
+            }
+            2, 3, 4 -> {
                 // TODO: We could probably simplify some of these calculations.
                 val backtrack = 4 - numBytes
                 val data = source.getInt(position - backtrack)

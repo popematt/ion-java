@@ -15,7 +15,27 @@ sealed interface Macro {
     val bodyTape: ExpressionTape.Core
     val isSimple: Boolean
 
-    data class Parameter(val variableName: String, val type: ParameterEncoding, val cardinality: ParameterCardinality) {
+    data class Parameter private constructor(val variableName: String, val type: ParameterEncoding, val iCardinality: Int) {
+
+        constructor(variableName: String, type: ParameterEncoding, cardinality: ParameterCardinality): this (
+            variableName, type, when (cardinality) {
+                ParameterCardinality.ZeroOrOne -> 0
+                ParameterCardinality.ExactlyOne -> 1
+                ParameterCardinality.ZeroOrMore -> 2
+                ParameterCardinality.OneOrMore -> 3
+            }
+        )
+
+        val cardinality: ParameterCardinality
+            get() = when (iCardinality) {
+                0 -> ParameterCardinality.ZeroOrOne
+                1 -> ParameterCardinality.ExactlyOne
+                2 -> ParameterCardinality.ZeroOrMore
+                else -> ParameterCardinality.OneOrMore
+            }
+
+        fun copy(cardinality: ParameterCardinality): Parameter = Parameter(variableName, type, cardinality)
+
         override fun toString() = "$type::$variableName${cardinality.sigil}"
     }
 

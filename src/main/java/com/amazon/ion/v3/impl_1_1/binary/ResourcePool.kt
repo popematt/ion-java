@@ -87,13 +87,15 @@ class ResourcePool(
         }
     }
 
-    fun getEExpArgs(start: Int, maxLength: Int, signature: Array<Macro.Parameter>, symbolTable: Array<String?>, macroTable: Array<MacroV2>): EExpArgumentReaderImpl {
-        val reader = eexpArgumentReaders.removeLastOrNull()
-            ?.apply {
-                init(start, maxLength)
-                initTables(symbolTable, macroTable)
-            }
-            ?: EExpArgumentReaderImpl(newSlice(start, maxLength), this, symbolTable, macroTable)
+    fun getEExpArgs(start: Int, maxLength: Int, parent: ValueReaderBase, signature: Array<Macro.Parameter>, symbolTable: Array<String?>, macroTable: Array<MacroV2>): EExpArgumentReaderImpl {
+        var reader = eexpArgumentReaders.removeLastOrNull()
+        if (reader != null) {
+            reader.init(start, maxLength)
+            reader.initTables(symbolTable, macroTable)
+            reader.parent = parent
+        } else {
+            reader = EExpArgumentReaderImpl(newSlice(start, maxLength), this, symbolTable, macroTable, parent)
+        }
         reader.initArgs(signature)
         return reader
     }

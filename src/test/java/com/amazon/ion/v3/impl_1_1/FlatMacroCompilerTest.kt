@@ -469,6 +469,33 @@ class FlatMacroCompilerTest {
             }
         ),
 
+        "(macro default_that_can_be_precomputed (z) [ (.default (..) (%z) ) ] )" shouldCompileTo MacroV2(
+            signature = listOf(exactlyOneTagged("z")),
+            templateBody {
+                list {
+                    variable(0)
+                }
+            }
+        ),
+
+        "(macro another_default_that_can_be_precomputed (z) [ (.default (.none) (%z) ) ] )" shouldCompileTo MacroV2(
+            signature = listOf(exactlyOneTagged("z")),
+            templateBody {
+                list {
+                    variable(0)
+                }
+            }
+        ),
+
+        "(macro default_that_can_be_precomputed (z) [ (.default (..) (%z) ) ] )" shouldCompileTo MacroV2(
+            signature = listOf(exactlyOneTagged("z")),
+            templateBody {
+                list {
+                    variable(0)
+                }
+            }
+        ),
+
         LogMacro.SAMPLE_DEF shouldCompileTo LogMacro.Sample,
         LogMacro.ONE_DEF shouldCompileTo LogMacro.One,
         LogMacro.ENTRY_DEF shouldCompileTo LogMacro.Entry,
@@ -650,10 +677,10 @@ class FlatMacroCompilerTest {
                 int(1)
                 int(2)
             }
-        }
-        val arg1 = templateBody { string("foo") }
-        val arg2 = templateBody { list { string("bar") } }
-        val arg3 = templateBody { sexp {  } }
+        }.toList()
+        val arg1 = templateBody { string("foo") }.toList()
+        val arg2 = templateBody { list { string("bar") } }.toList()
+        val arg3 = templateBody { sexp {  } }.toList()
 
         val allArgs = mutableListOf<TemplateBodyExpressionModel>().let {
             it.addAll(arg0)

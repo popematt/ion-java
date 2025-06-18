@@ -184,12 +184,12 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         return _next()
     }
 
-    // FIXME: 53% of All
+    // FIXME: 38% of All
     private fun handleMacro() {
         val macro = reader.macroValue()
 //        println("Evaluating macro $macro")
 
-        // FIXME: 31% of ALL
+        // FIXME: 26% of ALL
         val args = reader.macroArguments(macro.signature)
 
         val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro.systemAddress) {
@@ -227,6 +227,8 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
             readerManager.pushReader(eexp)
             reader = eexp
             type = null
+        } else {
+            args.close()
         }
     }
 
@@ -255,7 +257,8 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
     }
 
     override fun stepIn() {
-        val child = when (reader.currentToken()) {
+        val token = reader.currentToken()
+        val child = when (token) {
             TokenTypeConst.NULL -> throw IonException("Cannot step into a null value")
             TokenTypeConst.LIST -> reader.listValue()
             TokenTypeConst.SEXP -> reader.sexpValue()

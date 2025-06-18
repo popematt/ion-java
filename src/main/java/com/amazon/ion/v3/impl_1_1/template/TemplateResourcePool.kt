@@ -107,6 +107,8 @@ class TemplateResourcePool private constructor(): Closeable {
         }
     }
 
+    // Default could be cheaper if it was default values in the signature, I think.
+
     private fun invokeDefault(arguments: ArgumentReader): ValueReader {
 //        println("Invoking Default with arguments: $arguments")
         arguments.seekToBeforeArgument(0)

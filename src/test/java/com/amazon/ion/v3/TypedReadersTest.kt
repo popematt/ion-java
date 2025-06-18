@@ -550,14 +550,17 @@ class TypedReadersTest {
 
             val source = toByteBuffer(data)
 
+
+            val pool = ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN))
             val reader = EExpArgumentReaderImpl(
                 source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
-                ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN)),
+                pool,
                 symbolTable = arrayOf(),
                 macroTable = arrayOf(),
+                pool.getList(0, 0, arrayOf(), arrayOf()),
             )
             reader.initArgs(signature)
-            reader.calculateEndPosition()
+            // reader.calculateEndPosition()
 
             reader.seekToBeforeArgument(1)
             reader.assertNextToken(TokenTypeConst.BOOL).skip()
@@ -590,11 +593,13 @@ class TypedReadersTest {
 
             val source = toByteBuffer(data)
 
+            val pool = ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN))
             val reader = EExpArgumentReaderImpl(
                 source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
-                ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN)),
+                pool,
                 symbolTable = arrayOf(),
                 macroTable = arrayOf(),
+                pool.getList(0, 0, arrayOf(), arrayOf()),
             )
             reader.initArgs(signature)
             reader.calculateEndPosition()
@@ -616,6 +621,7 @@ class TypedReadersTest {
             val signature = template("foo", "bar?", "baz?"){}.signature
 
             val source = toByteBuffer(data)
+            val pool = ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN))
 
             val reader = TemplateArgumentReaderImpl(
                 TemplateResourcePool.getInstance(),
@@ -625,7 +631,13 @@ class TypedReadersTest {
                         bool(false)
                     },
                     signature,
-                    EExpArgumentReaderImpl(source, ResourcePool(source), emptyArray(), emptyArray())
+                    EExpArgumentReaderImpl(
+                        source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
+                        pool,
+                        symbolTable = arrayOf(),
+                        macroTable = arrayOf(),
+                        pool.getList(0, 0, arrayOf(), arrayOf()),
+                    )
                 ),
                 startInclusive = 0,
                 endExclusive = 2,

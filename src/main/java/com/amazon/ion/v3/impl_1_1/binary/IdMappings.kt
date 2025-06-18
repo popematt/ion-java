@@ -137,11 +137,14 @@ object IdMappings {
             ValueReaderBase.TID_EXPRESSION_GROUP.toInt() -> IntHelper.readFlexUInt(buffer)
             ValueReaderBase.TID_ON_FIELD_NAME.toInt() -> -2
             ValueReaderBase.TID_UNSET.toInt() -> throw IllegalStateException("Not positioned on an expression or value")
-            else -> when (val it = LENGTH_FOR_OPCODE[typeId]) {
-                -3 -> throw IonException("Invalid input: illegal typeId: $typeId")
-                -2 -> -2
-                -1 -> IntHelper.readFlexUInt(buffer)
-                else -> it
+            else -> {
+                val it = LENGTH_FOR_OPCODE[typeId]
+                when (it) {
+                    -3 -> throw IonException("Invalid input: illegal typeId: $typeId")
+                    -2 -> -2
+                    -1 -> IntHelper.readFlexUInt(buffer)
+                    else -> it
+                }
             }
         }
     }

@@ -1,11 +1,9 @@
 package com.amazon.ion.v3.impl_1_1.template
 
 import com.amazon.ion.*
-import com.amazon.ion.impl.macro.Expression
 import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.binary.*
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -51,11 +49,6 @@ abstract class TemplateReaderBase(
         val SEEN_VALUE: Byte = 3
     }
 
-
-    init {
-//        debugInit()
-    }
-
     fun init(
         templateInvocationInfo: TemplateResourcePool.TemplateInvocationInfo,
         startInclusive: Int,
@@ -71,21 +64,12 @@ abstract class TemplateReaderBase(
         currentExpression = null
         childStartIndex = -1
         state = State.READY
-//        id = UUID.randomUUID().toString().take(8)
         reinitState()
-//        debugInit()
-    }
-
-    private fun debugInit() {
-        println("Source: ${source.joinToString("    \n", postfix = "]", prefix = "[") { "$it" }}")
-        println("startInclusive: $startInclusive")
-        println("endExclusive: $endExclusive")
-        println("isArgumentOwner: $isArgumentOwner")
     }
 
     protected open fun reinitState() {}
 
-    protected fun <U> consumeCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (TemplateBodyExpressionModel) -> U, ): U {
+    protected inline fun <U> consumeCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (TemplateBodyExpressionModel) -> U, ): U {
         val expr = currentExpression
         currentExpression = null
         return when (expr!!.expressionKind) {
@@ -94,7 +78,7 @@ abstract class TemplateReaderBase(
         }
     }
 
-    protected fun <U> inspectCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (TemplateBodyExpressionModel) -> U, ): U {
+    protected inline fun <U> inspectCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (TemplateBodyExpressionModel) -> U, ): U {
         val expr = currentExpression
         return when (expr!!.expressionKind) {
             TokenTypeConst.VARIABLE_REF -> argMethod(info.arguments)
@@ -112,16 +96,12 @@ abstract class TemplateReaderBase(
         this.i += expr.length
 
         if (expr.expressionKind == TokenTypeConst.VARIABLE_REF) {
-            return resolveVariableTokenType(expr.value as Int)
+            val args = this.info.arguments
+            val v = expr.value as Int
+            return args.seekToArgument(v)
         }
 
         return expr.expressionKind
-    }
-
-    protected fun resolveVariableTokenType(v: Int): Int {
-        val args = this.info.arguments
-        args.seekToBeforeArgument(v)
-        return args.nextToken()
     }
 
     final override fun close() {
@@ -172,12 +152,15 @@ abstract class TemplateReaderBase(
     override fun macroValue(): MacroV2 = inspectCurrentExpression(ArgumentReader::macroValue) { it.value as MacroV2 }
 
     override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader {
+        if (signature.isEmpty()) {
+            return NoneReader
+        }
+
         val expr = currentExpression!!
         currentExpression = null
         return when (expr.expressionKind) {
             TokenTypeConst.VARIABLE_REF -> info.arguments.macroArguments(signature)
             else -> {
-                // FIXME: 10% of all
                 pool.getArguments(info, signature, childStartIndex, childStartIndex + expr.length)
             }
         }
@@ -224,9 +207,16 @@ abstract class TemplateReaderBase(
         pool.getSequence(info, start, start + it.length)
     }
 
-    override fun structValue(): StructReader = consumeCurrentExpression(ArgumentReader::structValue) {
-        val start = childStartIndex
-        pool.getStruct(info, start, start + it.length)
+    override fun structValue(): StructReader {
+        val expr = currentExpression
+        currentExpression = null
+        return when (expr!!.expressionKind) {
+            TokenTypeConst.VARIABLE_REF -> info.arguments.structValue()
+            else -> {
+                val start = childStartIndex
+                pool.getStruct(info, start, start + expr.length)
+            }
+        }
     }
 
     override fun annotations(): AnnotationIterator = inspectCurrentExpression(ArgumentReader::annotations) {

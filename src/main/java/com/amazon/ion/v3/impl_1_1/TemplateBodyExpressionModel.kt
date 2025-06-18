@@ -40,6 +40,8 @@ class TemplateBodyExpressionModel(
     @JvmField
     var value: Any? = null,
     @JvmField
+    var indices: Any? = null,
+    @JvmField
     var primitiveValue: Long = 0,
 ) {
     companion object {

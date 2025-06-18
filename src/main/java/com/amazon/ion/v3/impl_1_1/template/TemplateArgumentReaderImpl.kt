@@ -17,24 +17,12 @@ class TemplateArgumentReaderImpl(
 ): TemplateReaderBase(pool, info, startInclusive, endExclusive, isArgumentOwner), ArgumentReader {
 
     override fun toString(): String {
-        return "TemplateArgumentReaderImpl(signature=$signature, argumentIndices=${argumentIndices.contentToString()}, source=${info.source})"
-    }
-
-    override fun reinitState() {
-        // TODO: See if we can eliminate this.
-//        signature = emptyArray()
-//        nextParameterIndex = 0
-//        presence = ByteArray(8)
-//        presence = 0
-//        argumentIndices = IntArray(8)
+        return "TemplateArgumentReaderImpl(signature=${signature.contentToString()}, argumentIndices=${argumentIndices.contentToString()}, source=${info.source.contentToString()})"
     }
 
     override var signature: Array<Macro.Parameter> = emptyArray()
         private set
 
-    // private var presence = ByteArray(8)
-//    private var presence = 0
-    // The position of a "not present" argument is always the first byte after the last byte of the previous argument
     // position of -1 indicates not present.
     private var argumentIndices = IntArray(signature.size)
 
@@ -42,13 +30,7 @@ class TemplateArgumentReaderImpl(
     private var nextParameterIndex: Short = 0
 
 
-//    private var e: String = "unknown"
     override fun returnToPool() {
-//        if (this in pool.arguments) {
-//            System.err.println("Previously closed at: $e")
-//            throw IllegalStateException("Already closed: $this")
-//        }
-        // e = Exception().stackTraceToString()
         pool.arguments.add(this)
     }
 
@@ -59,13 +41,9 @@ class TemplateArgumentReaderImpl(
         // Make sure we have enough space in our arrays
         if (signatureSize > argumentIndices.size) {
             argumentIndices = IntArray(signature.size)
-            // Max signature size is 32? That might be okay. We could have another implementation
-            // for handling larger signature sizes that uses a byte array even if that is a little slower.
-//            presence = 0 // ByteArray(signature.size)
         }
 
         // Local references
-        // var presence = presence
         val argumentIndices = argumentIndices
         val info = info
         val source = info.source
@@ -91,8 +69,6 @@ class TemplateArgumentReaderImpl(
 
     override fun seekToBeforeArgument(signatureIndex: Int) {
         if (signatureIndex >= signature.size) throw IllegalStateException("Not in the signature")
-//        println("[$id] Seeking to before template arg $signatureIndex of $signature")
-//         println("${signature[signatureIndex]}($signatureIndex)")
         nextParameterIndex = signatureIndex.toShort()
         currentExpression = null
     }

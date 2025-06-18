@@ -10,12 +10,16 @@ import java.util.*
 
 /**
  * Reads the raw E-expression arguments
+ *
+ * TODO: Make this update the parent reader's position on close, just like the delimited seq reader
  */
 class EExpArgumentReaderImpl(
     source: ByteBuffer,
     pool: ResourcePool,
     symbolTable: Array<String?>,
     macroTable: Array<MacroV2>,
+    @JvmField
+    var parent: ValueReaderBase,
 ): ValueReaderBase(source, pool, symbolTable, macroTable), ArgumentReader {
 
     override var signature: Array<Macro.Parameter> = emptyArray()
@@ -29,18 +33,13 @@ class EExpArgumentReaderImpl(
     var argumentIndices = IntArray(8)
     // This is specifically, the index of the parameter within the macro signature, not within the ByteBuffer.
     private var nextParameterIndex = 0
-//        set(value) {
-//            // val e = Exception()
-//            //println("[$id] setting nextParameterIndex $field --> $value\n    " + e.stackTrace.take(5).joinToString("\n    "))
-//            field = value
-//        }
 
     override fun close() {
-//        if (this in pool.eexpArgumentReaders) throw IllegalStateException("Already closed: $this")
+        seekToBeforeArgument(signature.size - 1)
+        nextToken()
+        skip()
+        parent.seekTo(source.position())
         pool.eexpArgumentReaders.add(this)
-//        println("Closing EExpArgumentReaderImpl...")
-//        while (nextToken() != TokenTypeConst.END) { skip() }
-//        println("Ended: $source")
     }
 
     fun initArgs(signature: Array<Macro.Parameter>) {
@@ -57,7 +56,7 @@ class EExpArgumentReaderImpl(
         Arrays.fill(argumentIndices, -1)
 
         for (i in signature.indices) {
-            if (signature[i].cardinality != Macro.ParameterCardinality.ExactlyOne) {
+            if (signature[i].iCardinality != 1) {
                 // Read a value from the presence bitmap
                 // But we might need to "refill" our presence byte first
                 if (presenceByteOffset > 7) {
@@ -71,13 +70,12 @@ class EExpArgumentReaderImpl(
                 presence[i] = 1
             }
         }
-//        println("Position after presence bits: ${source.position()}")
 
         // Set the first argument to the current position. That's where it will be, if it is present.
         argumentIndices[0] = source.position()
     }
 
-    // FIXME: The skipping in this method is ~17% of ALL
+    // FIXME: The skipping in this method is ~14% of ALL
     fun calculateEndPosition(): Int {
         source.mark()
         for (i in signature.indices) {
@@ -105,7 +103,8 @@ class EExpArgumentReaderImpl(
             // TODO: See if this is faster if it uses a loop instead of recursion.
             // TODO: If it's faster to calculate all of the argument positions up front, then consider adding a reader
             //       option that allows users to decide between eager and lazy argument calculations.
-            seekToArgument(signatureIndex - 1)
+            seekToBeforeArgument(signatureIndex - 1)
+            nextToken()
             skip()
             argumentPosition = source.position()
             argumentIndices[signatureIndex] = argumentPosition
