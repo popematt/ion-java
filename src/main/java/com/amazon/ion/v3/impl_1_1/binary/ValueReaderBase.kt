@@ -193,6 +193,9 @@ abstract class ValueReaderBase(
             } else if (opcode < 0x60) {
                 val macro = macroValue()
                 val args = macroArguments(macro.signature)
+                while (args.nextToken() != TokenTypeConst.END) {
+                    args.skip()
+                }
                 args.close()
 //                val end = args.calculateEndPosition()
 //                args.close()
@@ -400,7 +403,7 @@ abstract class ValueReaderBase(
         TODO("Not yet implemented")
     }
 
-    final override fun listValue(): ListReader {
+    override fun listValue(): ListReader {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
         val length = if (opcode shr 4 == 0xB) {
@@ -418,7 +421,7 @@ abstract class ValueReaderBase(
         return pool.getList(start, length, symbolTable, macroTable)
     }
 
-    final override fun sexpValue(): SexpReader {
+    override fun sexpValue(): SexpReader {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
         val length = IdMappings.length(opcode.toInt(), source)
@@ -434,7 +437,7 @@ abstract class ValueReaderBase(
         }
     }
 
-    final override fun structValue(): StructReader {
+    override fun structValue(): StructReader {
         val opcode = opcode.toInt()
         val length = IdMappings.length(opcode, source)
         if (length < 0) {
@@ -528,13 +531,13 @@ abstract class ValueReaderBase(
         return pool.getAnnotations(opcode, start, length, symbolTable)
     }
 
-    final override fun timestampValue(): Timestamp {
+    override fun timestampValue(): Timestamp {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
         return TimestampHelper.readTimestamp(opcode, source)
     }
 
-    final override fun doubleValue(): Double {
+    override fun doubleValue(): Double {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
         return when (opcode) {

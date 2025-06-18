@@ -1,6 +1,6 @@
 package com.amazon.ion.v3.impl_1_1.binary
 
-import com.amazon.ion.IonException
+import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
@@ -35,9 +35,7 @@ class EExpArgumentReaderImpl(
     private var nextParameterIndex = 0
 
     override fun close() {
-        seekToBeforeArgument(signature.size - 1)
-        nextToken()
-        skip()
+        seekToBeforeArgument(signature.size)
         parent.seekTo(source.position())
         pool.eexpArgumentReaders.add(this)
     }
@@ -47,7 +45,8 @@ class EExpArgumentReaderImpl(
         this.nextParameterIndex = 0
         // Make sure we have enough space in our arrays
         if (signature.size > argumentIndices.size) {
-            argumentIndices = IntArray(signature.size)
+            // The last entry is the first position after the arguments.
+            argumentIndices = IntArray(signature.size + 1)
             presence = IntArray(signature.size)
         }
         var presenceByteOffset = 8
@@ -55,8 +54,10 @@ class EExpArgumentReaderImpl(
 
         Arrays.fill(argumentIndices, -1)
 
-        for (i in signature.indices) {
-            if (signature[i].iCardinality != 1) {
+        var i = 0
+        while (i < signature.size) {
+            val parameter = signature[i]
+            if (parameter.iCardinality != 1) {
                 // Read a value from the presence bitmap
                 // But we might need to "refill" our presence byte first
                 if (presenceByteOffset > 7) {
@@ -69,7 +70,24 @@ class EExpArgumentReaderImpl(
                 // Or set it to the implied "1" value
                 presence[i] = 1
             }
+            i++
         }
+
+//        for (i in signature.indices) {
+//            if (signature[i].iCardinality != 1) {
+//                // Read a value from the presence bitmap
+//                // But we might need to "refill" our presence byte first
+//                if (presenceByteOffset > 7) {
+//                    presenceByte = source.get().toInt() and 0xFF
+//                    presenceByteOffset = 0
+//                }
+//                presence[i] = (presenceByte ushr presenceByteOffset) and 0b11
+//                presenceByteOffset += 2
+//            } else {
+//                // Or set it to the implied "1" value
+//                presence[i] = 1
+//            }
+//        }
 
         // Set the first argument to the current position. That's where it will be, if it is present.
         argumentIndices[0] = source.position()
@@ -125,6 +143,10 @@ class EExpArgumentReaderImpl(
             opcode = TID_END
             return TokenTypeConst.END
         }
+        if (argumentIndices[cpIndex] < 0) {
+            argumentIndices[cpIndex] = source.position()
+        }
+
         nextParameterIndex++
 
         val currentParameter = signature[cpIndex]
@@ -147,6 +169,18 @@ class EExpArgumentReaderImpl(
         }
     }
 
+    override fun nullValue() = withArgIndexUpdates { super.nullValue() }
+    override fun booleanValue() = withArgIndexUpdates { super.booleanValue() }
+    override fun longValue() = withArgIndexUpdates { super.longValue() }
+    override fun doubleValue() = withArgIndexUpdates { super.doubleValue() }
+    override fun decimalValue() = withArgIndexUpdates { super.decimalValue() }
+    override fun timestampValue() = withArgIndexUpdates { super.timestampValue() }
+    override fun stringValue() = withArgIndexUpdates { super.stringValue() }
+    override fun symbolValue() = withArgIndexUpdates { super.symbolValue() }
+    override fun symbolValueSid() = withArgIndexUpdates { super.symbolValueSid() }
+    override fun clobValue() = withArgIndexUpdates { super.clobValue() }
+    override fun blobValue() = withArgIndexUpdates { super.blobValue() }
+
     override fun expressionGroup(): SequenceReader {
         val opcode = this.opcode
         if (opcode == TID_EMPTY_ARGUMENT) {
@@ -165,6 +199,7 @@ class EExpArgumentReaderImpl(
             pool.getDelimitedSequence(position, this, symbolTable, macroTable)
         } else {
             source.position(position + length)
+            updateNextArgIndex()
             pool.getList(position, length, symbolTable, macroTable)
         }
     }
@@ -173,6 +208,13 @@ class EExpArgumentReaderImpl(
     // returns tagless expression group reader for other groups
 
     override fun skip() {
+        val nextArgPosition = argumentIndices[nextParameterIndex]
+        if (nextArgPosition >= 0) {
+            source.position(nextArgPosition)
+            opcode = TID_UNSET
+            return
+        }
+
         // TODO: If we know which parameter we're on, we can check to see if the start of the next parameter is already known.
         when (opcode) {
             TID_EMPTY_ARGUMENT -> {
@@ -191,6 +233,21 @@ class EExpArgumentReaderImpl(
                 }
             }
             else -> super.skip()
+        }
+        updateNextArgIndex()
+    }
+
+    private inline fun <T> withArgIndexUpdates(action: () -> T): T {
+        val value = action()
+        updateNextArgIndex()
+        return value
+    }
+
+    private fun updateNextArgIndex() {
+        val argumentIndices = argumentIndices
+        if (argumentIndices[nextParameterIndex] < 0) {
+            // TODO: Can we automatically handle args that are not present?
+            argumentIndices[nextParameterIndex] = source.position()
         }
     }
 }

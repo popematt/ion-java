@@ -77,6 +77,7 @@ internal class ReaderManager: Closeable {
      * Throws an exception if there's nothing to step out of.
      */
     fun popContainer(): ValueReader {
+        val readerStack = readerStack
         if (containerStackSize == 0) {
             throw IonException("Nothing to step out of")
         }
@@ -95,25 +96,11 @@ internal class ReaderManager: Closeable {
     /**
      * Returns the new top of the stack.
      */
-    fun popReader(): ValueReader? {
-        readerStack[--readerStackSize]?.close()
-        // TODO: Do we need this, or can we require that you call popContainer when there's a container?
-        if (containerStackSize > 0) {
-            val topMostContainerIndex = containerStack[containerStackSize - 1]
-            if (topMostContainerIndex >= readerStackSize) {
-                containerStackSize--
-                if (containerStackSize > 0) {
-                    isInStruct = readerStack[containerStack[containerStackSize - 1]] is StructReader
-                } else {
-                    isInStruct = false
-                }
-            }
-        }
-        if (readerStackSize > 0) {
-            return readerStack[readerStackSize - 1]
-        } else {
-            return null
-        }
+    fun popReader(): ValueReader {
+        val readerStack = readerStack
+        val toRemove = --readerStackSize
+        readerStack[toRemove]!!.close()
+        return readerStack[readerStackSize - 1]!!
     }
 
     override fun close() {
