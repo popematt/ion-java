@@ -5,9 +5,11 @@ package com.amazon.ion.v3.impl_1_1
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.Expression.*
+import com.amazon.ion.impl.macro.Macro
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
+import kotlin.math.exp
 import kotlin.reflect.KFunction1
 
 /**
@@ -60,7 +62,11 @@ internal interface DataModelDsl : ValuesDsl {
 @ExpressionBuilderDslMarker
 internal interface TemplateDsl : ValuesDsl {
     fun macro(macro: MacroV2, arguments: TemplateDsl.() -> Unit)
+    fun variable(name: String, signatureIndex: Int)
+
     fun variable(signatureIndex: Int)
+    fun variable(name: String)
+
     fun list(content: TemplateDsl.() -> Unit)
     fun sexp(content: TemplateDsl.() -> Unit)
     fun struct(content: Fields.() -> Unit)
@@ -84,6 +90,7 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
     companion object {
         // Entry points to the DSL builders.
         fun templateBody(block: TemplateDsl.() -> Unit) = Template().apply(block).build()
+        fun templateBody(signature: List<Macro.Parameter>, block: TemplateDsl.() -> Unit) = Template(signature).apply(block).build()
     }
 
     protected val expressions = mutableListOf<TemplateBodyExpressionModel>()
@@ -120,13 +127,13 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
     fun build(): Array<TemplateBodyExpressionModel> = expressions.toTypedArray()
 
     // Helpers
-    private fun takePendingAnnotations(): Array<String?> {
+    protected fun takePendingAnnotations(): Array<String?> {
         val ann = pendingAnnotations.also { pendingAnnotations = emptyArray() }
 //        expressions.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.ANNOTATIONS, 1, null, ann, null))
         return emptyArray()
     }
 
-    private fun takePendingFieldName(): String? {
+    protected fun takePendingFieldName(): String? {
 //        val fname = pendingFieldName.also { pendingFieldName = null }
 //        expressions.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.FIELD_NAME, 1, fname, emptyArray(), null))
         return null
@@ -145,24 +152,43 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
         val start = expressions.size
         (this as T).content()
         val end = expressions.size
-        startExpression.length = end - start
+        val childExpressions = expressions.subList(start, end)
+        startExpression.value = childExpressions.toList().toTypedArray()
+        childExpressions.clear()
     }
 
     // Subclasses for each expression variant so that we don't have conflicting signatures between their list, sexp, etc. implementations.
 
-    class Template : ExpressionBuilderDsl(), TemplateDsl, TemplateDsl.Fields {
+    class Template(val signature: List<Macro.Parameter>? = null) : ExpressionBuilderDsl(), TemplateDsl, TemplateDsl.Fields {
+
         override fun list(content: TemplateDsl.() -> Unit) = container(TemplateBodyExpressionModel.Kind.LIST, content)
         override fun sexp(content: TemplateDsl.() -> Unit) = container(TemplateBodyExpressionModel.Kind.SEXP, content)
         override fun struct(content: TemplateDsl.Fields.() -> Unit) = container(TemplateBodyExpressionModel.Kind.STRUCT, content)
-        override fun variable(signatureIndex: Int) { scalar(TemplateBodyExpressionModel.Kind.VARIABLE, signatureIndex) }
         override fun macro(macro: MacroV2, arguments: TemplateDsl.() -> Unit) {
             val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.INVOCATION, 0, null, emptyArray(), macro)
             expressions.add(startExpression)
             val start = expressions.size
             this.arguments()
             val end = expressions.size
-            startExpression.length = end - start
+            val childExpressions = expressions.subList(start, end)
+            startExpression.additionalValue = childExpressions.toList().toTypedArray()
+            childExpressions.clear()
         }
         override fun expressionGroup(content: TemplateDsl.() -> Unit) = container(TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP, content)
+
+        override fun variable(name: String, signatureIndex: Int) {
+            expressions.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.VARIABLE, 0, takePendingFieldName(), takePendingAnnotations(), name, primitiveValue = signatureIndex.toLong()))
+        }
+
+        override fun variable(name: String) {
+            val signatureIndex = signature?.indexOfFirst { it.variableName == name } ?: -1
+            if (signatureIndex < 0) TODO("Name not found in signature")
+            variable(name, signatureIndex)
+        }
+
+        override fun variable(signatureIndex: Int) {
+            val name = signature?.get(signatureIndex)?.variableName ?: TODO("Add a name")
+            variable(name, signatureIndex)
+        }
     }
 }

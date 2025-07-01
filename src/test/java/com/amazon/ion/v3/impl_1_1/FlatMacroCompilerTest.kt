@@ -10,6 +10,7 @@ import com.amazon.ion.TestUtils
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.ParameterFactory.exactlyOneTagged
+import com.amazon.ion.impl.macro.ParameterFactory.oneToManyTagged
 import com.amazon.ion.impl.macro.ParameterFactory.zeroOrOneTagged
 import com.amazon.ion.system.IonReaderBuilder
 import com.amazon.ion.system.IonSystemBuilder
@@ -17,6 +18,7 @@ import com.amazon.ion.v3.impl_1_1.ExpressionBuilderDsl.Companion.templateBody
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.charset.StandardCharsets
+import kotlin.math.sign
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.TestInstance
@@ -39,7 +41,7 @@ class FlatMacroCompilerTest {
                     Macro.Parameter(it.dropLast(1), Macro.ParameterEncoding.Tagged, cardinality)
                 }
             }
-            return MacroV2(signature, templateBody(body))
+            return MacroV2(signature, templateBody(signature, body))
         }
 
 
@@ -51,10 +53,10 @@ class FlatMacroCompilerTest {
             templateBody {
                 struct {
                     fieldName("Value")
-                    variable(0)
+                    variable("value", 0)
                     fieldName("Repeat")
                     macro(SystemMacro.Default) {
-                        variable(1)
+                        variable("repeat", 1)
                         int(1)
                     }
                 }
@@ -174,8 +176,7 @@ class FlatMacroCompilerTest {
             struct {
                 fieldName("Name"); variable(0)
                 fieldName("Sum"); variable(1)
-                // TODO: Elide this:
-                fieldName("Unit"); macro(SystemMacro.Default) { symbol("ms"); symbol("") }
+                fieldName("Unit"); symbol("ms")
                 fieldName("Count"); macro(SystemMacro.Default) { variable(2); int(1) }
             }
         }
@@ -192,9 +193,8 @@ class FlatMacroCompilerTest {
             struct {
                 fieldName("Name"); variable(0)
                 fieldName("Sum"); float(0.0)
-                // TODO: Elide this invocation of default
-                fieldName("Unit"); macro(SystemMacro.Default) { expressionGroup {}; symbol("") }
-                fieldName("Count"); macro(SystemMacro.Default) {  expressionGroup {}; int(1) }
+                fieldName("Unit"); symbol("")
+                fieldName("Count"); int(1)
             }
         }
         val SUMMARY_0_DEF = "(macro summary0 (name) (.summary (%name) 0e0))"
@@ -210,9 +210,8 @@ class FlatMacroCompilerTest {
             struct {
                 fieldName("Name"); variable(0)
                 fieldName("Sum"); float(1.0)
-                // TODO: Elide this invocation of default
-                fieldName("Unit"); macro(SystemMacro.Default) { expressionGroup {}; symbol("") }
-                fieldName("Count"); macro(SystemMacro.Default) {  expressionGroup {}; int(1) }
+                fieldName("Unit"); symbol("")
+                fieldName("Count"); int(1)
             }
         }
         val SUMMARY_1_DEF = "(macro summary1 (name) (.summary (%name) 1e0))"
@@ -252,8 +251,8 @@ class FlatMacroCompilerTest {
                 listOf(exactlyOneTagged("x"), exactlyOneTagged("y")),
                 templateBody {
                     list {
-                        variable(0)
-                        variable(1)
+                        variable("x", 0)
+                        variable("y", 1)
                     }
                 }
             )
@@ -278,14 +277,10 @@ class FlatMacroCompilerTest {
     private infix fun String.shouldCompileTo(macro: MacroV2) = MacroSourceAndTemplate(this, macro)
 
     private fun testCases() = listOf(
-        "(macro identity (x) (%x))" shouldCompileTo MacroV2(
-            listOf(Macro.Parameter("x", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)),
-            templateBody { variable(0) },
-        ),
-        "(macro identity (any::x) (%x))" shouldCompileTo MacroV2(
-            listOf(Macro.Parameter("x", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)),
-            templateBody { variable(0) },
-        ),
+        "(macro identity (x) (%x))" shouldCompileTo MacroV2(exactlyOneTagged("x")) { variable(0) },
+
+        "(macro identity (any::x) (%x))" shouldCompileTo MacroV2(exactlyOneTagged("x")) { variable(0) },
+
         "(macro pi () 3.141592653589793)" shouldCompileTo MacroV2(
             signature = emptyList(),
             body = templateBody {
@@ -300,7 +295,7 @@ class FlatMacroCompilerTest {
                     Macro.ParameterCardinality.ZeroOrOne
                 )
             ),
-            body = templateBody { variable(0) },
+            body = templateBody { variable("x", 0) },
         ),
         "(macro cardinality_test (x!) (%x))" shouldCompileTo MacroV2(
             signature = listOf(
@@ -310,7 +305,7 @@ class FlatMacroCompilerTest {
                     Macro.ParameterCardinality.ExactlyOne
                 )
             ),
-            templateBody { variable(0) },
+            templateBody { variable("x", 0) },
         ),
         "(macro cardinality_test (x+) (%x))" shouldCompileTo MacroV2(
             signature = listOf(
@@ -320,7 +315,7 @@ class FlatMacroCompilerTest {
                     Macro.ParameterCardinality.OneOrMore
                 )
             ),
-            templateBody { variable(0) },
+            templateBody { variable("x", 0) },
         ),
         "(macro cardinality_test (x*) (%x))" shouldCompileTo MacroV2(
             signature = listOf(
@@ -330,7 +325,13 @@ class FlatMacroCompilerTest {
                     Macro.ParameterCardinality.ZeroOrMore
                 )
             ),
-            templateBody { variable(0) },
+            templateBody { variable("x", 0) },
+        ),
+        """(macro simple_literal_test () (.literal 1))""" shouldCompileTo MacroV2(
+            signature = listOf(),
+            templateBody {
+                int(1)
+            },
         ),
         """(macro literal_test (x) (.values (.literal (.values (%x)))))""" shouldCompileTo MacroV2(
             signature = listOf(exactlyOneTagged("x")),
@@ -415,6 +416,21 @@ class FlatMacroCompilerTest {
             }
         ),
 
+        """(macro constant_nested_seq () [42, ("add" 1 2), false])""" shouldCompileTo MacroV2(
+            signature = emptyList(),
+            templateBody {
+                list {
+                    int(42)
+                    sexp {
+                        string("add")
+                        int(1)
+                        int(2)
+                    }
+                    bool(false)
+                }
+            }
+        ),
+
         "(macro null () \"abc\")" shouldCompileTo MacroV2(
             signature = emptyList(),
             templateBody {
@@ -438,7 +454,7 @@ class FlatMacroCompilerTest {
             templateBody {
                 list {
                     int(1)
-                    variable(0)
+                    variable("x", 0)
                     int(3)
                 }
             }
@@ -450,48 +466,46 @@ class FlatMacroCompilerTest {
             templateBody {
                 list {
                     list {
-                        variable(0)
+                        variable("z", 0)
                         int(1)
                     }
                 }
             }
         ),
 
-        "(macro un_nestable_macro_invocation (z) [(.default (%z) 1)] )" shouldCompileTo MacroV2(
-            signature = listOf(exactlyOneTagged("z")),
+        "(macro un_nestable_macro_invocation (z?) [(.default (%z) 1)] )" shouldCompileTo MacroV2(
+            signature = listOf(zeroOrOneTagged("z")),
             templateBody {
                 list {
                     macro(SystemMacro.Default) {
-                        variable(0)
+                        variable("z", 0)
                         int(1)
                     }
+                }
+            }
+        ),
+
+        "(macro nestable_macro_invocation_because_ (z+) [(.default (%z) 1)] )" shouldCompileTo MacroV2(
+            signature = listOf(oneToManyTagged("z")),
+            templateBody {
+                list {
+                    variable("z", 0)
                 }
             }
         ),
 
         "(macro default_that_can_be_precomputed (z) [ (.default (..) (%z) ) ] )" shouldCompileTo MacroV2(
-            signature = listOf(exactlyOneTagged("z")),
-            templateBody {
+            signature = listOf(exactlyOneTagged("z"))) {
                 list {
-                    variable(0)
+                    variable("z", 0)
                 }
-            }
-        ),
+            },
 
         "(macro another_default_that_can_be_precomputed (z) [ (.default (.none) (%z) ) ] )" shouldCompileTo MacroV2(
             signature = listOf(exactlyOneTagged("z")),
             templateBody {
                 list {
-                    variable(0)
-                }
-            }
-        ),
-
-        "(macro default_that_can_be_precomputed (z) [ (.default (..) (%z) ) ] )" shouldCompileTo MacroV2(
-            signature = listOf(exactlyOneTagged("z")),
-            templateBody {
-                list {
-                    variable(0)
+                    variable("z", 0)
                 }
             }
         ),
@@ -519,13 +533,13 @@ class FlatMacroCompilerTest {
                         int(200)
                         annotated(arrayOf("a", "b"), ::int, 300)
                     }
-                    variable(0)
+                    variable("x", 0)
                     struct {
                         fieldName("y")
                         list {
                             bool(true)
                             bool(false)
-                            variable(2)
+                            variable("z", 2)
                         }
                     }
                 }
@@ -545,10 +559,14 @@ class FlatMacroCompilerTest {
         val macroDef = compiler.compileMacro()
         val expectedDef = MacroV2(signature, body)
 
+        val bodyString = macroDef.body?.mapIndexed { i, value -> "$i. $value"}?.joinToString("\n", prefix = "[\n", postfix = "\n]")
         assertEquals(
-            expectedDef.body?.mapIndexed { i, value -> " $i. $value"}?.joinToString("\n", prefix = "[\n", postfix = "\n]"),
-            macroDef.body?.mapIndexed { i, value -> " $i. $value"}?.joinToString("\n", prefix = "[\n", postfix = "\n]"),
+            expectedDef.body?.mapIndexed { i, value -> "$i. $value"}?.joinToString("\n", prefix = "[\n", postfix = "\n]"),
+            bodyString,
         )
+        println(bodyString)
+
+        assertEquals(expectedDef.body?.toList(), macroDef.body?.toList())
 
         assertEquals(expectedDef, macroDef)
     }
@@ -687,24 +705,23 @@ class FlatMacroCompilerTest {
             it.addAll(arg1)
             it.addAll(arg2)
             it.addAll(arg3)
-            it.toTypedArray()
+            it
         }
-        val argumentIndices = intArrayOf(0, 3, 4, 6)
         val destination = mutableListOf<TemplateBodyExpressionModel>()
 
-        compiler.copyArgValueInline(0, destination, allArgs, argumentIndices)
+        compiler.copyArgValueInline(0, destination, allArgs)
         assertEquals(arg0, destination)
         destination.clear()
 
-        compiler.copyArgValueInline(1, destination, allArgs, argumentIndices)
+        compiler.copyArgValueInline(1, destination, allArgs)
         assertEquals(arg1, destination)
         destination.clear()
 
-        compiler.copyArgValueInline(2, destination, allArgs, argumentIndices)
+        compiler.copyArgValueInline(2, destination, allArgs)
         assertEquals(arg2, destination)
         destination.clear()
 
-        compiler.copyArgValueInline(3, destination, allArgs, argumentIndices)
+        compiler.copyArgValueInline(3, destination, allArgs)
         assertEquals(arg3, destination)
 
     }

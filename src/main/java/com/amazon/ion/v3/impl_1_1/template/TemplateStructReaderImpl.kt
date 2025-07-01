@@ -1,20 +1,18 @@
 package com.amazon.ion.v3.impl_1_1.template
 
-import com.amazon.ion.impl.macro.Expression
 import com.amazon.ion.v3.*
-import java.lang.IllegalStateException
+import com.amazon.ion.v3.impl_1_1.*
 
 class TemplateStructReaderImpl(
     pool: TemplateResourcePool,
-    info: TemplateResourcePool.TemplateInvocationInfo,
-    startInclusive: Int,
-    endExclusive: Int,
+    source: Array<TemplateBodyExpressionModel>,
+    arguments: ArgumentReader,
     isArgumentOwner: Boolean,
-): ValueReader, StructReader, TemplateReaderBase(pool, info, startInclusive, endExclusive, isArgumentOwner),
+): ValueReader, StructReader, TemplateReaderBase(pool, source, arguments, isArgumentOwner),
     SequenceReader {
 
     override fun toString(): String {
-        return "TemplateStructReaderImpl(startInclusive=$startInclusive, endExclusive=$endExclusive)"
+        return "TemplateStructReaderImpl(source=$source)"
     }
 
     override fun fieldName(): String? = consumeCurrentExpression(

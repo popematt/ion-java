@@ -5,6 +5,7 @@ import com.amazon.ion.TestUtils.*
 import com.amazon.ion.impl.bin.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.ExpressionBuilderDsl
+import com.amazon.ion.impl.macro.ParameterFactory.exactlyOneTagged
 import com.amazon.ion.system.*
 import com.amazon.ion.v3.TypedReadersTest.TestExpectationVisitor.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
@@ -536,7 +537,7 @@ class TypedReadersTest {
                     Macro.Parameter(it.dropLast(1), Macro.ParameterEncoding.Tagged, cardinality)
                 }
             }
-            return MacroV2(signature, templateBody(body))
+            return MacroV2(signature, body)
         }
 
         @Test
@@ -623,25 +624,12 @@ class TypedReadersTest {
             val source = toByteBuffer(data)
             val pool = ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN))
 
-            val reader = TemplateArgumentReaderImpl(
-                TemplateResourcePool.getInstance(),
-                TemplateResourcePool.TemplateInvocationInfo(
-                    templateBody {
-                        int(0)
-                        bool(false)
-                    },
-                    signature,
-                    EExpArgumentReaderImpl(
-                        source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
-                        pool,
-                        symbolTable = arrayOf(),
-                        macroTable = arrayOf(),
-                        pool.getList(0, 0, arrayOf(), arrayOf()),
-                    )
-                ),
-                startInclusive = 0,
-                endExclusive = 2,
-                isArgumentOwner = false,
+            val reader = EExpArgumentReaderImpl(
+                source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
+                pool,
+                symbolTable = arrayOf(),
+                macroTable = arrayOf(),
+                pool.getList(0, 0, arrayOf(), arrayOf()),
             )
             reader.initArgs(signature)
 
@@ -1735,19 +1723,17 @@ class TypedReadersTest {
             @Test
             fun templateMacroWithMultipleVariables() {
                 val macro = MacroV2(
-                    signature = listOf(
-                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
-                        Macro.Parameter("bar", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
-                    ),
-                    body = templateBody {
-                        struct {
-                            fieldName("foo")
-                            variable(0)
-                            fieldName("bar")
-                            variable(1)
-                        }
+                    exactlyOneTagged("foo"),
+                    exactlyOneTagged("bar")
+                ) {
+                    struct {
+                        fieldName("foo")
+                        variable(0)
+                        fieldName("bar")
+                        variable(1)
                     }
-                )
+                }
+
                 val data = toByteBuffer("""
                     E0 01 01 EA
                     60
@@ -2608,20 +2594,15 @@ class TypedReadersTest {
 
             @Test
             fun templateMacroWithMultipleVariables() {
-                val macro = MacroV2(
-                    signature = listOf(
-                        Macro.Parameter("foo", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
-                        Macro.Parameter("bar", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne),
-                    ),
-                    body = templateBody {
-                        struct {
-                            fieldName("foo")
-                            variable(0)
-                            fieldName("bar")
-                            variable(1)
-                        }
+                val macro = MacroV2(exactlyOneTagged("foo"), exactlyOneTagged("bar")) {
+                    struct {
+                        fieldName("foo")
+                        variable(0)
+                        fieldName("bar")
+                        variable(1)
                     }
-                )
+                }
+
                 val data = toByteBuffer("""
                     E0 01 01 EA
                     60

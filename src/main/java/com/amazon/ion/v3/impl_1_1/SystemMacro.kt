@@ -95,7 +95,7 @@ object SystemMacro {
     @JvmStatic
     val Values = MacroV2(
         signature = arrayOf(zeroToManyTagged("values")),
-        body = templateBody { variable(0) },
+        body = templateBody { variable("values", 0) },
         systemName = VALUES,
         systemAddress = VALUES_ADDRESS
     )
@@ -210,7 +210,7 @@ object SystemMacro {
         body = templateBody {
             list {
                 macro(Flatten) {
-                    variable(0)
+                    variable("sequences", 0)
                 }
             }
         },
@@ -224,7 +224,7 @@ object SystemMacro {
         templateBody {
             sexp {
                 macro(Flatten) {
-                    variable(0)
+                    variable("sequences", 0)
                 }
             }
         },
@@ -278,7 +278,7 @@ object SystemMacro {
                 }
                 sexp {
                     symbol(SYMBOLS)
-                    list { variable(0) }
+                    list { variable("symbols", 0) }
                 }
             }
         },
@@ -309,7 +309,7 @@ object SystemMacro {
                 sexp {
                     symbol(SYMBOLS)
                     symbol(DEFAULT_MODULE)
-                    list { variable(0) }
+                    list { variable("symbols", 0) }
                 }
             }
         },
@@ -335,7 +335,7 @@ object SystemMacro {
                 symbol(DEFAULT_MODULE)
                 sexp {
                     symbol(MACROS)
-                    variable(0)
+                    variable("macros", 0)
                 }
                 sexp {
                     symbol(SYMBOLS)
@@ -366,7 +366,7 @@ object SystemMacro {
                 sexp {
                     symbol(MACROS)
                     symbol(DEFAULT_MODULE)
-                    variable(0)
+                    variable("macros", 0)
                 }
                 sexp {
                     symbol(SYMBOLS)
@@ -399,9 +399,9 @@ object SystemMacro {
                 sexp {
                     symbol(IMPORT)
                     symbol(theModule)
-                    variable(0)
+                    variable("catalog_key", 0)
                     // The version is optional in the import clause so we don't need to specify the default.
-                    variable(1)
+                    variable("version", 1)
                 }
                 sexp {
                     symbol(MACROS)

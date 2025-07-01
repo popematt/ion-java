@@ -13,11 +13,9 @@ abstract class TemplateReaderBase(
     val pool: TemplateResourcePool,
     // TODO: consider flattening this
     @JvmField
-    var info: TemplateResourcePool.TemplateInvocationInfo,
+    var source: Array<TemplateBodyExpressionModel>,
     @JvmField
-    var startInclusive: Int,
-    @JvmField
-    var endExclusive: Int,
+    var arguments: ArgumentReader,
     @JvmField
     var isArgumentOwner: Boolean,
     // TODO: Can we manage the expansion limit through the template resource pool?
@@ -28,13 +26,11 @@ abstract class TemplateReaderBase(
 ): ValueReader, TemplateReader {
 
     @JvmField
-    var i = startInclusive
+    var i = 0
     @JvmField
     var currentExpression: TemplateBodyExpressionModel? = null
     @JvmField
-    var childStartIndex = -1
-    @JvmField
-    var source = info.source
+    var endExclusive: Int = source.size
 
     /**
      * Helps to simulate encountering the field name, annotations, and value as separate tokens.
@@ -50,19 +46,16 @@ abstract class TemplateReaderBase(
     }
 
     fun init(
-        templateInvocationInfo: TemplateResourcePool.TemplateInvocationInfo,
-        startInclusive: Int,
-        endExclusive: Int,
+        source: Array<TemplateBodyExpressionModel>,
+        arguments: ArgumentReader,
         isArgumentOwner: Boolean,
      ) {
-        this.info = templateInvocationInfo
-        this.startInclusive = startInclusive
-        this.endExclusive = endExclusive
         this.isArgumentOwner = isArgumentOwner
-        this.source = templateInvocationInfo.source
-        i = startInclusive
+        this.source = source
+        this.endExclusive = source.size
+        this.arguments = arguments
+        i = 0
         currentExpression = null
-        childStartIndex = -1
         state = State.READY
         reinitState()
     }
@@ -73,7 +66,7 @@ abstract class TemplateReaderBase(
         val expr = currentExpression
         currentExpression = null
         return when (expr!!.expressionKind) {
-            TokenTypeConst.VARIABLE_REF -> argMethod(info.arguments)
+            TokenTypeConst.VARIABLE_REF -> argMethod(arguments)
             else -> bodyMethod(expr)
         }
     }
@@ -81,7 +74,7 @@ abstract class TemplateReaderBase(
     protected inline fun <U> inspectCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (TemplateBodyExpressionModel) -> U, ): U {
         val expr = currentExpression
         return when (expr!!.expressionKind) {
-            TokenTypeConst.VARIABLE_REF -> argMethod(info.arguments)
+            TokenTypeConst.VARIABLE_REF -> argMethod(arguments)
             else -> bodyMethod(expr)
         }
     }
@@ -91,13 +84,12 @@ abstract class TemplateReaderBase(
             return TokenTypeConst.END
         }
         val expr = this.source[i++]
-        this.childStartIndex = i
         this.currentExpression = expr
-        this.i += expr.length
+        // this.i += expr.length
 
         if (expr.expressionKind == TokenTypeConst.VARIABLE_REF) {
-            val args = this.info.arguments
-            val v = expr.value as Int
+            val args = this.arguments
+            val v = expr.primitiveValue.toInt()
             return args.seekToArgument(v)
         }
 
@@ -106,9 +98,9 @@ abstract class TemplateReaderBase(
 
     final override fun close() {
         if (isArgumentOwner) {
-            info.arguments.close()
+            arguments.close()
         }
-         returnToPool()
+        returnToPool()
     }
 
     protected abstract fun returnToPool()
@@ -118,7 +110,7 @@ abstract class TemplateReaderBase(
         val expr = currentExpression ?: return TokenTypeConst.UNSET
 
         return if (expr.expressionKind == TokenTypeConst.VARIABLE_REF) {
-            info.arguments.currentToken()
+            arguments.currentToken()
         } else {
             expr.expressionKind
         }
@@ -159,16 +151,15 @@ abstract class TemplateReaderBase(
         val expr = currentExpression!!
         currentExpression = null
         return when (expr.expressionKind) {
-            TokenTypeConst.VARIABLE_REF -> info.arguments.macroArguments(signature)
+            TokenTypeConst.VARIABLE_REF -> arguments.macroArguments(signature)
             else -> {
-                pool.getArguments(info, signature, childStartIndex, childStartIndex + expr.length)
+                pool.getArguments(arguments, signature, expr.additionalValue as Array<TemplateBodyExpressionModel>)
             }
         }
     }
 
     override fun expressionGroup(): SequenceReader = consumeCurrentExpression(ArgumentReader::expressionGroup) {
-        val start = childStartIndex
-        pool.getSequence(info, start, start + it.length)
+        pool.getSequence(arguments, it.value as Array<TemplateBodyExpressionModel>)
     }
 
     override fun nullValue(): IonType = consumeCurrentExpression(ArgumentReader::nullValue) { it.value as IonType }
@@ -191,30 +182,27 @@ abstract class TemplateReaderBase(
         return sid
     }
 
-    override fun lookupSid(sid: Int): String? = info.arguments.lookupSid(sid)
+    override fun lookupSid(sid: Int): String? = arguments.lookupSid(sid)
 
     override fun timestampValue(): Timestamp = consumeCurrentExpression(ArgumentReader::timestampValue) { it.value as Timestamp }
     override fun clobValue(): ByteBuffer = consumeCurrentExpression(ArgumentReader::clobValue) { it.value as ByteBuffer }
     override fun blobValue(): ByteBuffer = consumeCurrentExpression(ArgumentReader::blobValue) { it.value as ByteBuffer }
 
     override fun listValue(): ListReader = consumeCurrentExpression(ArgumentReader::listValue) {
-        val start = childStartIndex
-        pool.getSequence(info, start, start + it.length)
+        pool.getSequence(arguments, it.value as Array<TemplateBodyExpressionModel>)
     }
 
     override fun sexpValue(): SexpReader = consumeCurrentExpression(ArgumentReader::sexpValue) {
-        val start = childStartIndex
-        pool.getSequence(info, start, start + it.length)
+        pool.getSequence(arguments, it.value as Array<TemplateBodyExpressionModel>)
     }
 
     override fun structValue(): StructReader {
         val expr = currentExpression
         currentExpression = null
         return when (expr!!.expressionKind) {
-            TokenTypeConst.VARIABLE_REF -> info.arguments.structValue()
+            TokenTypeConst.VARIABLE_REF -> arguments.structValue()
             else -> {
-                val start = childStartIndex
-                pool.getStruct(info, start, start + expr.length)
+                pool.getStruct(arguments, expr.value as Array<TemplateBodyExpressionModel>)
             }
         }
     }

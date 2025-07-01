@@ -33,14 +33,6 @@ class TemplateResourcePool private constructor(): Closeable {
             }
         }
     }
-    class TemplateInvocationInfo(
-        @JvmField
-        val source: Array<TemplateBodyExpressionModel>,
-        @JvmField
-        val signature: Array<Macro.Parameter>,
-        @JvmField
-        val arguments: ArgumentReader,
-    )
 
     @JvmField
     val structs = ArrayList<TemplateStructReaderImpl>()
@@ -90,18 +82,16 @@ class TemplateResourcePool private constructor(): Closeable {
         val reader = sequences.removeLastOrNull()
         if (reader != null) {
             reader.init(
-                TemplateInvocationInfo(macro.body!!, macro.signature, arguments),
-                0,
-                macro.body.size,
+                macro.body!!,
+                arguments,
                 isArgumentOwner = true
             )
             return reader
         } else {
             return TemplateSequenceReaderImpl(
                 this,
-                TemplateInvocationInfo(macro.body!!, macro.signature, arguments),
-                0,
-                macro.body.size,
+                macro.body!!,
+                arguments,
                 isArgumentOwner = true
             )
         }
@@ -151,23 +141,23 @@ class TemplateResourcePool private constructor(): Closeable {
     }
 
 
-    fun getSequence(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): TemplateSequenceReaderImpl {
+    fun getSequence(args: ArgumentReader, source: Array<TemplateBodyExpressionModel>): TemplateSequenceReaderImpl {
         val reader = sequences.removeLastOrNull()
         if (reader != null) {
-            reader.init(info, startInclusive, endExclusive, isArgumentOwner = false)
+            reader.init(source, args, isArgumentOwner = false)
             return reader
         } else {
-            return TemplateSequenceReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)
+            return TemplateSequenceReaderImpl(this, source, args, isArgumentOwner = false)
         }
     }
 
-    fun getStruct(info: TemplateInvocationInfo, startInclusive: Int, endExclusive: Int): TemplateStructReaderImpl {
+    fun getStruct(arguments: ArgumentReader, source: Array<TemplateBodyExpressionModel>): TemplateStructReaderImpl {
         val reader = structs.removeLastOrNull()
         if (reader != null) {
-            reader.init(info, startInclusive, endExclusive, isArgumentOwner = false)
+            reader.init(source, arguments, isArgumentOwner = false)
             return reader
         } else {
-            return TemplateStructReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)
+            return TemplateStructReaderImpl(this, source, arguments, isArgumentOwner = false)
         }
     }
 
@@ -192,10 +182,10 @@ class TemplateResourcePool private constructor(): Closeable {
         }
     }
 
-    fun getArguments(info: TemplateInvocationInfo, signature: Array<Macro.Parameter>, startInclusive: Int, endExclusive: Int): ArgumentReader {
+    fun getArguments(args: ArgumentReader, signature: Array<Macro.Parameter>, source: Array<TemplateBodyExpressionModel>): ArgumentReader {
         val argReader = arguments.removeLastOrNull()
-            ?.apply { init(info, startInclusive, endExclusive, isArgumentOwner = false) }
-            ?: TemplateArgumentReaderImpl(this, info, startInclusive, endExclusive, isArgumentOwner = false)
+            ?.apply { init(source, args, isArgumentOwner = false) }
+            ?: TemplateArgumentReaderImpl(this, source, args, isArgumentOwner = false)
         argReader.initArgs(signature)
         return argReader
     }

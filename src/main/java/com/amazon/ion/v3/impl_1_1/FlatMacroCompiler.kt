@@ -15,6 +15,10 @@ import java.nio.ByteBuffer
 /**
  * [FlatMacroCompiler] wraps an Ion reader. When directed to do so, it will take over advancing and getting values from the
  * reader in order to read one [MacroV2].
+ *
+ * For correctness, maybe start with a multi-pass approach. We should, however, be able to get away with a single pass approach.
+ * Read normally, and then go back and try to substitute each macro invocation. We may need to do multiple passes of this
+ * because some variables may become known as we start substituting things, changing what macros can be inlined.
  */
 internal class FlatMacroCompiler(
     private val getMacro: (MacroRef) -> MacroV2?,
@@ -57,7 +61,6 @@ internal class FlatMacroCompiler(
             confirm(reader.next() == null) { "Unexpected ${reader.type} after template body expression." }
         }
         return MacroV2(signature, expressions.toTypedArray())
-//            .also { println(it.writeMacroDefinitionToIonString(macroName)) }
     }
 
     /**
@@ -168,7 +171,7 @@ internal class FlatMacroCompiler(
             IonType.CLOB -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.CLOB, 0, value = ByteBuffer.wrap(newBytes())))
             IonType.SYMBOL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SYMBOL, 0, value = symbolValue().text))
             IonType.LIST -> compileList(destination, readLiterally)
-            IonType.SEXP -> compileSExpression(parentType, destination, annotations, readLiterally)
+            IonType.SEXP -> compileUnclassifiedSexp(parentType, destination, annotations, readLiterally)
             IonType.STRUCT -> compileStruct(destination, readLiterally)
             // IonType.NULL, IonType.DATAGRAM, null
             else -> throw IllegalStateException("Found $type; this should be unreachable.")
@@ -182,14 +185,13 @@ internal class FlatMacroCompiler(
      * Caller will need to call [IonReader.next] to get the next value.
      */
     private fun IonReader.compileStruct(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean) {
-        val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.STRUCT, -1, value = null)
+        val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.STRUCT, length = 0)
         destination.add(startExpression)
-        val start = destination.size
+        val content = mutableListOf<TemplateBodyExpressionModel>()
         forEachInContainer {
-            compileTemplateBodyExpression(destination, readLiterally, ParentType.Struct)
+            compileTemplateBodyExpression(content, readLiterally, ParentType.Struct)
         }
-        val end = destination.size
-        startExpression.length = end - start
+        startExpression.value = content.toTypedArray()
     }
 
     /**
@@ -199,14 +201,13 @@ internal class FlatMacroCompiler(
      * Caller will need to call [IonReader.next] to get the next value.
      */
     private fun IonReader.compileList(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean) {
-        val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.LIST, -1, value = null)
+        val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.LIST, 0, value = null)
         destination.add(startExpression)
-        val start = destination.size
+        val content = mutableListOf<TemplateBodyExpressionModel>()
         forEachInContainer {
-            compileTemplateBodyExpression(destination, readLiterally, ParentType.List)
+            compileTemplateBodyExpression(content, readLiterally, ParentType.List)
         }
-        val end = destination.size
-        startExpression.length = end - start
+        startExpression.value = content.toTypedArray()
     }
 
     enum class ParentType {
@@ -224,159 +225,205 @@ internal class FlatMacroCompiler(
      * If this function returns normally, it will be stepped out of the sexp.
      * Caller will need to call [IonReader.next] to get the next value.
      */
-    private fun IonReader.compileSExpression(parentType: ParentType, destination: MutableList<TemplateBodyExpressionModel>, annotations: Array<String?>, readLiterally: Boolean) {
-        val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SEXP, -1, value = null)
-        destination.add(startExpression)
-        val start = destination.size
+    private fun IonReader.compileUnclassifiedSexp(parentType: ParentType, destination: MutableList<TemplateBodyExpressionModel>, annotations: Array<String?>, readLiterally: Boolean) {
+        val unclassifiedExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SEXP, 0, value = null)
+        destination.add(unclassifiedExpression)
         stepIn()
-        if (next() != null) {
-            if (type == IonType.SYMBOL && !readLiterally) {
-                when (stringValue()) {
-                    TDL_VARIABLE_EXPANSION_SIGIL -> {
-                        confirm(annotations.isEmpty()) { "Variable expansion may not be annotated" }
-                        confirmNoAnnotations("Variable expansion operator")
-                        compileVariableExpansion(startExpression)
-                        return
+
+        // An empty sexp is always just that.
+        if (next() == null) {
+            stepOut()
+            unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
+            unclassifiedExpression.value = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+            return
+        }
+
+        val sexpContent = mutableListOf<TemplateBodyExpressionModel>()
+
+        // Read literally as a sexp.
+        if (readLiterally) {
+            forEachRemaining {
+                compileTemplateBodyExpression(sexpContent, true, ParentType.SExp)
+            }
+            stepOut()
+            unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
+            unclassifiedExpression.value = sexpContent.toTypedArray()
+            return
+        }
+
+
+        // If it doesn't start with a symbol, then compile it normally
+        if (type != IonType.SYMBOL) {
+            // Compile the value we're already positioned on before compiling the rest of the s-expression
+            compileTemplateBodyExpression(sexpContent, false, ParentType.SExp)
+            compileExpressionTail(sexpContent, false, ParentType.SExp)
+            unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
+            unclassifiedExpression.value = sexpContent.toTypedArray()
+            return
+        }
+
+        if (type == IonType.SYMBOL) {
+            when (stringValue()) {
+                TDL_VARIABLE_EXPANSION_SIGIL -> {
+                    confirm(annotations.isEmpty()) { "Variable expansion may not be annotated" }
+                    confirmNoAnnotations("Variable expansion operator")
+                    compileVariableExpansion(unclassifiedExpression)
+                    stepOut()
+                    return
+                }
+
+                TDL_EXPRESSION_GROUP_SIGIL -> {
+                    confirm(annotations.isEmpty()) { "Expression group may not be annotated" }
+                    confirmNoAnnotations("Expression group operator")
+                    val content = mutableListOf<TemplateBodyExpressionModel>()
+                    compileExpressionTail(content, false, ParentType.ExprGroup)
+                    unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
+                    unclassifiedExpression.value = content.toTypedArray()
+                    return
+                }
+
+                TDL_MACRO_INVOCATION_SIGIL -> {
+                    confirm(annotations.isEmpty()) { "Macro invocation may not be annotated" }
+                    confirmNoAnnotations("Macro invocation operator")
+                    compileMacroOrSpecialForm(unclassifiedExpression, destination, parentType)
+                    return
+                }
+            }
+        }
+    }
+
+    private fun IonReader.compileMacroOrSpecialForm(unclassifiedExpression: TemplateBodyExpressionModel, destination: MutableList<TemplateBodyExpressionModel>, parentType: ParentType) {
+        next()
+        val macroRef = readMacroReference()
+
+        if (macroRef.hasName() && macroRef.name == SystemSymbols_1_1.LITERAL.text) {
+            // TODO: Compile a "LITERAL" expression that holds a `ValueReaderBase` that can lazily parse whatever is in here.
+            //    Drop the placeholder, possibly copying the field name.
+            destination.removeLastOrNull()
+            forEachRemaining {
+                compileTemplateBodyExpression(destination, readLiterally = true, parentType)
+            }
+            stepOut()
+            return
+        }
+
+        val macro = getMacro(macroRef)
+            ?: SystemMacro.getMacroOrSpecialForm(macroRef)
+            ?: throw IonException("Unrecognized macro: $macroRef")
+
+        val args = mutableListOf<TemplateBodyExpressionModel>()
+        compileExpressionTail(args, false, ParentType.MacroInvocation)
+
+        // TODO: coalesce these branch conditions
+        when (macro.systemAddress) {
+            // Also try: annotate, make_*, etc.
+            SystemMacro.META_ADDRESS -> {
+                // Discard the arguments
+                // TODO: Make this cheaper by skipping rather than compiling.
+                // compileExpressionTail(mutableListOf(), true, ParentType.MacroInvocation)
+                if (parentType == ParentType.MacroInvocation) {
+                    // Replace with empty expression group.
+                    unclassifiedExpression.value = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+                    unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
+                } else {
+                    // Just remove it entirely
+                    destination.removeLast()
+                }
+            }
+
+            SystemMacro.NONE_ADDRESS -> {
+                if (parentType == ParentType.MacroInvocation) {
+                    // Replace with empty expression group.
+                    unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
+                    unclassifiedExpression.value = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+                } else {
+                    // Just remove it entirely
+                    destination.removeLast()
+                }
+            }
+
+            SystemMacro.VALUES_ADDRESS -> {
+                if (parentType == ParentType.MacroInvocation) {
+                    // Convert to an expression group
+                    unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
+                    unclassifiedExpression.value = args.toTypedArray()
+                } else {
+                    // TODO: Possibly copy over the field name
+                    destination.removeLast()
+                    destination.addAll(args)
+                }
+
+            }
+
+            SystemMacro.DEFAULT_ADDRESS -> {
+                // If the variable requires 1 or more, we can elide it... but that might be a second pass thing after embedding in another macro.
+
+                val arg0 = args[0]
+                when (arg0.expressionKind) {
+                    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 -> {
+                        // We have a resolved value, so copy the first argument into the destination, and drop the second arg.
+                        destination.removeLast()
+                        destination.add(arg0)
                     }
-
-                    TDL_EXPRESSION_GROUP_SIGIL -> {
-                        confirm(annotations.isEmpty()) { "Expression group may not be annotated" }
-                        confirmNoAnnotations("Expression group operator")
-                        compileExpressionTail(destination, false, ParentType.ExprGroup)
-                        startExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
-                        startExpression.length = destination.size - start
-                        return
-                    }
-
-                    TDL_MACRO_INVOCATION_SIGIL -> {
-                        confirm(annotations.isEmpty()) { "Macro invocation may not be annotated" }
-                        confirmNoAnnotations("Macro invocation operator")
-                        next()
-                        val macroRef = readMacroReference()
-
-                        // TODO: Come up with a consistent strategy for handling special forms.
-                        if (macroRef.hasName()) when (macroRef.name) {
-                            // TODO: Compile a "LITERAL" expression that holds a `ValueReaderBase` that can lazily parse whatever is in here.
-                            SystemSymbols_1_1.LITERAL.text -> {
-                                // Drop the placeholder.
-                                destination.removeLastOrNull()
-                                forEachRemaining { compileTemplateBodyExpression(destination, readLiterally = true, parentType) }
-                                stepOut()
-                                return
-                            }
-                        }
-
-                        val macro = getMacro(macroRef)
-                            ?: SystemMacro.getMacroOrSpecialForm(macroRef)
-                            ?: throw IonException("Unrecognized macro: $macroRef")
-
-
-                        // TODO: coalesce these branch conditions
-                        if (macro.body == null) {
-                            when (macro.systemAddress) {
-                                SystemMacro.META_ADDRESS -> {
-                                    // Discard the arguments
-                                    // TODO: Make this cheaper by skipping rather than compiling.
-                                    compileExpressionTail(mutableListOf(), true, ParentType.MacroInvocation)
-                                    if (parentType == ParentType.MacroInvocation) {
-                                        // Replace with empty expression group.
-                                        startExpression.length = 0
-                                        startExpression.expressionKind =
-                                            TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
-                                    } else {
-                                        // Just remove it entirely
-                                        destination.removeLast()
-                                    }
-                                }
-                                SystemMacro.NONE_ADDRESS -> {
-                                    if (parentType == ParentType.MacroInvocation) {
-                                        // Replace with empty expression group.
-                                        startExpression.length = 0
-                                        startExpression.expressionKind =
-                                            TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
-                                    } else {
-                                        // Just remove it entirely
-                                        destination.removeLast()
-                                    }
-                                }
-                                SystemMacro.VALUES_ADDRESS -> {
-                                    if (parentType == ParentType.MacroInvocation) {
-                                        compileExpressionTail(destination, false, parentType)
-                                        startExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
-                                        startExpression.length = destination.size - start
-                                    } else {
-                                        destination.removeLast()
-                                        compileExpressionTail(destination, false, parentType)
-                                    }
-
-                                }
-                                SystemMacro.DEFAULT_ADDRESS -> {
-                                    val args: MutableList<TemplateBodyExpressionModel> = mutableListOf()
-                                    // TODO: Capture rest args in an expression group
-                                    compileExpressionTail(args, readLiterally = false, ParentType.MacroInvocation)
-                                    val arg0 = args[0]
-                                    when (arg0.expressionKind) {
-                                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 -> {
-                                            destination.removeLast()
-                                            // Copy in this arg, discard the other one
-                                            for (i in 0..arg0.length) {
-                                                destination.add(args[i])
-                                            }
-                                        }
-                                        TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP -> {
-                                            if (arg0.length == 0) {
-                                                destination.removeLast()
-                                                // Discard this arg, copy in the other one
-                                                for (i in 1 until args.size) {
-                                                    destination.add(args[i])
-                                                }
-                                            } else {
-                                                // Copy in a full invocation
-                                                destination.addAll(args)
-                                                startExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                                                startExpression.length = destination.size - start
-                                                startExpression.value = macro
-                                            }
-                                        }
-                                        else -> {
-                                            // Do a full invocation
-                                            destination.addAll(args)
-                                            startExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                                            startExpression.length = destination.size - start
-                                            startExpression.value = macro
-                                        }
-
-
-                                    }
-                                }
-                                // Non-inlineable system macros
-                                else -> {
-                                    compileExpressionTail(destination, false, ParentType.MacroInvocation)
-                                    startExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                                    startExpression.length = destination.size - start
-                                    startExpression.value = macro
-                                }
-                            }
-//                            val argumentPositions = calculateArgumentPositions(macro.signature, destination, start, destination.size)
-//                            startExpression.indices = argumentPositions
+                    TemplateBodyExpressionModel.Kind.VARIABLE -> {
+                        if (signature.get(arg0.primitiveValue.toInt()).cardinality.canBeVoid) {
+                            // Copy in a full invocation
+                            unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
+                            unclassifiedExpression.value = macro
+                            unclassifiedExpression.additionalValue = args.toTypedArray()
                         } else {
+                            // Use this expression... TODO: Copy field name if necessary
                             destination.removeLast()
-//                            println("Inlining: $macroRef")
-                            compileInlineMacroInvocation(destination, macro)
+                            destination.add(arg0)
                         }
-                        return
+                    }
+                    TemplateBodyExpressionModel.Kind.INVOCATION -> {
+
+                        // Do a full invocation
+                        unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
+                        unclassifiedExpression.value = macro
+                        unclassifiedExpression.additionalValue = args.toTypedArray()
+                    }
+                    TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP -> {
+                        val expressionGroupBody = arg0.value
+                        // Do we know it's an empty expression group?
+                        if (expressionGroupBody is Array<*> && expressionGroupBody.isEmpty()) {
+                            destination.removeLast()
+                            // Discard this arg, copy in the other one.
+                            val arg1 = args[1]
+                            destination.add(arg1)
+
+                            // TODO: If there's at least one value in the expression group, then we can also elide.
+                        } else {
+                            // Copy in a full invocation
+                            unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
+                            unclassifiedExpression.value = macro
+                            unclassifiedExpression.additionalValue = args.toTypedArray()
+                        }
+                    }
+
+                    else -> {
+                        // Do a full invocation
+                        unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
+                        unclassifiedExpression.value = macro
+                        unclassifiedExpression.additionalValue = args.toTypedArray()
                     }
                 }
             }
-            // Compile the value we're already positioned on before compiling the rest of the s-expression
-            compileTemplateBodyExpression(destination, readLiterally, ParentType.SExp)
+            else -> {
+//                if (macro.body != null) {
+//                    compileInlineMacroInvocation(destination, macro, args)
+//                } else {
+                    // Non-inlinable system macro
+                unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
+                unclassifiedExpression.value = macro
+                unclassifiedExpression.additionalValue = args.toTypedArray()
+            }
         }
-        compileExpressionTail(destination, readLiterally, ParentType.SExp)
-        startExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
-        startExpression.length = destination.size - start
     }
 
-    private fun IonReader.compileInlineMacroInvocation(destination: MutableList<TemplateBodyExpressionModel>, macro: MacroV2) {
+
+    private fun IonReader.compileInlineMacroInvocation(destination: MutableList<TemplateBodyExpressionModel>, macro: MacroV2, args: List<TemplateBodyExpressionModel>) {
         // Copy the macro inline.
         // Steps:
         //  - Need to read the arguments into a map
@@ -386,27 +433,15 @@ internal class FlatMacroCompiler(
 //        println("Inlining macro $macro")
 //        println("Reading arguments...")
         // Read the args to the macro invocation
-        val args: MutableList<TemplateBodyExpressionModel> = mutableListOf()
+        // val args: MutableList<TemplateBodyExpressionModel> = mutableListOf()
         // TODO: Capture rest args in an expression group
-        compileExpressionTail(args, readLiterally = false, ParentType.MacroInvocation)
+        // compileExpressionTail(args, readLiterally = false, ParentType.MacroInvocation)
 //        println("  " + args)
-        // Build a lookup for the arguments
-        val argumentIndices = IntArray(macro.signature.size)
-        var position = 0
-        for (i in 0 until macro.signature.size) {
-            if (position < args.size) {
-                argumentIndices[i] = position
-                val currentExpression = args[position++]
-                position += currentExpression.length
-            } else {
-                argumentIndices[i] = -1
-            }
-        }
-//        println("  " + argumentIndices.contentToString())
+
         // Copy to body into this macro body
 //        println("Copying macro body")
         val body = macro.body!!
-        copyInlinedContent(0, body.size, body, destination, args.toTypedArray(), argumentIndices)
+        copyInlinedContent(0, body.size, body, destination, args)
     }
 
     // Visible for testing
@@ -415,17 +450,14 @@ internal class FlatMacroCompiler(
         endExclusive: Int,
         source: Array<TemplateBodyExpressionModel>,
         destination: MutableList<TemplateBodyExpressionModel>,
-        args: Array<TemplateBodyExpressionModel>,
-        argIndices: IntArray,
+        args: List<TemplateBodyExpressionModel>,
         indent: String = "",
     ) {
         var i = start
         while (i < endExclusive) {
             val next = source[i++]
-            if (next.expressionKind == TemplateBodyExpressionModel.Kind.VARIABLE && argIndices.isNotEmpty()) {
-//                println("${indent}injecting variable: $next")
-                copyArgValueInline(next.value as Int, destination, args, argIndices, indent)
-
+            if (next.expressionKind == TemplateBodyExpressionModel.Kind.VARIABLE) {
+                copyArgValueInline(next.primitiveValue.toInt(), destination, args, indent)
             } else if (next.length == 0) {
 //                println("${indent}Copying value: $next")
                 destination.add(next)
@@ -438,7 +470,7 @@ internal class FlatMacroCompiler(
 //                println("${indent}Copying container value: $next")
                 destination.add(startExpression)
                 val destinationContainerStart = destination.size
-                copyInlinedContent(i, i + startExpression.length, source, destination, args, argIndices, "$indent  ")
+                copyInlinedContent(i, i + startExpression.length, source, destination, args, "$indent  ")
                 val destinationContainerEnd = destination.size
                 startExpression.length = destinationContainerEnd - destinationContainerStart
             }
@@ -449,36 +481,18 @@ internal class FlatMacroCompiler(
     fun copyArgValueInline(
         signatureIndex: Int,
         destination: MutableList<TemplateBodyExpressionModel>,
-        args: Array<TemplateBodyExpressionModel>,
-        argIndices: IntArray,
+        args: List<TemplateBodyExpressionModel>,
         indent: String = "",
     ) {
-        val argIndex = argIndices[signatureIndex]
-        if (argIndex < 0) {
+        if (signatureIndex > args.size) {
             val absentArg = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP, 0)
             destination.add(absentArg)
         } else {
-            val argumentExpression = args[argIndex]
-            if (argumentExpression.length == 0) {
-//                println("${indent}Copying argument: $argumentExpression")
-                destination.add(argumentExpression)
-            } else {
-//                println("${indent}Copying container argument: $argumentExpression")
-                destination.add(argumentExpression.copy())
-                val argumentDestinationStart = destination.size
-                val argumentSourceContentStart = argIndex + 1
-                copyInlinedContent(argumentSourceContentStart, argumentSourceContentStart + argumentExpression.length, args, destination, emptyArray(), intArrayOf(), indent + "  ")
-                val argumentDestinationEnd = destination.size
-                argumentExpression.length = argumentDestinationEnd - argumentDestinationStart
-            }
+            val argumentExpression = args[signatureIndex]
+            // TODO: Check if it contains any variables that require substitution
+            destination.add(argumentExpression)
         }
     }
-
-
-    internal fun copyInlineContainer() {
-
-    }
-
 
     /**
      * Must be positioned on the (expected) macro reference.
@@ -508,20 +522,18 @@ internal class FlatMacroCompiler(
         confirmNoAnnotations("on variable reference '$name'")
         val index = signature.indexOfFirst { it.variableName == name }
         confirm(index >= 0) { "variable '$name' is not recognized" }
-        placeholder.value = index
+        placeholder.primitiveValue = index.toLong()
+        placeholder.value = name
         placeholder.length = 0
         placeholder.expressionKind = TemplateBodyExpressionModel.Kind.VARIABLE
         confirm(next() == null) { "Variable expansion should contain only the variable name." }
-        stepOut()
     }
 
-    private fun IonReader.compileExpressionTail(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean, thisType: ParentType): Int {
+    private fun IonReader.compileExpressionTail(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean, thisType: ParentType) {
         forEachRemaining {
             compileTemplateBodyExpression(destination, readLiterally, thisType)
         }
-        val seqEnd = destination.size
         stepOut()
-        return seqEnd
     }
 
     // Helper functions

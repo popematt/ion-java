@@ -40,15 +40,22 @@ class TemplateBodyExpressionModel(
     @JvmField
     var value: Any? = null,
     @JvmField
+    var additionalValue: Any? = null,
+    @JvmField
     var indices: Any? = null,
     @JvmField
     var primitiveValue: Long = 0,
 ) {
     companion object {
+
+        @JvmStatic
+        val EMPTY_EXPRESSION_ARRAY = emptyArray<TemplateBodyExpressionModel>()
+
         @JvmStatic
         val EMPTY_ANNOTATIONS_ARRAY = emptyArray<String?>()
+
         @JvmStatic
-        val ABSENT_ARG_EXPRESSION = TemplateBodyExpressionModel(Kind.EXPRESSION_GROUP, length = 0)
+        val ABSENT_ARG_EXPRESSION = TemplateBodyExpressionModel(Kind.EXPRESSION_GROUP, length = 0, value = EMPTY_EXPRESSION_ARRAY)
     }
 
     init {
@@ -60,13 +67,24 @@ class TemplateBodyExpressionModel(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other == null || javaClass != other.javaClass) return false
-        val that = other as TemplateBodyExpressionModel?
-        if (expressionKind != that!!.expressionKind) return false
+        val that = other as TemplateBodyExpressionModel
+        if (expressionKind != that.expressionKind) return false
         if (length != that.length) return false
         if (fieldName != that.fieldName) return false
         if (!that.annotations.contentDeepEquals(that.annotations)) return false
-        if (value != that.value) return false
         if (primitiveValue != that.primitiveValue) return false
+
+        if (value is Array<*> && that.value is Array<*>) {
+            if (!(value as Array<*>).contentDeepEquals(that.value as Array<*>)) return false
+        } else {
+            if (value != that.value) return false
+        }
+
+        if (additionalValue is Array<*> && that.additionalValue is Array<*>) {
+            if (!(additionalValue as Array<*>).contentDeepEquals(that.additionalValue as Array<*>)) return false
+        } else {
+            if (additionalValue != that.additionalValue) return false
+        }
         return true
     }
 
@@ -74,15 +92,43 @@ class TemplateBodyExpressionModel(
         var h = expressionKind
         h = h * 31 + length
         h = h * 31 + fieldName.hashCode()
-        h = h * 31 + value.hashCode()
+        val h0: Int = (value as? Array<*>)?.contentDeepHashCode() ?: value.hashCode()
+        h = h * 31 + h0
         h = h * 31 + annotations.contentDeepHashCode()
+        h = h * 31 + primitiveValue.hashCode()
+        val h1: Int = (additionalValue as? Array<*>)?.contentDeepHashCode() ?: additionalValue.hashCode()
+        h = h * 31 + h1
         return h
     }
 
     override fun toString(): String {
+        return toPrettyString()
+//        val sb = StringBuilder()
+//        sb.append("TemplateBodyExpression(kind=${Kind(expressionKind)}")
+//        if (value is Array<*>) {
+//            sb.append(", value=")
+//            (value as Array<TemplateBodyExpressionModel>)
+//                .mapIndexed { i, value -> " $i. $value"}
+//                .joinToString("\n", prefix = "[\n", postfix = "\n]")
+//                .let(sb::append)
+//        } else if (value != null || expressionKind == Kind.SYMBOL) sb.append(", value=$value")
+//        when (expressionKind) {
+//            Kind.LIST, Kind.SEXP, Kind.STRUCT,
+//            Kind.INVOCATION, Kind.EXPRESSION_GROUP -> sb.append(", length=$length")
+//            Kind.BOOL, Kind.INT, Kind.VARIABLE -> sb.append(", primitiveValue=$primitiveValue")
+//            Kind.FLOAT -> sb.append(", primitiveValue=$primitiveValue (${Double.fromBits(primitiveValue)})")
+//            Kind.FIELD_NAME -> sb.append(", fieldName=$fieldName")
+//            Kind.ANNOTATIONS -> sb.append(", annotations=${annotations.contentToString()}")
+//        }
+//        sb.append(")")
+//        return sb.toString()
+    }
+
+
+
+    private fun toPrettyString(indent: String = ""): String {
         val sb = StringBuilder()
         sb.append("TemplateBodyExpression(kind=${Kind(expressionKind)}")
-        if (value != null || expressionKind == Kind.SYMBOL) sb.append(", value=$value")
         when (expressionKind) {
             Kind.LIST, Kind.SEXP, Kind.STRUCT,
             Kind.INVOCATION, Kind.EXPRESSION_GROUP -> sb.append(", length=$length")
@@ -90,6 +136,20 @@ class TemplateBodyExpressionModel(
             Kind.FLOAT -> sb.append(", primitiveValue=$primitiveValue (${Double.fromBits(primitiveValue)})")
             Kind.FIELD_NAME -> sb.append(", fieldName=$fieldName")
             Kind.ANNOTATIONS -> sb.append(", annotations=${annotations.contentToString()}")
+        }
+        if (value is Array<*>) {
+            sb.append(", value=")
+            (value as Array<TemplateBodyExpressionModel>)
+                .mapIndexed { i, value -> "$indent    $i. ${value.toPrettyString("$indent    ")}" }
+                .joinToString("\n", prefix = "[\n", postfix = "\n$indent]")
+                .let(sb::append)
+        } else if (value != null || expressionKind == Kind.SYMBOL) {
+            sb.append(", value=$value")
+        }
+        if (additionalValue is Array<*>) {
+            sb.append(", additionalValue=${(additionalValue as Array<*>).contentToString()})")
+        } else if (additionalValue != null) {
+            sb.append(", additionalValue=$additionalValue")
         }
         sb.append(")")
         return sb.toString()

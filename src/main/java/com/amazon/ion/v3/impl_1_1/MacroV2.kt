@@ -6,6 +6,7 @@ import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.SystemMacro
+import com.amazon.ion.v3.impl_1_1.ExpressionBuilderDsl.Companion.templateBody
 import com.amazon.ion.v3.impl_1_1.TemplateBodyExpressionModel.*
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -24,10 +25,17 @@ data class MacroV2 internal constructor(
     val systemName: SystemSymbols_1_1? = null,
 ) {
 
+    // TODO: Expansion analysis
+    //      * Can this produce a system value?
+    //      * Can this produce 0, 1, or more values?
+
     constructor(signature: Array<Macro.Parameter>, body: Array<TemplateBodyExpressionModel>) : this(signature, body, -1, null)
     constructor(signature: List<Macro.Parameter>, body: Array<TemplateBodyExpressionModel>) : this(signature.toTypedArray(), body, -1, null)
     constructor(signature: Array<Macro.Parameter>, body: List<TemplateBodyExpressionModel>) : this(signature, body.toTypedArray(), -1, null)
     constructor(signature: List<Macro.Parameter>, body: List<TemplateBodyExpressionModel>?, systemAddress: Int = -99, systemName: SystemSymbols_1_1? = null) : this(signature.toTypedArray(), body?.toTypedArray(), systemAddress, systemName)
+
+    internal constructor(vararg signature: Macro.Parameter, body: TemplateDsl.() -> Unit) : this(signature.asList(), body)
+    internal constructor(signature: List<Macro.Parameter>, body: TemplateDsl.() -> Unit) : this(signature, templateBody(signature, body))
 
     // TODO: Consider rewriting the body of the macro if we discover that there are any macros invoked using only
     //       constants as arguments—either at compile time or lazily.
