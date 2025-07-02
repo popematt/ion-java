@@ -155,7 +155,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 } else if (readerManager.readerDepth == 1) {
                     return null
                 } else {
-                    this.reader = readerManager.popReader()!!
+                    this.reader = readerManager.popReader()
                     null
                 }
             }
@@ -263,7 +263,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
             TokenTypeConst.LIST -> reader.listValue()
             TokenTypeConst.SEXP -> reader.sexpValue()
             TokenTypeConst.STRUCT -> reader.structValue()
-            else -> throw IonException("Cannot step in unless positioned on a container")
+            else -> throw IonException("Cannot step in unless positioned on a container; currently token is ${TokenTypeConst(token)}")
         }
         readerManager.pushContainer(child)
         reader = child

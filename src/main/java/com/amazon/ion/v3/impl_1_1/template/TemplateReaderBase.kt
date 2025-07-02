@@ -11,9 +11,10 @@ import java.nio.ByteBuffer
 abstract class TemplateReaderBase(
     @JvmField
     val pool: TemplateResourcePool,
-    // TODO: consider flattening this
-    @JvmField
+     @JvmField
     var source: Array<TemplateBodyExpressionModel>,
+    @JvmField
+    var tokens: IntArray,
     @JvmField
     var arguments: ArgumentReader,
     @JvmField
@@ -30,33 +31,23 @@ abstract class TemplateReaderBase(
     @JvmField
     var currentExpression: TemplateBodyExpressionModel? = null
     @JvmField
-    var endExclusive: Int = source.size
-
-    /**
-     * Helps to simulate encountering the field name, annotations, and value as separate tokens.
-     * Invariants:
-     */
+    var currentToken: Int = TokenTypeConst.UNSET
     @JvmField
-    var state: Byte = State.READY
-    protected object State {
-        val READY: Byte = 0
-        val SEEN_FIELD_NAME: Byte = 1
-        val SEEN_ANNOTATIONS: Byte = 2
-        val SEEN_VALUE: Byte = 3
-    }
+    var endExclusive: Int = source.size
 
     fun init(
         source: Array<TemplateBodyExpressionModel>,
+        tokens: IntArray,
         arguments: ArgumentReader,
         isArgumentOwner: Boolean,
      ) {
-        this.isArgumentOwner = isArgumentOwner
         this.source = source
+        this.tokens = tokens
         this.endExclusive = source.size
         this.arguments = arguments
+        this.isArgumentOwner = isArgumentOwner
         i = 0
-        currentExpression = null
-        state = State.READY
+//        currentExpression = null
         reinitState()
     }
 
@@ -64,7 +55,7 @@ abstract class TemplateReaderBase(
 
     protected inline fun <U> consumeCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (TemplateBodyExpressionModel) -> U, ): U {
         val expr = currentExpression
-        currentExpression = null
+//        currentExpression = null
         return when (expr!!.expressionKind) {
             TokenTypeConst.VARIABLE_REF -> argMethod(arguments)
             else -> bodyMethod(expr)
@@ -72,28 +63,39 @@ abstract class TemplateReaderBase(
     }
 
     protected inline fun <U> inspectCurrentExpression(argMethod: (ArgumentReader) -> U, bodyMethod: (TemplateBodyExpressionModel) -> U, ): U {
-        val expr = currentExpression
-        return when (expr!!.expressionKind) {
+        val expr = currentExpression!!
+        return when (expr.expressionKind) {
             TokenTypeConst.VARIABLE_REF -> argMethod(arguments)
             else -> bodyMethod(expr)
         }
     }
 
     override fun nextToken(): Int {
-        if (i >= endExclusive) {
+        val tokens = this.tokens
+        if (i >= tokens.size) {
             return TokenTypeConst.END
         }
-        val expr = this.source[i++]
-        this.currentExpression = expr
-        // this.i += expr.length
 
-        if (expr.expressionKind == TokenTypeConst.VARIABLE_REF) {
-            val args = this.arguments
-            val v = expr.primitiveValue.toInt()
-            return args.seekToArgument(v)
+        currentToken = tokens[i++]
+
+        when (currentToken) {
+            TokenTypeConst.END -> {
+                return currentToken
+            }
+            TokenTypeConst.VARIABLE_REF -> {
+                val expr = this.source[i - 1]
+                val v = expr.primitiveValue.toInt()
+                currentExpression = expr
+                val args = this.arguments
+                currentToken = args.seekToArgument(v)
+                return currentToken
+            }
+            else -> {
+                val expr = this.source[i - 1]
+                currentExpression = expr
+                return currentToken
+            }
         }
-
-        return expr.expressionKind
     }
 
     final override fun close() {
@@ -106,22 +108,14 @@ abstract class TemplateReaderBase(
     protected abstract fun returnToPool()
 
     // TODO: Make sure that this also returns END when at the end of the input.
-    override fun currentToken(): Int {
-        val expr = currentExpression ?: return TokenTypeConst.UNSET
-
-        return if (expr.expressionKind == TokenTypeConst.VARIABLE_REF) {
-            arguments.currentToken()
-        } else {
-            expr.expressionKind
-        }
-    }
+    override fun currentToken(): Int = currentToken
 
     override fun isTokenSet(): Boolean = currentToken() != TokenTypeConst.UNSET
 
     // TODO: This will probably fail when the current token is unset.
     override fun ionType(): IonType? = inspectCurrentExpression(ArgumentReader::ionType) {
         if (it.expressionKind == TokenTypeConst.NULL) {
-            it.value as IonType
+            it.valueObject as IonType
         } else {
             IonType.entries[it.expressionKind]
         }
@@ -129,7 +123,7 @@ abstract class TemplateReaderBase(
 
     override fun valueSize(): Int = inspectCurrentExpression(ArgumentReader::valueSize) {
         // This is mostly only used for Ints... and Lobs?
-        return@inspectCurrentExpression when (val value = currentExpression?.value) {
+        return@inspectCurrentExpression when (val value = currentExpression?.valueObject) {
             is Long -> 8
             is BigInteger -> 9
             is ByteBuffer -> value.remaining()
@@ -138,10 +132,10 @@ abstract class TemplateReaderBase(
     }
 
     override fun skip() {
-        currentExpression = null
+//        currentExpression = null
     }
 
-    override fun macroValue(): MacroV2 = inspectCurrentExpression(ArgumentReader::macroValue) { it.value as MacroV2 }
+    override fun macroValue(): MacroV2 = inspectCurrentExpression(ArgumentReader::macroValue) { it.valueObject as MacroV2 }
 
     override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader {
         if (signature.isEmpty()) {
@@ -149,25 +143,25 @@ abstract class TemplateReaderBase(
         }
 
         val expr = currentExpression!!
-        currentExpression = null
+//        currentExpression = null
         return when (expr.expressionKind) {
             TokenTypeConst.VARIABLE_REF -> arguments.macroArguments(signature)
             else -> {
-                pool.getArguments(arguments, signature, expr.additionalValue as Array<TemplateBodyExpressionModel>)
+                pool.getArguments(arguments, signature, expr.childExpressions, expr.childTokens)
             }
         }
     }
 
     override fun expressionGroup(): SequenceReader = consumeCurrentExpression(ArgumentReader::expressionGroup) {
-        pool.getSequence(arguments, it.value as Array<TemplateBodyExpressionModel>)
+        pool.getSequence(arguments, it.childExpressions, it.childTokens)
     }
 
-    override fun nullValue(): IonType = consumeCurrentExpression(ArgumentReader::nullValue) { it.value as IonType }
+    override fun nullValue(): IonType = consumeCurrentExpression(ArgumentReader::nullValue) { it.valueObject as IonType }
     override fun booleanValue(): Boolean = consumeCurrentExpression(ArgumentReader::booleanValue) { it.primitiveValue > 0 }
     // TODO: Consider checking to make sure that we have a long, rather than a big integer.
     override fun longValue(): Long = consumeCurrentExpression(ArgumentReader::longValue) { it.primitiveValue }
-    override fun stringValue(): String = consumeCurrentExpression(ArgumentReader::stringValue) { it.value as String }
-    override fun symbolValue(): String? = consumeCurrentExpression(ArgumentReader::symbolValue) { it.value as String? }
+    override fun stringValue(): String = consumeCurrentExpression(ArgumentReader::stringValue) { it.valueObject as String }
+    override fun symbolValue(): String? = consumeCurrentExpression(ArgumentReader::symbolValue) { it.valueObject as String? }
 
     override fun symbolValueSid(): Int {
         val sid = inspectCurrentExpression(
@@ -177,32 +171,32 @@ abstract class TemplateReaderBase(
             { -1 }
         )
         if (sid >= 0) {
-            currentExpression = null
+//            currentExpression = null
         }
         return sid
     }
 
     override fun lookupSid(sid: Int): String? = arguments.lookupSid(sid)
 
-    override fun timestampValue(): Timestamp = consumeCurrentExpression(ArgumentReader::timestampValue) { it.value as Timestamp }
-    override fun clobValue(): ByteBuffer = consumeCurrentExpression(ArgumentReader::clobValue) { it.value as ByteBuffer }
-    override fun blobValue(): ByteBuffer = consumeCurrentExpression(ArgumentReader::blobValue) { it.value as ByteBuffer }
+    override fun timestampValue(): Timestamp = consumeCurrentExpression(ArgumentReader::timestampValue) { it.valueObject as Timestamp }
+    override fun clobValue(): ByteBuffer = consumeCurrentExpression(ArgumentReader::clobValue) { it.valueObject as ByteBuffer }
+    override fun blobValue(): ByteBuffer = consumeCurrentExpression(ArgumentReader::blobValue) { it.valueObject as ByteBuffer }
 
     override fun listValue(): ListReader = consumeCurrentExpression(ArgumentReader::listValue) {
-        pool.getSequence(arguments, it.value as Array<TemplateBodyExpressionModel>)
+        pool.getSequence(arguments, it.childExpressions, it.childTokens)
     }
 
     override fun sexpValue(): SexpReader = consumeCurrentExpression(ArgumentReader::sexpValue) {
-        pool.getSequence(arguments, it.value as Array<TemplateBodyExpressionModel>)
+        pool.getSequence(arguments, it.childExpressions, it.childTokens)
     }
 
     override fun structValue(): StructReader {
         val expr = currentExpression
-        currentExpression = null
+//        currentExpression = null
         return when (expr!!.expressionKind) {
             TokenTypeConst.VARIABLE_REF -> arguments.structValue()
             else -> {
-                pool.getStruct(arguments, expr.value as Array<TemplateBodyExpressionModel>)
+                pool.getStruct(arguments, expr.childExpressions, expr.childTokens)
             }
         }
     }
@@ -213,7 +207,7 @@ abstract class TemplateReaderBase(
 
     override fun doubleValue(): Double = consumeCurrentExpression(ArgumentReader::doubleValue) { Double.fromBits(it.primitiveValue) }
 
-    override fun decimalValue(): Decimal = Decimal.valueOf(consumeCurrentExpression(ArgumentReader::decimalValue) { it.value as BigDecimal })
+    override fun decimalValue(): Decimal = Decimal.valueOf(consumeCurrentExpression(ArgumentReader::decimalValue) { it.valueObject as BigDecimal })
 
     override fun getIonVersion(): Short = 0x0101
 

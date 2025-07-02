@@ -6,6 +6,7 @@ import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.impl.macro.Macro
+import com.amazon.ion.v3.TokenTypeConst
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -153,8 +154,18 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
         (this as T).content()
         val end = expressions.size
         val childExpressions = expressions.subList(start, end)
-        startExpression.value = childExpressions.toList().toTypedArray()
+        startExpression.childExpressions = childExpressions.toList().toTypedArray()
+        startExpression.childTokens = childExpressions.toTokenArray()
         childExpressions.clear()
+    }
+
+    protected fun List<TemplateBodyExpressionModel>.toTokenArray(): IntArray {
+        val array = IntArray(this.size + 1)
+        for (i in this.indices) {
+            array[i] = this[i].expressionKind
+        }
+        array[this.size] = TokenTypeConst.END
+        return array
     }
 
     // Subclasses for each expression variant so that we don't have conflicting signatures between their list, sexp, etc. implementations.
@@ -171,7 +182,8 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
             this.arguments()
             val end = expressions.size
             val childExpressions = expressions.subList(start, end)
-            startExpression.additionalValue = childExpressions.toList().toTypedArray()
+            startExpression.childExpressions = childExpressions.toList().toTypedArray()
+            startExpression.childTokens = childExpressions.toTokenArray()
             childExpressions.clear()
         }
         override fun expressionGroup(content: TemplateDsl.() -> Unit) = container(TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP, content)

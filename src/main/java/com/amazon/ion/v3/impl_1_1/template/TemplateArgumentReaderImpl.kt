@@ -12,9 +12,10 @@ import com.amazon.ion.v3.impl_1_1.TemplateBodyExpressionModel
 class TemplateArgumentReaderImpl(
     pool: TemplateResourcePool,
     source: Array<TemplateBodyExpressionModel>,
+    tokens: IntArray,
     argumentReader: ArgumentReader,
     isArgumentOwner: Boolean,
-): TemplateReaderBase(pool, source, argumentReader, isArgumentOwner), ArgumentReader {
+): TemplateReaderBase(pool, source, tokens, argumentReader, isArgumentOwner), ArgumentReader {
 
     override fun toString(): String {
         return "TemplateArgumentReaderImpl(signature=${signature.contentToString()}, source=${source.contentToString()})"

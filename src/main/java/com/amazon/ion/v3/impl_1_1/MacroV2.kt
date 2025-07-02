@@ -6,6 +6,7 @@ import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.SystemMacro
+import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.ExpressionBuilderDsl.Companion.templateBody
 import com.amazon.ion.v3.impl_1_1.TemplateBodyExpressionModel.*
 import java.math.BigDecimal
@@ -16,7 +17,7 @@ import java.nio.ByteBuffer
  * Represents a template macro. A template macro is defined by a signature, and a list of template expressions.
  * A template macro only gains a name and/or ID when it is added to a macro table.
  *
- * An address of -99 indicates it is not a system macro (or special form).
+ * A system address of -99 indicates it is not a system macro (or special form).
  */
 data class MacroV2 internal constructor(
     val signature: Array<Macro.Parameter>,
@@ -24,6 +25,8 @@ data class MacroV2 internal constructor(
     val systemAddress: Int = -99,
     val systemName: SystemSymbols_1_1? = null,
 ) {
+
+    val tokens = (body ?: TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY).map { it.expressionKind }.toMutableList().also{ it.add(TokenTypeConst.END)}.toIntArray()
 
     // TODO: Expansion analysis
     //      * Can this produce a system value?
@@ -103,57 +106,57 @@ data class MacroV2 internal constructor(
                     when (expression.expressionKind) {
                         Kind.FIELD_NAME -> setFieldName(expression.fieldName)
                         Kind.ANNOTATIONS -> setTypeAnnotations(*expression.annotations)
-                        Kind.NULL -> writeNull(expression.value as IonType)
+                        Kind.NULL -> writeNull(expression.valueObject as IonType)
                         Kind.BOOL -> writeBool(expression.primitiveValue > 0)
                         Kind.INT -> {
-                            if (expression.value != null)
-                                writeInt(expression.value as BigInteger)
+                            if (expression.valueObject != null)
+                                writeInt(expression.valueObject as BigInteger)
                             else
                                 writeInt(expression.primitiveValue)
                         }
 
                         Kind.FLOAT -> writeFloat(Double.fromBits(expression.primitiveValue))
-                        Kind.DECIMAL -> writeDecimal(expression.value as BigDecimal)
-                        Kind.TIMESTAMP -> writeTimestamp(expression.value as Timestamp)
-                        Kind.STRING -> writeString(expression.value as String)
-                        Kind.SYMBOL -> writeSymbol(expression.value as String?)
+                        Kind.DECIMAL -> writeDecimal(expression.valueObject as BigDecimal)
+                        Kind.TIMESTAMP -> writeTimestamp(expression.valueObject as Timestamp)
+                        Kind.STRING -> writeString(expression.valueObject as String)
+                        Kind.SYMBOL -> writeSymbol(expression.valueObject as String?)
                         // The byte buffers aren't guaranteed to be backed by arrays, so this could fail.
-                        Kind.BLOB -> writeBlob((expression.value as ByteBuffer).array())
-                        Kind.CLOB -> writeClob((expression.value as ByteBuffer).array())
+                        Kind.BLOB -> writeBlob((expression.valueObject as ByteBuffer).array())
+                        Kind.CLOB -> writeClob((expression.valueObject as ByteBuffer).array())
                         Kind.LIST -> {
                             stepIn(IonType.LIST)
-                            numberOfTimesToStepOut[index + expression.length]++
+                            numberOfTimesToStepOut[index]++
                         }
 
                         Kind.SEXP -> {
                             stepIn(IonType.SEXP)
-                            numberOfTimesToStepOut[index + expression.length]++
+                            numberOfTimesToStepOut[index]++
                         }
 
                         Kind.STRUCT -> {
                             stepIn(IonType.STRUCT)
-                            numberOfTimesToStepOut[index + expression.length]++
+                            numberOfTimesToStepOut[index]++
                         }
 
                         Kind.EXPRESSION_GROUP -> {
                             stepIn(IonType.SEXP)
                             writeSymbol("..")
-                            numberOfTimesToStepOut[index + expression.length]++
+                            numberOfTimesToStepOut[index]++
                         }
 
                         Kind.VARIABLE -> {
                             stepIn(IonType.SEXP)
                             writeSymbol("%")
-                            writeSymbol(expression.value.toString())
+                            writeSymbol(expression.valueObject.toString())
                             stepOut()
                         }
 
                         Kind.INVOCATION -> {
                             stepIn(IonType.SEXP)
                             writeSymbol(".")
-                            val m = expression.value as MacroV2
+                            val m = expression.valueObject as MacroV2
                             writeSymbol(m.systemName?.text)
-                            numberOfTimesToStepOut[index + expression.length]++
+                            numberOfTimesToStepOut[index]++
                         }
                     }
 
@@ -168,7 +171,7 @@ data class MacroV2 internal constructor(
 
     val dependencies: List<MacroV2> by lazy {
         if (body != null) {
-            body.mapNotNull { it.value as? MacroV2 }.distinct()
+            body.mapNotNull { it.valueObject as? MacroV2 }.distinct()
         } else {
             emptyList()
         }

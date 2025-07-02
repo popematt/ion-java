@@ -6,9 +6,10 @@ import com.amazon.ion.v3.impl_1_1.*
 class TemplateStructReaderImpl(
     pool: TemplateResourcePool,
     source: Array<TemplateBodyExpressionModel>,
+    tokens: IntArray,
     arguments: ArgumentReader,
     isArgumentOwner: Boolean,
-): ValueReader, StructReader, TemplateReaderBase(pool, source, arguments, isArgumentOwner),
+): ValueReader, StructReader, TemplateReaderBase(pool, source, tokens, arguments, isArgumentOwner),
     SequenceReader {
 
     override fun toString(): String {

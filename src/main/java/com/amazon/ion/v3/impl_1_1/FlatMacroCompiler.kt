@@ -149,7 +149,7 @@ internal class FlatMacroCompiler(
 
 
         if (isNullValue()) {
-            destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.NULL, 0, value = type))
+            destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.NULL, 0, valueObject = type))
         } else when (type) {
             IonType.BOOL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.BOOL, 0, primitiveValue = if (booleanValue()) 1 else 0))
             IonType.INT -> {
@@ -159,17 +159,17 @@ internal class FlatMacroCompiler(
                         destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.INT, 0, primitiveValue = longValue()))
                     }
                     IntegerSize.BIG_INTEGER -> {
-                        destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.INT, 0, value = bigIntegerValue()))
+                        destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.INT, 0, valueObject = bigIntegerValue()))
                     }
                 }
             }
             IonType.FLOAT -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.FLOAT, 0, primitiveValue = doubleValue().toRawBits()))
-            IonType.DECIMAL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.DECIMAL, 0, value = decimalValue()))
-            IonType.TIMESTAMP -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.TIMESTAMP, 0, value = timestampValue()))
-            IonType.STRING -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.STRING, 0, value = stringValue()))
-            IonType.BLOB -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.BLOB, 0, value = ByteBuffer.wrap(newBytes())))
-            IonType.CLOB -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.CLOB, 0, value = ByteBuffer.wrap(newBytes())))
-            IonType.SYMBOL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SYMBOL, 0, value = symbolValue().text))
+            IonType.DECIMAL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.DECIMAL, 0, valueObject = decimalValue()))
+            IonType.TIMESTAMP -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.TIMESTAMP, 0, valueObject = timestampValue()))
+            IonType.STRING -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.STRING, 0, valueObject = stringValue()))
+            IonType.BLOB -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.BLOB, 0, valueObject = ByteBuffer.wrap(newBytes())))
+            IonType.CLOB -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.CLOB, 0, valueObject = ByteBuffer.wrap(newBytes())))
+            IonType.SYMBOL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SYMBOL, 0, valueObject = symbolValue().text))
             IonType.LIST -> compileList(destination, readLiterally)
             IonType.SEXP -> compileUnclassifiedSexp(parentType, destination, annotations, readLiterally)
             IonType.STRUCT -> compileStruct(destination, readLiterally)
@@ -191,7 +191,17 @@ internal class FlatMacroCompiler(
         forEachInContainer {
             compileTemplateBodyExpression(content, readLiterally, ParentType.Struct)
         }
-        startExpression.value = content.toTypedArray()
+        startExpression.childExpressions = content.toTypedArray()
+        startExpression.childTokens = content.toTokenArray()
+    }
+
+    private fun List<TemplateBodyExpressionModel>.toTokenArray(): IntArray {
+        val array = IntArray(this.size + 1)
+        for (i in this.indices) {
+            array[i] = this[i].expressionKind
+        }
+        array[this.size] = TokenTypeConst.END
+        return array
     }
 
     /**
@@ -201,13 +211,14 @@ internal class FlatMacroCompiler(
      * Caller will need to call [IonReader.next] to get the next value.
      */
     private fun IonReader.compileList(destination: MutableList<TemplateBodyExpressionModel>, readLiterally: Boolean) {
-        val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.LIST, 0, value = null)
+        val startExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.LIST)
         destination.add(startExpression)
         val content = mutableListOf<TemplateBodyExpressionModel>()
         forEachInContainer {
             compileTemplateBodyExpression(content, readLiterally, ParentType.List)
         }
-        startExpression.value = content.toTypedArray()
+        startExpression.childExpressions = content.toTypedArray()
+        startExpression.childTokens = content.toTokenArray()
     }
 
     enum class ParentType {
@@ -226,7 +237,7 @@ internal class FlatMacroCompiler(
      * Caller will need to call [IonReader.next] to get the next value.
      */
     private fun IonReader.compileUnclassifiedSexp(parentType: ParentType, destination: MutableList<TemplateBodyExpressionModel>, annotations: Array<String?>, readLiterally: Boolean) {
-        val unclassifiedExpression = TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SEXP, 0, value = null)
+        val unclassifiedExpression = TemplateBodyExpressionModel(TokenTypeConst.UNSET)
         destination.add(unclassifiedExpression)
         stepIn()
 
@@ -234,7 +245,8 @@ internal class FlatMacroCompiler(
         if (next() == null) {
             stepOut()
             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
-            unclassifiedExpression.value = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+            unclassifiedExpression.childExpressions = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+            unclassifiedExpression.childTokens = TemplateBodyExpressionModel.EMPTY_CONTENT_TOKEN_ARRAY
             return
         }
 
@@ -247,7 +259,8 @@ internal class FlatMacroCompiler(
             }
             stepOut()
             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
-            unclassifiedExpression.value = sexpContent.toTypedArray()
+            unclassifiedExpression.childExpressions = sexpContent.toTypedArray()
+            unclassifiedExpression.childTokens = sexpContent.toTokenArray()
             return
         }
 
@@ -258,7 +271,8 @@ internal class FlatMacroCompiler(
             compileTemplateBodyExpression(sexpContent, false, ParentType.SExp)
             compileExpressionTail(sexpContent, false, ParentType.SExp)
             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
-            unclassifiedExpression.value = sexpContent.toTypedArray()
+            unclassifiedExpression.childExpressions = sexpContent.toTypedArray()
+            unclassifiedExpression.childTokens = sexpContent.toTokenArray()
             return
         }
 
@@ -278,7 +292,8 @@ internal class FlatMacroCompiler(
                     val content = mutableListOf<TemplateBodyExpressionModel>()
                     compileExpressionTail(content, false, ParentType.ExprGroup)
                     unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
-                    unclassifiedExpression.value = content.toTypedArray()
+                    unclassifiedExpression.childExpressions = content.toTypedArray()
+                    unclassifiedExpression.childTokens = content.toTokenArray()
                     return
                 }
 
@@ -323,8 +338,9 @@ internal class FlatMacroCompiler(
                 // compileExpressionTail(mutableListOf(), true, ParentType.MacroInvocation)
                 if (parentType == ParentType.MacroInvocation) {
                     // Replace with empty expression group.
-                    unclassifiedExpression.value = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
                     unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
+                    unclassifiedExpression.childExpressions = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+                    unclassifiedExpression.childTokens = TemplateBodyExpressionModel.EMPTY_CONTENT_TOKEN_ARRAY
                 } else {
                     // Just remove it entirely
                     destination.removeLast()
@@ -335,7 +351,8 @@ internal class FlatMacroCompiler(
                 if (parentType == ParentType.MacroInvocation) {
                     // Replace with empty expression group.
                     unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
-                    unclassifiedExpression.value = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+                    unclassifiedExpression.childExpressions = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+                    unclassifiedExpression.childTokens = TemplateBodyExpressionModel.EMPTY_CONTENT_TOKEN_ARRAY
                 } else {
                     // Just remove it entirely
                     destination.removeLast()
@@ -346,9 +363,10 @@ internal class FlatMacroCompiler(
                 if (parentType == ParentType.MacroInvocation) {
                     // Convert to an expression group
                     unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
-                    unclassifiedExpression.value = args.toTypedArray()
+                    unclassifiedExpression.childExpressions = args.toTypedArray()
+                    unclassifiedExpression.childTokens = args.toTokenArray()
                 } else {
-                    // TODO: Possibly copy over the field name
+                    // TODO: Possibly copy over a field name
                     destination.removeLast()
                     destination.addAll(args)
                 }
@@ -369,8 +387,9 @@ internal class FlatMacroCompiler(
                         if (signature.get(arg0.primitiveValue.toInt()).cardinality.canBeVoid) {
                             // Copy in a full invocation
                             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                            unclassifiedExpression.value = macro
-                            unclassifiedExpression.additionalValue = args.toTypedArray()
+                            unclassifiedExpression.valueObject = macro
+                            unclassifiedExpression.childExpressions = args.toTypedArray()
+                            unclassifiedExpression.childTokens = args.toTokenArray()
                         } else {
                             // Use this expression... TODO: Copy field name if necessary
                             destination.removeLast()
@@ -381,32 +400,33 @@ internal class FlatMacroCompiler(
 
                         // Do a full invocation
                         unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                        unclassifiedExpression.value = macro
-                        unclassifiedExpression.additionalValue = args.toTypedArray()
+                        unclassifiedExpression.valueObject = macro
+                        unclassifiedExpression.childExpressions = args.toTypedArray()
+                        unclassifiedExpression.childTokens = args.toTokenArray()
                     }
                     TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP -> {
-                        val expressionGroupBody = arg0.value
-                        // Do we know it's an empty expression group?
-                        if (expressionGroupBody is Array<*> && expressionGroupBody.isEmpty()) {
+                        if (arg0.childExpressions.isEmpty()) {
                             destination.removeLast()
                             // Discard this arg, copy in the other one.
                             val arg1 = args[1]
                             destination.add(arg1)
 
-                            // TODO: If there's at least one value in the expression group, then we can also elide.
+                            // TODO: If there's at least one value in the expression group, then we can also elide the other way.
                         } else {
                             // Copy in a full invocation
                             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                            unclassifiedExpression.value = macro
-                            unclassifiedExpression.additionalValue = args.toTypedArray()
+                            unclassifiedExpression.valueObject = macro
+                            unclassifiedExpression.childExpressions = args.toTypedArray()
+                            unclassifiedExpression.childTokens = args.toTokenArray()
                         }
                     }
 
                     else -> {
                         // Do a full invocation
                         unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                        unclassifiedExpression.value = macro
-                        unclassifiedExpression.additionalValue = args.toTypedArray()
+                        unclassifiedExpression.valueObject = macro
+                        unclassifiedExpression.childExpressions = args.toTypedArray()
+                        unclassifiedExpression.childTokens = args.toTokenArray()
                     }
                 }
             }
@@ -416,8 +436,9 @@ internal class FlatMacroCompiler(
 //                } else {
                     // Non-inlinable system macro
                 unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
-                unclassifiedExpression.value = macro
-                unclassifiedExpression.additionalValue = args.toTypedArray()
+                unclassifiedExpression.valueObject = macro
+                unclassifiedExpression.childExpressions = args.toTypedArray()
+                unclassifiedExpression.childTokens = args.toTokenArray()
             }
         }
     }
@@ -458,8 +479,8 @@ internal class FlatMacroCompiler(
             val next = source[i++]
             if (next.expressionKind == TemplateBodyExpressionModel.Kind.VARIABLE) {
                 copyArgValueInline(next.primitiveValue.toInt(), destination, args, indent)
-            } else if (next.length == 0) {
-//                println("${indent}Copying value: $next")
+            } else if (next.expressionKind != TemplateBodyExpressionModel.Kind.INVOCATION) {
+                // TODO: Recursive substitution.
                 destination.add(next)
 
             } else {
@@ -470,11 +491,11 @@ internal class FlatMacroCompiler(
 //                println("${indent}Copying container value: $next")
                 destination.add(startExpression)
                 val destinationContainerStart = destination.size
-                copyInlinedContent(i, i + startExpression.length, source, destination, args, "$indent  ")
+//                copyInlinedContent(i, i + startExpression.length, source, destination, args, "$indent  ")
                 val destinationContainerEnd = destination.size
-                startExpression.length = destinationContainerEnd - destinationContainerStart
+//                startExpression.length = destinationContainerEnd - destinationContainerStart
             }
-            i += next.length
+//            i += next.length
         }
     }
 
@@ -516,6 +537,7 @@ internal class FlatMacroCompiler(
     }
 
     private fun IonReader.compileVariableExpansion(placeholder: TemplateBodyExpressionModel) {
+        // TODO: Could we dump the resolved value into the `childExpressions` array?
         next()
         confirm(type == IonType.SYMBOL) { "Variable names must be symbols" }
         val name = stringValue()
@@ -523,8 +545,7 @@ internal class FlatMacroCompiler(
         val index = signature.indexOfFirst { it.variableName == name }
         confirm(index >= 0) { "variable '$name' is not recognized" }
         placeholder.primitiveValue = index.toLong()
-        placeholder.value = name
-        placeholder.length = 0
+        placeholder.valueObject = name
         placeholder.expressionKind = TemplateBodyExpressionModel.Kind.VARIABLE
         confirm(next() == null) { "Variable expansion should contain only the variable name." }
     }
