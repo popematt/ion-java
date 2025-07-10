@@ -169,7 +169,7 @@ internal class FlatMacroCompiler(
             IonType.STRING -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.STRING, 0, valueObject = stringValue()))
             IonType.BLOB -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.BLOB, 0, valueObject = ByteBuffer.wrap(newBytes())))
             IonType.CLOB -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.CLOB, 0, valueObject = ByteBuffer.wrap(newBytes())))
-            IonType.SYMBOL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SYMBOL, 0, valueObject = symbolValue().text))
+            IonType.SYMBOL -> destination.add(TemplateBodyExpressionModel(TemplateBodyExpressionModel.Kind.SYMBOL, 0, valueObject = stringValue()))
             IonType.LIST -> compileList(destination, readLiterally)
             IonType.SEXP -> compileUnclassifiedSexp(parentType, destination, annotations, readLiterally)
             IonType.STRUCT -> compileStruct(destination, readLiterally)

@@ -263,8 +263,8 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         val double = when (op) {
             MacroBytecode.OP_INLINE_DOUBLE -> {
-                val msb = bytecode[i++].toLong()
-                val lsb = bytecode[i++].toLong()
+                val msb = bytecode[i++].toLong() and 0xFFFFFFFF
+                val lsb = bytecode[i++].toLong() and 0xFFFFFFFF
                 Double.fromBits((msb shl 32) or lsb)
             }
             else -> TODO("Op: $op")

@@ -339,7 +339,7 @@ abstract class ValueReaderBase(
         this.opcode = TID_UNSET
         val length = IdMappings.length(opcode, source)
         val position = source.position()
-        if (opcode == 0xF9 || opcode and 0xF0 == 0xA0) {
+        if (opcode == 0xFA || opcode and 0xF0 == 0xA0) {
             // Inline text
             val scratchBuffer = pool.scratchBuffer
             scratchBuffer.limit(position + length)
@@ -369,7 +369,7 @@ abstract class ValueReaderBase(
 
     override fun symbolValueSid(): Int {
         val opcode = opcode.toInt()
-        if (opcode == 0xF9 || opcode and 0xF0 == 0xA0) {
+        if (opcode == 0xFA || opcode and 0xF0 == 0xA0) {
             // Inline text
             return -1
         } else if (opcode == 0xEE) {
@@ -500,13 +500,13 @@ abstract class ValueReaderBase(
     }
 
     final override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader {
+        val opcode = opcode.toInt()
+        this.opcode = TID_UNSET
         if (signature.isEmpty()) {
+            IdMappings.length(opcode, source)
             return NoneReader
         }
 
-        // TODO: Add a state value representing "start of arguments", and check for it here
-        val opcode = opcode.toInt()
-        this.opcode = TID_UNSET
         val length = IdMappings.length(opcode, source)
         val position = source.position()
         val reader = if (length < 0) {

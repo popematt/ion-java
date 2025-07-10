@@ -37,7 +37,7 @@ class LazyMacroEvaluator : IonReader {
 
     private var eExpressionIndex = -1;
 
-    private val containerStack = Array<IonType?>(8) { null }
+    private var containerStack = Array<IonType?>(8) { null }
     private var depth = 0
     private var currentExpr: Byte? = null
     private var currentValueType: IonType? = null
@@ -654,7 +654,7 @@ class LazyMacroEvaluator : IonReader {
         val expressionType = requireNotNull(currentExpr) { "Not positioned on a value" }
         if (expressionType == ExpressionType.DATA_MODEL_CONTAINER_ORDINAL) {
             if (++depth >= containerStack.size) {
-                containerStack.copyOf(containerStack.size * 2)
+                containerStack = containerStack.copyOf(containerStack.size * 2)
             }
             containerStack[depth] = currentValueType
             currentExpr = null

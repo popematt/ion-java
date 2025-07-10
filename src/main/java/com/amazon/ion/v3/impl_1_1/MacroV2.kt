@@ -89,7 +89,6 @@ data class MacroV2 internal constructor(
                     val doubleBits = expr.primitiveValue
                     bytecode.add((doubleBits shr 32).toInt())
                     bytecode.add(doubleBits.toInt())
-
                 }
                 Kind.DECIMAL -> {
                     // TODO: Special case for zero
