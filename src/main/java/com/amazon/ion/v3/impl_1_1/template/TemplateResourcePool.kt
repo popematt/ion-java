@@ -79,24 +79,14 @@ class TemplateResourcePool private constructor(): Closeable {
     }
 
     private fun invokeTemplate(macro: MacroV2, arguments: ArgumentReader): ValueReader {
-        val reader = sequences.removeLastOrNull()
-        if (reader != null) {
-            reader.init(
-                macro.body!!,
-                macro.tokens,
-                arguments,
-                isArgumentOwner = true
-            )
-            return reader
-        } else {
-            return TemplateSequenceReaderImpl(
-                this,
-                macro.body!!,
-                macro.tokens,
-                arguments,
-                isArgumentOwner = true
-            )
-        }
+        val reader = sequences.removeLastOrNull() ?: TemplateSequenceReaderImpl(this)
+        reader.init(
+            macro.bytecode,
+            macro.constants,
+            arguments,
+            isArgumentOwner = true
+        )
+        return reader
     }
 
     // Default could be cheaper if it was default values in the signature, I think.
@@ -108,12 +98,9 @@ class TemplateResourcePool private constructor(): Closeable {
         // TODO: This doesn't properly handle the case where there's an empty expression group in binary
         //       Same thing for all of the `if` macros
 
-//        println("<><><><><><><><><><><><><> Checking first arg for 'default': ${TokenTypeConst(arguments.currentToken())}")
 
         // TODO: Actually evaluate the first argument until we've found the first value token or else END
         if (firstArg == TokenTypeConst.ABSENT_ARGUMENT) {
-//            println("<><><><><><><><><><><><><> Returning the second argument for 'default'")
-//            println(arguments)
             return getVariable(arguments, 1, isArgumentOwner = true)
         } else {
             return getVariable(arguments, 0, isArgumentOwner = true)
@@ -143,24 +130,18 @@ class TemplateResourcePool private constructor(): Closeable {
     }
 
 
-    fun getSequence(args: ArgumentReader, source: Array<TemplateBodyExpressionModel>, tokens: IntArray): TemplateSequenceReaderImpl {
-        val reader = sequences.removeLastOrNull()
-        if (reader != null) {
-            reader.init(source, tokens, args, isArgumentOwner = false)
-            return reader
-        } else {
-            return TemplateSequenceReaderImpl(this, source, tokens, args, isArgumentOwner = false)
-        }
+    fun getSequence(args: ArgumentReader, bytecode: IntArray, start: Int, constantPool: Array<Any?>): TemplateSequenceReaderImpl {
+        val reader = sequences.removeLastOrNull() ?: TemplateSequenceReaderImpl(this)
+        reader.init(bytecode, constantPool, args, isArgumentOwner = false)
+        reader.i = start
+        return reader
     }
 
-    fun getStruct(arguments: ArgumentReader, source: Array<TemplateBodyExpressionModel>, tokens: IntArray): TemplateStructReaderImpl {
-        val reader = structs.removeLastOrNull()
-        if (reader != null) {
-            reader.init(source, tokens, arguments, isArgumentOwner = false)
-            return reader
-        } else {
-            return TemplateStructReaderImpl(this, source, tokens, arguments, isArgumentOwner = false)
-        }
+    fun getStruct(arguments: ArgumentReader, bytecode: IntArray, constantPool: Array<Any?>, start: Int): TemplateStructReaderImpl {
+        val reader = structs.removeLastOrNull() ?: TemplateStructReaderImpl(this)
+        reader.init(bytecode, constantPool, arguments, isArgumentOwner = false)
+        reader.i = start
+        return reader
     }
 
     fun getAnnotations(annotationSymbols: Array<String?>): AnnotationIterator {
@@ -185,11 +166,14 @@ class TemplateResourcePool private constructor(): Closeable {
     }
 
     fun getArguments(args: ArgumentReader, signature: Array<Macro.Parameter>, source: Array<TemplateBodyExpressionModel>, tokens: IntArray): ArgumentReader {
-        val argReader = arguments.removeLastOrNull()
-            ?.apply { init(source, tokens, args, isArgumentOwner = false) }
-            ?: TemplateArgumentReaderImpl(this, source, tokens, args, isArgumentOwner = false)
-        argReader.initArgs(signature)
-        return argReader
+        if (signature.isEmpty()) {
+            return NoneReader
+        }
+//        val argReader = arguments.removeLastOrNull()
+//            ?.apply { init(source, tokens, args, isArgumentOwner = false) }
+//            ?: TemplateArgumentReaderImpl(this, source, tokens, args, isArgumentOwner = false)
+//        argReader.initArgs(signature)
+        TODO()
     }
 
     override fun close() {

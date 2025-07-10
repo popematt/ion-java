@@ -1,41 +1,27 @@
 package com.amazon.ion.v3.impl_1_1.template
 
 import com.amazon.ion.v3.*
-import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.instructionToOp
 
-class TemplateStructReaderImpl(
-    pool: TemplateResourcePool,
-    source: Array<TemplateBodyExpressionModel>,
-    tokens: IntArray,
-    arguments: ArgumentReader,
-    isArgumentOwner: Boolean,
-): ValueReader, StructReader, TemplateReaderBase(pool, source, tokens, arguments, isArgumentOwner),
-    SequenceReader {
+class TemplateStructReaderImpl(pool: TemplateResourcePool): ValueReader, StructReader, TemplateReaderBase(pool), SequenceReader {
 
-    override fun toString(): String {
-        return "TemplateStructReaderImpl(source=$source)"
+    override fun fieldName(): String? {
+        when (instruction.instructionToOp()) {
+            MacroBytecode.OP_CP_FIELD_NAME -> {
+                val constantPoolIndex = instruction and 0xFFFFFF
+                instruction = INSTRUCTION_NOT_SET
+                return constantPool[constantPoolIndex] as String?
+            }
+            else -> TODO("Op: ${instruction.instructionToOp()}")
+        }
     }
-
-    override fun fieldName(): String? = consumeCurrentExpression(
-        { it.symbolValue() },
-        { it.fieldName }
-    )
 
     override fun fieldNameSid(): Int {
-        val sid = inspectCurrentExpression(
-            { it.symbolValueSid() },
-            // The text should have been resolved when the macro was compiled. Even if there is a SID,
-            // it doesn't necessarily correspond to the current symbol table.
-            { -1 }
-        )
-        if (sid >= 0) {
-            currentExpression = null
+        when (instruction.instructionToOp()) {
+            MacroBytecode.OP_CP_FIELD_NAME -> return -1
+            else -> TODO("Op: ${instruction.instructionToOp()}")
         }
-        return sid
     }
-
-
-
 
     override fun returnToPool() {
 //        if (pool.structs.contains(this)) {

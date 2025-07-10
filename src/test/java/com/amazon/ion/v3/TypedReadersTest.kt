@@ -18,11 +18,13 @@ import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.ion_reader.*
 import com.amazon.ion.v3.visitor.*
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.time.Instant
@@ -2571,6 +2573,299 @@ class TypedReadersTest {
                     value("3")
                 }
             }
+
+            @Test
+            fun complexConstantMacro() {
+                val macro0 = TemplateMacro(
+                    signature = listOf(),
+                    body = ExpressionBuilderDsl.templateBody {
+                        struct {
+                            fieldName("StartTime"); timestamp(Timestamp.valueOf("2020-11-05T07:18:59.968+00:00"))
+                            fieldName("EndTime"); timestamp(Timestamp.valueOf("2020-11-05T07:18:59+00:00"))
+                            fieldName("Marketplace"); symbol("us-east-1")
+                            fieldName("Program"); symbol("LambdaFrontendInvokeService")
+                            fieldName("Time"); float(3.267017e6)
+                            fieldName("Operation"); symbol("ReserveSandbox2")
+                            fieldName("Properties");
+                            struct {
+                                fieldName("FrontendInstanceId"); symbol("i-0505be8aa9972815b")
+                                fieldName("AccountId"); symbol("103403959176")
+                                fieldName("RequestId"); symbol("f0bc3259-06e9-5ccb-96f1-6a44af76d4aa")
+                                fieldName("PID"); symbol("2812@ip-10-0-16-227")
+                                fieldName("WorkerId"); symbol("i-0c891b196c563ba4c")
+                                fieldName("FrontendInternalAZ"); symbol("USMA7")
+                                fieldName("WorkerManagerInstanceId"); symbol("i-070b7692b9a6aba7e")
+                                fieldName("SandboxId"); symbol("61fa4c30-d51d-40bb-82e0-a6195e27ca10")
+                                fieldName("Thread"); symbol("coral-orchestrator-136")
+                                fieldName("FrontendPublicAZ"); symbol("us-east-1a")
+                                fieldName("WorkerConnectPort"); symbol("2503")
+                            }
+                            fieldName("Timing")
+                            list {
+                                struct {
+                                    fieldName("Name"); symbol("Time:Warm")
+                                    fieldName("Sum"); float(3.267271041870117e0)
+                                    fieldName("Unit"); symbol("ms")
+                                    fieldName("Count"); int( 1)
+                                }
+                            }
+                            fieldName("Counters")
+                            list {
+                                struct {
+                                    fieldName("Name"); symbol("Attempt")
+                                    fieldName("Sum"); float(0e0)
+                                    fieldName("Unit"); symbol("")
+                                    fieldName("Count"); int( 1)
+                                }
+                                struct {
+                                    fieldName("Name"); symbol("Success")
+                                    fieldName("Sum"); float(1e0)
+                                    fieldName("Unit"); symbol("")
+                                    fieldName("Count"); int( 1)
+                                }
+                            }
+                            fieldName("Metrics")
+                            list {
+                                struct {
+                                    fieldName("Name"); symbol("Error")
+                                    fieldName("Samples")
+                                    list {
+                                        struct {
+                                            fieldName("Value")
+                                            float(0e0)
+                                            fieldName("Repeat")
+                                            int(1)
+                                        }
+                                    }
+                                    fieldName("Unit")
+                                    symbol("")
+                                }
+                                struct {
+                                    fieldName("Name"); symbol("Fault")
+                                    fieldName("Samples")
+                                    list {
+                                        struct {
+                                            fieldName("Value")
+                                            float(0e0)
+                                            fieldName("Repeat")
+                                            int(1)
+                                        }
+                                    }
+                                    fieldName("Unit")
+                                    symbol("")
+                                }
+                            }
+                        }
+                    }
+                )
+
+
+                /*
+                 * {
+                 *   StartTime: 2020-11-05T07:18:59.971+00:00,
+                 *   EndTime: 2020-11-05T07:18:59+00:00,
+                 *   Marketplace: 'us-east-1',
+                 *   Program: LambdaFrontendInvokeService,
+                 *   Time: 3e3,
+                 *   Operation: 'WSKF:GetLatestKeys',
+                 *   Properties: {
+                 *     FrontendInstanceId: 'i-0505be8aa9972815b',
+                 *     FrontendPublicAZ: 'us-east-1a',
+                 *     PID: '2812@ip-10-0-16-227',
+                 *     FrontendInternalAZ: USMA7,
+                 *   },
+                 *   Timing: [
+                 *     {
+                 *       Name: Latency,
+                 *       Sum: 2.0000000949949026e-3,
+                 *       Unit: ms,
+                 *       Count: 1,
+                 *     },
+                 *   ],
+                 * }
+                 */
+
+                /*
+                 * {
+                 *   StartTime: 2020-11-05T07:18:59.968+00:00,
+                 *   EndTime: 2020-11-05T07:18:59+00:00,
+                 *   Marketplace: 'us-east-1',
+                 *   Program: LambdaFrontendInvokeService,
+                 *   Time: 3.267017e6,
+                 *   Operation: ReserveSandbox2,
+                 *   Properties: {
+                 *     FrontendInstanceId: 'i-0505be8aa9972815b',
+                 *     AccountId: '103403959176',
+                 *     RequestId: 'f0bc3259-06e9-5ccb-96f1-6a44af76d4aa',
+                 *     PID: '2812@ip-10-0-16-227',
+                 *     WorkerId: 'i-0c891b196c563ba4c',
+                 *     FrontendInternalAZ: USMA7,
+                 *     WorkerManagerInstanceId: 'i-070b7692b9a6aba7e',
+                 *     SandboxId: '61fa4c30-d51d-40bb-82e0-a6195e27ca10',
+                 *     Thread: 'coral-orchestrator-136',
+                 *     FrontendPublicAZ: 'us-east-1a',
+                 *     WorkerConnectPort: '2503',
+                 *   },
+                 *   Timing: [
+                 *     {
+                 *       Name: 'Time:Warm',
+                 *       Sum: 3.267271041870117e0,
+                 *       Unit: ms,
+                 *       Count: 1,
+                 *     },
+                 *   ],
+                 *   Counters: [
+                 *     {
+                 *       Name: Attempt,
+                 *       Sum: 0e0,
+                 *       Unit: '',
+                 *       Count: 1,
+                 *     },
+                 *     {
+                 *       Name: Success,
+                 *       Sum: 1e0,
+                 *       Unit: '',
+                 *       Count: 1,
+                 *     },
+                 *   ],
+                 *   Metrics: [
+                 *     {
+                 *       Name: Error,
+                 *       Samples: [
+                 *         {
+                 *           Value: 0e0,
+                 *           Repeat: 1,
+                 *         },
+                 *       ],
+                 *       Unit: '',
+                 *     },
+                 *     {
+                 *       Name: Fault,
+                 *       Samples: [
+                 *         {
+                 *           Value: 0e0,
+                 *           Repeat: 1,
+                 *         },
+                 *       ],
+                 *       Unit: '',
+                 *     },
+                 *   ],
+                 * }
+                 * {
+                 *   StartTime: 2020-11-05T07:18:59.971+00:00,
+                 *   EndTime: 2020-11-05T07:18:59+00:00,
+                 *   Marketplace: 'us-east-1',
+                 *   Program: LambdaFrontendInvokeService,
+                 *   Time: 3e3,
+                 *   Operation: 'WSKF:GetLatestKeys',
+                 *   Properties: {
+                 *     FrontendInstanceId: 'i-0505be8aa9972815b',
+                 *     FrontendPublicAZ: 'us-east-1a',
+                 *     PID: '2812@ip-10-0-16-227',
+                 *     FrontendInternalAZ: USMA7,
+                 *   },
+                 *   Timing: [
+                 *     {
+                 *       Name: Latency,
+                 *       Sum: 2.0000000949949026e-3,
+                 *       Unit: ms,
+                 *       Count: 1,
+                 *     },
+                 *   ],
+                 * }
+                 */
+
+                val baos = ByteArrayOutputStream()
+                val writer = IonEncodingVersion.ION_1_1.binaryWriterBuilder().apply {
+                    setLengthPrefixStrategy(LengthPrefixStrategy.ALWAYS_PREFIXED)
+                    setSymbolInliningStrategy(SymbolInliningStrategy.NEVER_INLINE)
+                }.build(baos) as MacroAwareIonWriter
+
+                repeat(100) {
+                    writer.startMacro(macro0)
+                    writer.endMacro()
+                }
+                writer.close()
+
+                val bytes = baos.toByteArray()
+
+                FileChannel.open(File("/Users/popematt/constant_macro.10n").toPath(), StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING).use { fileChannel ->
+                    fileChannel.write(ByteBuffer.wrap(bytes))
+                }
+
+                val data = ByteBuffer.wrap(bytes)
+
+                StreamReaderAsIonReader(data).expect {
+                    value("""
+                        {
+                   StartTime: 2020-11-05T07:18:59.968+00:00,
+                   EndTime: 2020-11-05T07:18:59+00:00,
+                   Marketplace: 'us-east-1',
+                   Program: LambdaFrontendInvokeService,
+                   Time: 3.267017e6,
+                   Operation: ReserveSandbox2,
+                   Properties: {
+                     FrontendInstanceId: 'i-0505be8aa9972815b',
+                     AccountId: '103403959176',
+                     RequestId: 'f0bc3259-06e9-5ccb-96f1-6a44af76d4aa',
+                     PID: '2812@ip-10-0-16-227',
+                     WorkerId: 'i-0c891b196c563ba4c',
+                     FrontendInternalAZ: USMA7,
+                     WorkerManagerInstanceId: 'i-070b7692b9a6aba7e',
+                     SandboxId: '61fa4c30-d51d-40bb-82e0-a6195e27ca10',
+                     Thread: 'coral-orchestrator-136',
+                     FrontendPublicAZ: 'us-east-1a',
+                     WorkerConnectPort: '2503',
+                   },
+                   Timing: [
+                     {
+                       Name: 'Time:Warm',
+                       Sum: 3.267271041870117e0,
+                       Unit: ms,
+                       Count: 1,
+                     },
+                   ],
+                   Counters: [
+                     {
+                       Name: Attempt,
+                       Sum: 0e0,
+                       Unit: '',
+                       Count: 1,
+                     },
+                     {
+                       Name: Success,
+                       Sum: 1e0,
+                       Unit: '',
+                       Count: 1,
+                     },
+                   ],
+                   Metrics: [
+                     {
+                       Name: Error,
+                       Samples: [
+                         {
+                           Value: 0e0,
+                           Repeat: 1,
+                         },
+                       ],
+                       Unit: '',
+                     },
+                     {
+                       Name: Fault,
+                       Samples: [
+                         {
+                           Value: 0e0,
+                           Repeat: 1,
+                         },
+                       ],
+                       Unit: '',
+                     },
+                   ],
+                 }
+                    """)
+                }
+            }
+
 
 
             @Test

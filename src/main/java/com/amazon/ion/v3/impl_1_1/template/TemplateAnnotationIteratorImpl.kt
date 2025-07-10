@@ -1,6 +1,5 @@
 package com.amazon.ion.v3.impl_1_1.template
 
-import com.amazon.ion.SymbolToken
 import com.amazon.ion.v3.AnnotationIterator
 import com.amazon.ion.v3.PrivateAnnotationIterator
 
