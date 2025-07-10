@@ -40,7 +40,7 @@ abstract class TemplateReaderBase(
 
 
     companion object {
-        const val INSTRUCTION_NOT_SET = -1
+        const val INSTRUCTION_NOT_SET = MacroBytecode.UNSET shl 24
     }
 
     fun init(
@@ -80,7 +80,8 @@ abstract class TemplateReaderBase(
 
     // TODO: Make sure that this also returns END when at the end of the input.
     override fun currentToken(): Int {
-        when (val op = instruction.instructionToOp()) {
+        val op = instruction ushr 24
+        when (op) {
             // TODO: Reference instructions
             MacroBytecode.OP_NULL_NULL,
             MacroBytecode.OP_NULL_TYPED -> return TokenTypeConst.NULL
