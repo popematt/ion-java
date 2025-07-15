@@ -91,6 +91,12 @@ public class IntList {
         numberOfValues += 1;
     }
 
+    public int[] toArray() {
+        int[] copy = new int[numberOfValues];
+        System.arraycopy(data, 0, copy, 0, numberOfValues);
+        return copy;
+    }
+
     /**
      * Reallocates the backing array to accommodate storing more ints.
      */

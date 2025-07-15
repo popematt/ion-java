@@ -4,10 +4,7 @@ import com.amazon.ion.SymbolToken
 import com.amazon.ion.impl.macro.Expression
 import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.impl.macro.TemplateMacro
-import com.amazon.ion.v3.AnnotationIterator
-import com.amazon.ion.v3.ArgumentReader
-import com.amazon.ion.v3.TokenTypeConst
-import com.amazon.ion.v3.ValueReader
+import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
 import java.io.Closeable
 
@@ -48,26 +45,26 @@ class TemplateResourcePool private constructor(): Closeable {
     /**
      * This takes ownership of the ArgumentReader and closes it when this evaluator is closed.
      */
-    fun startEvaluation(macro: MacroV2, arguments: ArgumentReader): ValueReader {
+    fun startEvaluation(macro: MacroV2, arguments: ArgumentBytecode): ValueReader {
         return when (macro.systemAddress) {
-            SystemMacro.VALUES_ADDRESS -> {
-                getVariable(arguments, 0, isArgumentOwner = true)
-            }
+//            SystemMacro.VALUES_ADDRESS -> {
+//                getVariable(arguments, 0, isArgumentOwner = true)
+//            }
             // All system macros that produce system values are evaluated using templates because
             // the hard-coded implementation only applies at the top level of the stream, and is
             // handled elsewhere
             SystemMacro.NONE_ADDRESS -> {
-                arguments.close()
+                // arguments.close()
                 // TODO? Make sure that there are no args?
                 NoneReader
             }
             SystemMacro.META_ADDRESS -> {
-                arguments.close()
+                // arguments.close()
                 NoneReader
             }
             SystemMacro.DEFAULT_ADDRESS -> invokeDefault(arguments)
-            SystemMacro.IF_NONE_ADDRESS -> invokeIfNone(arguments)
-            SystemMacro.IF_SOME_ADDRESS -> invokeIfSome(arguments)
+//            SystemMacro.IF_NONE_ADDRESS -> invokeIfNone(arguments)
+//            SystemMacro.IF_SOME_ADDRESS -> invokeIfSome(arguments)
             else -> {
                 if (macro.body != null) {
                     invokeTemplate(macro, arguments)
@@ -78,7 +75,7 @@ class TemplateResourcePool private constructor(): Closeable {
         }
     }
 
-    private fun invokeTemplate(macro: MacroV2, arguments: ArgumentReader): ValueReader {
+    private fun invokeTemplate(macro: MacroV2, arguments: ArgumentBytecode): ValueReader {
         val reader = sequences.removeLastOrNull() ?: TemplateSequenceReaderImpl(this)
         reader.init(
             macro.bytecode,
@@ -91,20 +88,19 @@ class TemplateResourcePool private constructor(): Closeable {
 
     // Default could be cheaper if it was default values in the signature, I think.
 
-    private fun invokeDefault(arguments: ArgumentReader): ValueReader {
+    private fun invokeDefault(arguments: ArgumentBytecode): ValueReader {
 //        println("Invoking Default with arguments: $arguments")
-        arguments.seekToBeforeArgument(0)
-        val firstArg = arguments.nextToken()
+        val firstArg = arguments.getArgument(0)
         // TODO: This doesn't properly handle the case where there's an empty expression group in binary
         //       Same thing for all of the `if` macros
 
-
         // TODO: Actually evaluate the first argument until we've found the first value token or else END
-        if (firstArg == TokenTypeConst.ABSENT_ARGUMENT) {
-            return getVariable(arguments, 1, isArgumentOwner = true)
-        } else {
-            return getVariable(arguments, 0, isArgumentOwner = true)
-        }
+//        if (firstArg.size > 1) {
+//            return getVariable(arguments, 0, isArgumentOwner = true)
+//        } else {
+//            return getVariable(arguments, 1, isArgumentOwner = true)
+//        }
+        TODO()
     }
 
     private fun invokeIfNone(arguments: ArgumentReader): ValueReader {
@@ -130,15 +126,16 @@ class TemplateResourcePool private constructor(): Closeable {
     }
 
 
-    fun getSequence(args: ArgumentReader, bytecode: IntArray, start: Int, constantPool: Array<Any?>): TemplateSequenceReaderImpl {
+    fun getSequence(args: ArgumentBytecode, bytecode: IntArray, start: Int, constantPool: Array<Any?>): TemplateSequenceReaderImpl {
         val reader = sequences.removeLastOrNull() ?: TemplateSequenceReaderImpl(this)
         reader.init(bytecode, constantPool, args, isArgumentOwner = false)
         reader.i = start
         return reader
     }
 
-    fun getStruct(arguments: ArgumentReader, bytecode: IntArray, constantPool: Array<Any?>, start: Int): TemplateStructReaderImpl {
-        val reader = structs.removeLastOrNull() ?: TemplateStructReaderImpl(this)
+    fun getStruct(arguments: ArgumentBytecode, bytecode: IntArray, constantPool: Array<Any?>, start: Int): TemplateStructReaderImpl {
+        val reader = structs.removeLastOrNull()
+            ?: TemplateStructReaderImpl(this)
         reader.init(bytecode, constantPool, arguments, isArgumentOwner = false)
         reader.i = start
         return reader

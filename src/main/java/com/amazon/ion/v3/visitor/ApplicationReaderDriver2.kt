@@ -2,7 +2,6 @@ package com.amazon.ion.v3.visitor
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
-import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.*
 import com.amazon.ion.v3.impl_1_1.*
@@ -309,7 +308,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                                 // TODO: Since we're at the top level, we need to read as top-level values in case a directive
                                 //       is produced.
                                 // Start a macro evaluation session
-                                val args = reader.macroArguments(macro.signature)
+                                val args = reader.macroArgumentsNew(macro.signature)
                                 templateReaderPool.startEvaluation(macro, args)
                                     .use { macroInvocation ->
 //                                            println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
@@ -432,11 +431,12 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 TokenTypeConst.MACRO_INVOCATION -> {
                     val macro = reader.macroValue()
                     val macroVisitor = visitor.onEExpression(macro)
-                    val args = reader.macroArguments(macro.signature)
                     if (macroVisitor != null) {
+                        val args = reader.macroArguments(macro.signature)
                         readAllValues(args, macroVisitor)
                         args.close()
                     } else {
+                        val args = reader.macroArgumentsNew(macro.signature)
                         val invocation = templateReaderPool.startEvaluation(macro, args)
                         pushReaderToStack()
                         reader = invocation
@@ -577,11 +577,12 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 TokenTypeConst.MACRO_INVOCATION -> {
                     val macro = reader.macroValue()
                     val macroVisitor = visitor.onEExpression(macro)
-                    val args = reader.macroArguments(macro.signature)
                     if (macroVisitor != null) {
+                        val args = reader.macroArguments(macro.signature)
                         readAllValues(args, macroVisitor)
                         args.close()
                     } else {
+                        val args = reader.macroArgumentsNew(macro.signature)
                         val invocation = templateReaderPool.startEvaluation(macro, args)
                         pushReaderToStack()
                         reader = invocation
@@ -767,15 +768,18 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             TokenTypeConst.MACRO_INVOCATION -> {
                 val macro = reader.macroValue()
                 val macroVisitor = visitor.onEExpression(macro)
-                reader.macroArguments(macro.signature).use { args ->
-                    if (macroVisitor != null) {
+                if (macroVisitor != null) {
+                    reader.macroArguments(macro.signature).use { args ->
                         readAllValues(args, macroVisitor);
-                    } else {
-                        templateReaderPool.startEvaluation(macro, args).use {
-                                evaluator -> readAllValues(evaluator, visitor)
+                    }
+                } else {
+                    reader.macroArgumentsNew(macro.signature).let { args ->
+                        templateReaderPool.startEvaluation(macro, args).use { evaluator ->
+                            readAllValues(evaluator, visitor)
                         }
                     }
                 }
+
             }
             // EXPRESSION_GROUP?
             // TokenTypeConst.ABSENT_ARGUMENT -> return false

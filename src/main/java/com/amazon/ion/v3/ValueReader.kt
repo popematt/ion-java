@@ -158,6 +158,7 @@ interface ValueReader: AutoCloseable {
      *
      * If passing this off to a macro evaluator, the macro evaluator is responsible for closing it.
      */
+    fun macroArgumentsNew(signature: Array<Macro.Parameter>): ArgumentBytecode = TODO()
     fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader = TODO()
 
     /**
@@ -228,6 +229,31 @@ interface ArgumentReader: ValueReader {
     fun seekToBeforeArgument(signatureIndex: Int)
 
     val signature: Array<Macro.Parameter>
+}
+
+interface ArgumentBytecode {
+    fun constantPool(): Array<Any?>
+
+    fun getArgument(parameterIndex: Int): IntArray
+
+    fun getList(start:Int, length:Int): ListReader
+    fun getSexp(start:Int, length:Int): SexpReader
+    fun getStruct(start:Int, length:Int, flexsymMode: Boolean): StructReader
+    fun getMacro(macroAddress: Int): MacroV2
+    fun getSymbol(sid: Int): String?
+
+    companion object {
+        @JvmStatic
+        val NO_ARGS = object : ArgumentBytecode {
+            override fun constantPool(): Array<Any?> = emptyArray()
+            override fun getArgument(parameterIndex: Int): IntArray = intArrayOf()
+            override fun getList(start:Int, length:Int) = TODO()
+            override fun getSexp(start:Int, length:Int) = TODO()
+            override fun getStruct(start: Int, length: Int, flexsymMode: Boolean) = TODO()
+            override fun getMacro(macroAddress: Int) = TODO()
+            override fun getSymbol(sid: Int) = TODO()
+        }
+    }
 }
 
 interface StructReader: ValueReader {

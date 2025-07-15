@@ -1,0 +1,66 @@
+package com.amazon.ion.v3.impl_1_1.binary
+
+import com.amazon.ion.impl.macro.*
+import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.template.*
+import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
+import java.nio.ByteBuffer
+
+class EExpArguments(
+    @JvmField
+    var arguments: Array<IntArray>,
+    @JvmField
+    var constants: Array<Any?>,
+    @JvmField
+    val source: ByteBuffer,
+    @JvmField
+    var signature: Array<Macro.Parameter>,
+    @JvmField
+    val symbolTable: Array<String?>,
+    @JvmField
+    val macroTable: Array<MacroV2>,
+    @JvmField
+    val pool: ResourcePool,
+): ArgumentBytecode {
+
+    companion object {
+        @JvmStatic
+        val EMPTY_ARG = intArrayOf(
+            MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction()
+        )
+    }
+
+    override fun constantPool(): Array<Any?> {
+        return constants
+    }
+
+    override fun getArgument(parameterIndex: Int): IntArray {
+        return arguments[parameterIndex]
+    }
+
+    override fun getList(start:Int, length:Int): ListReader {
+        return pool.getList(start, length, symbolTable, macroTable)
+    }
+
+    override fun getSexp(start:Int, length:Int): SexpReader {
+        return pool.getPrefixedSexp(start, length, symbolTable, macroTable)
+    }
+
+    override fun getStruct(start: Int, length: Int, flexsymMode: Boolean): StructReader {
+        val struct = pool.getStruct(start, length, symbolTable, macroTable)
+        struct as StructReaderImpl
+        struct.flexSymMode = flexsymMode
+        return struct
+    }
+
+    override fun getMacro(macroAddress: Int): MacroV2 {
+        return macroTable[macroAddress]
+    }
+
+    override fun getSymbol(sid: Int): String? {
+        println("Get symbol for $sid: ${symbolTable[sid]}")
+        if (sid == 0) throw Exception("SID = 0")
+        return symbolTable[sid]
+    }
+}

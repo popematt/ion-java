@@ -108,13 +108,13 @@ class StreamWrappingIonReader: IonReader {
                 } else if (readerManager.readerDepth == 1) {
                     return null
                 } else {
-                    reader = readerManager.popReader()!!
+                    reader = readerManager.popReader()
                     null
                 }
             }
             TokenTypeConst.MACRO_INVOCATION -> {
                 val macro = reader.macroValue()
-                val args = reader.macroArguments(macro.signature)
+                val args = reader.macroArgumentsNew(macro.signature)
                 val eexp = templateReaderPool.startEvaluation(macro, args)
                 readerManager.pushReader(eexp)
                 reader = eexp

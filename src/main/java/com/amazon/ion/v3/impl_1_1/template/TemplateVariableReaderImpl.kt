@@ -91,6 +91,11 @@ class TemplateVariableReaderImpl(
         return arguments.macroArguments(signature)
     }
 
+    override fun macroArgumentsNew(signature: Array<Macro.Parameter>): ArgumentBytecode {
+//        println("Getting argument reader from variable reader.")
+        return arguments.macroArgumentsNew(signature)
+    }
+
     override fun expressionGroup(): SequenceReader = arguments.expressionGroup()
 
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")

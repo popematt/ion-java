@@ -37,7 +37,7 @@ data class MacroV2 internal constructor(
         val bytecode = mutableListOf<Int>()
 
         if (body != null) {
-            toByteCode(body, bytecode, constants)
+            templateExpressionToBytecode(body, null, bytecode, constants)
             bytecode.add(MacroBytecode.EOF.opToInstruction())
         }
 
@@ -46,139 +46,7 @@ data class MacroV2 internal constructor(
     }
 
     companion object {
-        @JvmStatic
-        fun toByteCode(expressions: Array<TemplateBodyExpressionModel>, bytecode: MutableList<Int>, constants: MutableList<Any?>) {
-            // TODO: Deduplicate the constant and primitive pools
-            for (expr in expressions) {
-                toByteCode(expr, bytecode, constants)
-            }
-        }
 
-        @JvmStatic
-        fun toByteCode(expr: TemplateBodyExpressionModel, bytecode: MutableList<Int>, constants: MutableList<Any?>) {
-            when (expr.expressionKind) {
-                Kind.NULL -> when (expr.valueObject) {
-                    IonType.NULL -> bytecode.add(MacroBytecode.OP_NULL_NULL.opToInstruction())
-                    else -> bytecode.add(MacroBytecode.OP_NULL_TYPED.opToInstruction((expr.valueObject as IonType).ordinal))
-                }
-
-                Kind.BOOL -> bytecode.add(MacroBytecode.OP_BOOL.opToInstruction(expr.primitiveValue.toInt()))
-
-                Kind.INT -> {
-                    if (expr.valueObject != null) {
-                        val bigInt = expr.valueObject as BigInteger
-                        val cpIndex = constants.size
-                        constants.add(bigInt)
-                        bytecode.add(MacroBytecode.OP_CP_BIG_INT.opToInstruction(cpIndex))
-                    } else {
-                        val longValue = expr.primitiveValue
-                        if (longValue.toShort().toLong() == longValue) {
-                            bytecode.add(MacroBytecode.OP_SMALL_INT.opToInstruction(longValue.toInt()))
-                        } else if (longValue.toInt().toLong() == longValue) {
-                            bytecode.add(MacroBytecode.OP_INLINE_INT.opToInstruction())
-                            bytecode.add(longValue.toInt())
-                        } else {
-                            bytecode.add(MacroBytecode.OP_INLINE_LONG.opToInstruction())
-                            bytecode.add((longValue shr 32).toInt())
-                            bytecode.add(longValue.toInt())
-                        }
-                    }
-                }
-                Kind.FLOAT -> {
-                    bytecode.add(MacroBytecode.OP_INLINE_DOUBLE.opToInstruction())
-                    val doubleBits = expr.primitiveValue
-                    bytecode.add((doubleBits shr 32).toInt())
-                    bytecode.add(doubleBits.toInt())
-                }
-                Kind.DECIMAL -> {
-                    // TODO: Special case for zero
-                    val decimal = expr.valueObject as BigDecimal
-                    val cpIndex = constants.size
-                    constants.add(decimal)
-                    bytecode.add(MacroBytecode.OP_CP_DECIMAL.opToInstruction(cpIndex))
-                }
-                Kind.TIMESTAMP -> {
-                    val ts = expr.valueObject as Timestamp
-                    val cpIndex = constants.size
-                    constants.add(ts)
-                    bytecode.add(MacroBytecode.OP_CP_TIMESTAMP.opToInstruction(cpIndex))
-                }
-                Kind.STRING -> {
-                    val str = expr.valueObject as String
-                    val cpIndex = constants.size
-                    constants.add(str)
-                    bytecode.add(MacroBytecode.OP_CP_STRING.opToInstruction(cpIndex))
-                }
-                Kind.SYMBOL -> {
-                    val str = expr.valueObject as String?
-                    val cpIndex = constants.size
-                    constants.add(str)
-                    bytecode.add(MacroBytecode.OP_CP_SYMBOL.opToInstruction(cpIndex))
-                }
-
-                Kind.BLOB -> TODO()
-                Kind.CLOB -> TODO()
-                Kind.LIST -> handleContainerLikeThing(MacroBytecode.OP_LIST_START, MacroBytecode.OP_LIST_END, expr, bytecode, constants)
-                Kind.STRUCT -> handleContainerLikeThing(MacroBytecode.OP_STRUCT_START, MacroBytecode.OP_STRUCT_END, expr, bytecode, constants)
-                Kind.SEXP -> handleContainerLikeThing(MacroBytecode.OP_SEXP_START, MacroBytecode.OP_SEXP_END, expr, bytecode, constants)
-                Kind.ANNOTATIONS -> {
-                    val anns = expr.annotations
-                    if (anns.size == 1) {
-                        val ann = anns[0]
-                        val cpIndex = constants.size
-                        constants.add(ann)
-                        bytecode.add(MacroBytecode.OP_CP_ONE_ANNOTATION.opToInstruction(cpIndex))
-                    } else {
-                        bytecode.add(MacroBytecode.OP_CP_N_ANNOTATIONS.opToInstruction(anns.size))
-                        for (ann in anns) {
-                            val cpIndex = constants.size
-                            constants.add(ann)
-                            bytecode.add(cpIndex)
-                        }
-                    }
-                }
-                Kind.FIELD_NAME -> {
-                    val fn = expr.fieldName
-                    val cpIndex = constants.size
-                    constants.add(fn)
-                    bytecode.add(MacroBytecode.OP_CP_FIELD_NAME.opToInstruction(cpIndex))
-                }
-                Kind.EXPRESSION_GROUP -> {
-                    val content = expr.childExpressions
-                    toByteCode(content, bytecode, constants)
-                    // handleContainerLikeThing(MacroBytecode.OP_START_ARGUMENT_VALUE, MacroBytecode.OP_END_ARGUMENT_VALUE, expr, bytecode, constants, primitives)
-                }
-                Kind.VARIABLE -> bytecode.add(MacroBytecode.OP_ARGUMENT_REF_TYPE.opToInstruction(expr.primitiveValue.toInt()))
-                Kind.INVOCATION -> {
-                    val args = expr.childExpressions
-                    for (arg in args) {
-                        val argStartIndex = bytecode.size
-                        bytecode.add(MacroBytecode.UNSET.opToInstruction())
-                        val start = bytecode.size
-                        toByteCode(arg, bytecode, constants)
-                        bytecode.add(MacroBytecode.OP_END_ARGUMENT_VALUE.opToInstruction())
-                        val end = bytecode.size
-                        bytecode[argStartIndex] = (MacroBytecode.OP_START_ARGUMENT_VALUE.opToInstruction(end - start))
-                    }
-                    val macro = expr.valueObject as MacroV2
-                    val cpIndex = constants.size
-                    constants.add(macro)
-                    bytecode.add(MacroBytecode.OP_INVOKE_MACRO.opToInstruction(cpIndex))
-                }
-                else -> throw IllegalStateException("Invalid Expression: $expr")
-            }
-        }
-
-        private fun handleContainerLikeThing(startOp: Int, endOp: Int, expr: TemplateBodyExpressionModel, bytecode: MutableList<Int>, constants: MutableList<Any?>) {
-            val containerStartIndex = bytecode.size
-            bytecode.add(MacroBytecode.UNSET.opToInstruction())
-            val start = bytecode.size
-            val content = expr.childExpressions
-            toByteCode(content, bytecode, constants)
-            bytecode.add(endOp.opToInstruction())
-            val end = bytecode.size
-            bytecode[containerStartIndex] = startOp.opToInstruction(end - start)
-        }
     }
 
     // TODO: Expansion analysis

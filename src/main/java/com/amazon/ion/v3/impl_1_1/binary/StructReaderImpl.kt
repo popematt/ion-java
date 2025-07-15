@@ -12,7 +12,8 @@ class StructReaderImpl internal constructor(
 ): ValueReaderBase(source, pool, symbolTable, macroTable), StructReader {
 
     private var flexSymReader: FlexSymReader = FlexSymReader(pool)
-    private var flexSymMode: Boolean = false
+    @JvmField
+    var flexSymMode: Boolean = false
 
     override fun close() {
         if (this in pool.structs) throw IllegalStateException("Already closed: $this")

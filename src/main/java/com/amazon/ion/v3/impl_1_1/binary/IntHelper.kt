@@ -158,12 +158,15 @@ object IntHelper {
         return n.toInt()
     }
 
+    @OptIn(ExperimentalStdlibApi::class)
     @JvmStatic
     fun readFlexIntAsLong(source: ByteBuffer): Long {
         val position = source.position()
         val firstByte = source.get()
         val numBytes = firstByte.countTrailingZeroBits() + 1
-        if (source.remaining() < numBytes) throw IonException("Incomplete data")
+        if (source.remaining() < numBytes) {
+            throw IonException("Incomplete data. firstByte=${firstByte.toHexString()}, numBytes=$numBytes; remaining=${source.remaining()}")
+        }
         source.position(position + numBytes)
         when (numBytes) {
             1 -> {

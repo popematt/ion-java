@@ -9,7 +9,6 @@ import com.amazon.ion.SymbolTable
 import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl.*
-import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_0.StreamReader_1_0
 import com.amazon.ion.v3.impl_1_1.*
@@ -107,7 +106,8 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         val reader = this.reader
         val token = reader.nextToken()
 
-        type = when (token) {
+        // TODO: Assign a local variable here.
+        val proposedType = when (token) {
             TokenTypeConst.NULL -> reader.ionType()
             TokenTypeConst.BOOL -> IonType.BOOL
             TokenTypeConst.INT -> IonType.INT
@@ -143,6 +143,9 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 fieldNameSid = r.fieldNameSid()
                 if (fieldNameSid < 0) {
                     fieldName = r.fieldName()
+                    if (fieldName == null) {
+                        fieldNameSid = 0
+                    }
                 } else {
                     fieldName = r.lookupSid(fieldNameSid)
                 }
@@ -178,8 +181,9 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 TODO("Unreachable: ${TokenTypeConst(token)}")
             }
         }
-        if (type != null) {
-            return type
+        if (proposedType != null) {
+            type = proposedType
+            return proposedType
         }
         return _next()
     }
@@ -189,11 +193,9 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         val macro = reader.macroValue()
 //        println("Evaluating macro $macro")
 
-        // FIXME: 26% of ALL
-        val args = reader.macroArguments(macro.signature)
-
         val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro.systemAddress) {
             SystemMacro.ADD_SYMBOLS_ADDRESS -> {
+                val args = reader.macroArguments(macro.signature)
                 // FIXME: 6% of All
                 encodingContextManager.addOrSetSymbols(args, append = true)
                 // FIXME: 5% of All
@@ -202,17 +204,21 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 true
             }
             SystemMacro.SET_SYMBOLS_ADDRESS -> {
+                val args = reader.macroArguments(macro.signature)
                 encodingContextManager.addOrSetSymbols(args, append = false)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
 //                        println("Set symbols: ${ion11Reader.symbolTable.contentToString()}")
                 true
             }
             SystemMacro.ADD_MACROS_ADDRESS -> {
+                val args = reader.macroArguments(macro.signature)
                 encodingContextManager.addOrSetMacros(args, append = true)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
             }
             SystemMacro.SET_MACROS_ADDRESS -> {
+                println("Set Macros")
+                val args = reader.macroArguments(macro.signature)
                 encodingContextManager.addOrSetMacros(args, append = false)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
@@ -222,13 +228,12 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         }
 
         if (!isShortCircuitEvaluation) {
+            val args = reader.macroArgumentsNew(macro.signature)
             // FIXME: 7% of all
             val eexp = templateReaderPool.startEvaluation(macro, args)
             readerManager.pushReader(eexp)
             reader = eexp
             type = null
-        } else {
-            args.close()
         }
     }
 
