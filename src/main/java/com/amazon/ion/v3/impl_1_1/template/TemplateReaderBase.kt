@@ -256,7 +256,8 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_CP_BIG_INT -> 9
             MacroBytecode.OP_CP_BLOB,
             MacroBytecode.OP_CP_CLOB -> {
-                (bytecode.unsafeGetReferenceAt<ByteBuffer>(i)).remaining()
+                val cpindex = instruction and 0xFFFFFF
+                (constantPool[cpindex] as ByteBuffer).remaining()
             }
             else -> TODO("Op: ${instruction.instructionToOp()}")
         }
@@ -269,15 +270,15 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_INLINE_LONG -> i += 2
 
             // Things with unsafe object references
-            MacroBytecode.OP_CP_BIG_INT,
-            MacroBytecode.OP_CP_BLOB,
-            MacroBytecode.OP_CP_CLOB,
-            MacroBytecode.OP_CP_FIELD_NAME,
-            MacroBytecode.OP_CP_SYMBOL,
-            MacroBytecode.OP_CP_STRING,
-            MacroBytecode.OP_CP_DECIMAL,
-            MacroBytecode.OP_CP_MACRO_INVOCATION,
-            MacroBytecode.OP_CP_TIMESTAMP -> i += 2
+//            MacroBytecode.OP_CP_BIG_INT,
+//            MacroBytecode.OP_CP_BLOB,
+//            MacroBytecode.OP_CP_CLOB,
+//            MacroBytecode.OP_CP_FIELD_NAME,
+//            MacroBytecode.OP_CP_SYMBOL,
+//            MacroBytecode.OP_CP_STRING,
+//            MacroBytecode.OP_CP_DECIMAL,
+//            MacroBytecode.OP_CP_MACRO_INVOCATION,
+//            MacroBytecode.OP_CP_TIMESTAMP -> i += 2
 
 
             MacroBytecode.OP_LIST_START,
@@ -298,13 +299,12 @@ abstract class TemplateReaderBase(
 
     override fun macroInvocation(): MacroInvocation {
         val instruction = instruction
-        // val cpIndex = (instruction and 0xFFFFFF) // bytecode[i++]
+         val cpIndex = (instruction and 0xFFFFFF) // bytecode[i++]
         val op = instruction.instructionToOp()
         this.instruction = INSTRUCTION_NOT_SET
         when (op) {
             MacroBytecode.OP_INVOKE_MACRO -> {
-                val macro = bytecode.unsafeGetReferenceAt(i) as MacroV2
-                i += 2
+                val macro = constantPool[cpIndex] as MacroV2
                 // TODO: Ensure that there are no elided args in the bytecode.
                 val sig = macro.signature
                 /**
@@ -416,10 +416,7 @@ abstract class TemplateReaderBase(
                 // TODO("OP_INVOKE_MACRO")
             }
             MacroBytecode.OP_CP_MACRO_INVOCATION -> {
-                // val invocation = (constantPool[cpIndex] as MacroInvocation)
-                val invocation = bytecode.unsafeGetReferenceAt(i) as MacroInvocation
-                i += 2
-                "foo".intern()
+                 val invocation = (constantPool[cpIndex] as MacroInvocation)
                 return invocation
             }
             else -> throw IllegalStateException("Not positioned on macro: ${MacroBytecode(instruction)}")
@@ -473,22 +470,17 @@ abstract class TemplateReaderBase(
     override fun annotations(): AnnotationIterator {
         val annotations = when (instruction.instructionToOp()) {
             MacroBytecode.OP_CP_ONE_ANNOTATION -> {
-                // val constantPoolIndex = (instruction and 0xFFFFFF)
+                val constantPoolIndex = (instruction and 0xFFFFFF)
                 val annotations = arrayOfNulls<String?>(1)
-                // annotations[0] = constantPool[constantPoolIndex] as String?
-                annotations[0] = bytecode.unsafeGetReferenceAt(i)
-                i += 2
+                annotations[0] = constantPool[constantPoolIndex] as String?
                 annotations
             }
             MacroBytecode.OP_CP_N_ANNOTATIONS -> {
                 val nAnnotations = (instruction and 0xFFFFFF)
-//                Array(nAnnotations) { constantPool[bytecode[i++]] as String? }
+                val constantPool = constantPool
+                val bytecode = bytecode
                 var localI = i
-                val annotations = Array(nAnnotations) {
-                    val ann = bytecode.unsafeGetReferenceAt<String?>(localI)
-                    localI += 2
-                    ann
-                }
+                val annotations = Array(nAnnotations) { constantPool[bytecode[localI++]] as String? }
                 i = localI
                 annotations
             }
@@ -553,12 +545,9 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_DECIMAL -> {
-                // val constantPoolIndex = (instruction and 0xFFFFFF)
+                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                val i = this.i
-                val decimal = bytecode.unsafeGetReferenceAt<BigDecimal>(i)
-                this.i = i + 2
-                return Decimal.valueOf(decimal)
+                return Decimal.valueOf(constantPool[constantPoolIndex] as BigDecimal)
             }
             else -> TODO("Op: $op")
         }
@@ -567,12 +556,9 @@ abstract class TemplateReaderBase(
     override fun stringValue(): String {
         when (instruction.instructionToOp()) {
             MacroBytecode.OP_CP_STRING -> {
-//                val constantPoolIndex = (instruction and 0xFFFFFF)
+                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                val i = this.i
-                val string = bytecode.unsafeGetReferenceAt<String>(i)
-                this.i = i + 2
-                return string
+                return constantPool[constantPoolIndex] as String
             }
             else -> TODO("Op: ${instruction.instructionToOp()}")
         }
@@ -581,11 +567,9 @@ abstract class TemplateReaderBase(
     override fun symbolValue(): String? {
         when (instruction.instructionToOp()) {
             MacroBytecode.OP_CP_SYMBOL -> {
-                // val constantPoolIndex = (instruction and 0xFFFFFF)
+                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                val text = bytecode.unsafeGetReferenceAt<String>(i)
-                i += 2
-                return text
+                return constantPool[constantPoolIndex] as String?
             }
             MacroBytecode.OP_UNKNOWN_SYMBOL -> {
                 instruction = INSTRUCTION_NOT_SET
@@ -612,12 +596,9 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_TIMESTAMP -> {
-//                val constantPoolIndex = (instruction and 0xFFFFFF)
+                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                val i = this.i
-                val ts = bytecode.unsafeGetReferenceAt<Timestamp>(i)
-                this.i = i + 2
-                return ts
+                return constantPool[constantPoolIndex] as Timestamp
             }
             else -> TODO("Op: $op")
         }
@@ -628,12 +609,9 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_CLOB -> {
-//                val constantPoolIndex = (instruction and 0xFFFFFF)
+                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                val i = this.i
-                val clob = bytecode.unsafeGetReferenceAt<ByteBuffer>(i)
-                this.i = i + 2
-                return clob
+                return constantPool[constantPoolIndex] as ByteBuffer
             }
             else -> TODO("Op: $op")
         }
@@ -643,12 +621,9 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_BLOB -> {
-//                val constantPoolIndex = (instruction and 0xFFFFFF)
+                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                val i = this.i
-                val blob = bytecode.unsafeGetReferenceAt<ByteBuffer>(i)
-                this.i = i + 2
-                return blob
+                return constantPool[constantPoolIndex] as ByteBuffer
             }
             else -> TODO("Op: $op")
         }

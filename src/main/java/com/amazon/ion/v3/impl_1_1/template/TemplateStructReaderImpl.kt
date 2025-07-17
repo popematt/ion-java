@@ -8,11 +8,9 @@ class TemplateStructReaderImpl(pool: TemplateResourcePool): ValueReader, StructR
     override fun fieldName(): String? {
         when (instruction.instructionToOp()) {
             MacroBytecode.OP_CP_FIELD_NAME -> {
-//                val constantPoolIndex = instruction and 0xFFFFFF
+                val constantPoolIndex = instruction and 0xFFFFFF
                 instruction = INSTRUCTION_NOT_SET
-                val i = this.i
-                val fieldName = bytecode.unsafeGetReferenceAt<String?>(i)
-                this.i = i + 2
+                val fieldName = constantPool[constantPoolIndex] as String?
                 return fieldName
             }
             else -> TODO("Op: ${instruction.instructionToOp()}")

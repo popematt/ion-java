@@ -37,7 +37,6 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 constants.add(bigInt)
                 // Unnecessary to add the cpIndex, but relatively cheap, and helpful for debugging.
                 bytecode.add(MacroBytecode.OP_CP_BIG_INT.opToInstruction(cpIndex))
-                bytecode.unsafeAddReference(bigInt)
             } else {
                 val longValue = expr.primitiveValue
                 if (longValue.toShort().toLong() == longValue) {
@@ -64,22 +63,18 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
             val cpIndex = constants.size
             constants.add(decimal)
             bytecode.add(MacroBytecode.OP_CP_DECIMAL.opToInstruction(cpIndex))
-            bytecode.unsafeAddReference(decimal)
         }
         Kind.TIMESTAMP -> {
             val ts = expr.valueObject as Timestamp
             val cpIndex = constants.size
             constants.add(ts)
             bytecode.add(MacroBytecode.OP_CP_TIMESTAMP.opToInstruction(cpIndex))
-            bytecode.unsafeAddReference(ts)
         }
         Kind.STRING -> {
             val str = expr.valueObject as String
             val cpIndex = constants.size
             constants.add(str)
             bytecode.add(MacroBytecode.OP_CP_STRING.opToInstruction(cpIndex))
-            bytecode.unsafeAddReference(str)
-
         }
         Kind.SYMBOL -> {
             val str = expr.valueObject as String?
@@ -87,7 +82,7 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 val cpIndex = constants.size
                 constants.add(str)
                 bytecode.add(MacroBytecode.OP_CP_SYMBOL.opToInstruction(cpIndex))
-                bytecode.unsafeAddReference(str)
+
             } else {
                 println("Unknown Symbol!")
                 bytecode.add(MacroBytecode.OP_UNKNOWN_SYMBOL.opToInstruction())
@@ -98,14 +93,14 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
             val cpIndex = constants.size
             constants.add(blob)
             bytecode.add(MacroBytecode.OP_CP_BLOB.opToInstruction(cpIndex))
-            bytecode.unsafeAddReference(blob)
+
         }
         Kind.CLOB -> {
             val clob = expr.valueObject as ByteBuffer
             val cpIndex = constants.size
             constants.add(clob)
             bytecode.add(MacroBytecode.OP_CP_CLOB.opToInstruction(cpIndex))
-            bytecode.unsafeAddReference(clob)
+
         }
         Kind.LIST -> handleContainerLikeThingWithArgs(MacroBytecode.OP_LIST_START, MacroBytecode.OP_LIST_END, expr, env, bytecode, constants)
         Kind.STRUCT -> handleContainerLikeThingWithArgs(MacroBytecode.OP_STRUCT_START, MacroBytecode.OP_STRUCT_END, expr, env, bytecode, constants)
@@ -117,14 +112,13 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 val cpIndex = constants.size
                 constants.add(ann)
                 bytecode.add(MacroBytecode.OP_CP_ONE_ANNOTATION.opToInstruction(cpIndex))
-                bytecode.unsafeAddReference(ann)
+
             } else {
                 bytecode.add(MacroBytecode.OP_CP_N_ANNOTATIONS.opToInstruction(anns.size))
                 for (ann in anns) {
-                    // val cpIndex = constants.size
+                    val cpIndex = constants.size
                     constants.add(ann)
-                    // bytecode.add(cpIndex)
-                    bytecode.unsafeAddReference(ann)
+                    bytecode.add(cpIndex)
                 }
             }
         }
@@ -133,7 +127,7 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
             val cpIndex = constants.size
             constants.add(fn)
             bytecode.add(MacroBytecode.OP_CP_FIELD_NAME.opToInstruction(cpIndex))
-            bytecode.unsafeAddReference(fn)
+
         }
         Kind.EXPRESSION_GROUP -> {
             val content = expr.childExpressions
@@ -201,7 +195,6 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 val cpIndex = constants.size
                 constants.add(macro)
                 bytecode.add(MacroBytecode.OP_INVOKE_MACRO.opToInstruction(cpIndex))
-                bytecode.unsafeAddReference(macro)
             } else {
                 bytecode.add(MacroBytecode.OP_INVOKE_SYS_MACRO.opToInstruction(macro.systemAddress))
             }

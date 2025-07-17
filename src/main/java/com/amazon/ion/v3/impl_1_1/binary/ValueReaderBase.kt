@@ -631,21 +631,18 @@ abstract class ValueReaderBase(
                 val cpIndex = constants.size
                 constants.add(decimal)
                 bytecode.add(MacroBytecode.OP_CP_DECIMAL.opToInstruction(cpIndex))
-                bytecode.unsafeAddReference(decimal)
             }
             TokenTypeConst.TIMESTAMP -> {
                 val ts = this.timestampValue()
                 val cpIndex = constants.size
                 constants.add(ts)
                 bytecode.add(MacroBytecode.OP_CP_TIMESTAMP.opToInstruction(cpIndex))
-                bytecode.unsafeAddReference(ts)
             }
             TokenTypeConst.STRING -> {
                 val str = this.stringValue()
                 val cpIndex = constants.size
                 constants.add(str)
                 bytecode.add(MacroBytecode.OP_CP_STRING.opToInstruction(cpIndex))
-                bytecode.unsafeAddReference(str)
             }
             TokenTypeConst.SYMBOL -> {
                 val sid = symbolValueSid()
@@ -659,7 +656,6 @@ abstract class ValueReaderBase(
                     val cpIndex = constants.size
                     constants.add(text)
                     bytecode.add(MacroBytecode.OP_CP_SYMBOL.opToInstruction(cpIndex))
-                    bytecode.unsafeAddReference(text)
                 } else {
                     bytecode.add(MacroBytecode.OP_UNKNOWN_SYMBOL.opToInstruction())
                 }
@@ -738,7 +734,6 @@ abstract class ValueReaderBase(
                 val macroCpIndex = constants.size
                 constants.add(macroInvocation)
                 bytecode.add(MacroBytecode.OP_CP_MACRO_INVOCATION.opToInstruction(macroCpIndex))
-                bytecode.unsafeAddReference(macroInvocation)
             }
             TokenTypeConst.ANNOTATIONS -> TODO("Read the annotations, and then go back to read the value")
             TokenTypeConst.FIELD_NAME -> TODO("Should be unreachable")
