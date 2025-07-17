@@ -12,9 +12,6 @@ import java.nio.ByteBuffer
  * Singleton for empty expression groups.
  */
 object NoneReader: TemplateReader, SequenceReader, ArgumentReader {
-    override fun macroValue(): MacroV2 {
-        TODO("Not yet implemented")
-    }
 
     override fun seekToArgument(signatureIndex: Int): Int {
         TODO("Not yet implemented")

@@ -275,45 +275,50 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     }
                 }
                 TokenTypeConst.MACRO_INVOCATION -> {
-                    val macro = reader.macroValue()
+                    val macroInvocation = reader.macroInvocation()
+                    val macro = macroInvocation.macro
                     // TODO: Check for macros that could produce system values
                     // TODO: When there's a system value, decrement i
                     when (macro.systemAddress) {
-                        SystemMacro.SET_SYMBOLS_ADDRESS -> reader.macroArguments(macro.signature).use {
-                            encodingContextManager.addOrSetSymbols(it, append = false)
+                        SystemMacro.SET_SYMBOLS_ADDRESS -> {
+                            val symbolsList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
+                            encodingContextManager.addOrSetSymbols(symbolsList, append = false)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
-                        SystemMacro.ADD_SYMBOLS_ADDRESS -> reader.macroArguments(macro.signature).use {
-                            encodingContextManager.addOrSetSymbols(it, append = true)
+                        SystemMacro.ADD_SYMBOLS_ADDRESS -> {
+                            val symbolsList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
+                            encodingContextManager.addOrSetSymbols(symbolsList, append = true)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
-                        SystemMacro.SET_MACROS_ADDRESS -> reader.macroArguments(macro.signature).use {
-                            encodingContextManager.addOrSetMacros(it, append = false)
+                        SystemMacro.SET_MACROS_ADDRESS -> {
+                            val macrosList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
+                            encodingContextManager.addOrSetMacros(macrosList, append = false)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
-                        SystemMacro.ADD_MACROS_ADDRESS -> reader.macroArguments(macro.signature).use {
-                            encodingContextManager.addOrSetMacros(it, append = true)
+                        SystemMacro.ADD_MACROS_ADDRESS -> {
+                            val macrosList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
+                            encodingContextManager.addOrSetMacros(macrosList, append = true)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
-                        SystemMacro.USE_ADDRESS -> reader.macroArguments(macro.signature).use {
-                            encodingContextManager.invokeUse(it)
-                            encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
+                        SystemMacro.USE_ADDRESS -> {
+                            TODO()
                         }
                         else -> {
                             val macroVisitor = visitor.onEExpression(macro)
                             if (macroVisitor != null) {
-                                reader.macroArguments(macro.signature).use { r -> readAllValues(r, macroVisitor) }
+                                for (a in macroInvocation.arguments) {
+                                    templateReaderPool.getSequence(macroInvocation.arguments, a, 0, macroInvocation.arguments.constantPool()).use {
+                                        readAllValues(it, macroVisitor)
+                                    }
+                                }
                             } else {
                                 // TODO: Since we're at the top level, we need to read as top-level values in case a directive
                                 //       is produced.
                                 // Start a macro evaluation session
-                                reader.macroArgumentsNew(macro.signature).let { args ->
-                                    templateReaderPool
-                                        .startEvaluation(macro, args)
-                                        .use { macroInvocation ->
+                                macroInvocation.evaluate(templateReaderPool).use {
+                                        mi ->
 //                                            println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
-                                            i += readTopLevelValues(macroInvocation, visitor)
-                                        }
+                                    i += readTopLevelValues(mi, visitor)
                                 }
                             }
                         }
@@ -367,18 +372,16 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                 }
             }
             TokenTypeConst.MACRO_INVOCATION -> {
-                val macro = reader.macroValue()
-                val macroVisitor = visitor.onEExpression(macro)
+                val mi = reader.macroInvocation()
+                val macroVisitor = visitor.onEExpression(mi.macro)
                 if (macroVisitor != null) {
-                    reader.macroArguments(macro.signature).let { args ->
-                        readAllValues(args, macroVisitor);
-                    }
-                } else {
-                    reader.macroArgumentsNew(macro.signature).let { args ->
-                        templateReaderPool.startEvaluation(macro, args).use {
-                            evaluator -> readAllValues(evaluator, visitor)
+                    for (a in mi.arguments) {
+                        templateReaderPool.getSequence(mi.arguments, a, 0, mi.arguments.constantPool()).use {
+                            readAllValues(it, macroVisitor)
                         }
                     }
+                } else {
+                    mi.evaluate(templateReaderPool).use { readAllValues(it, visitor) }
                 }
             }
             TokenTypeConst.ABSENT_ARGUMENT -> return false
@@ -466,14 +469,16 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     }
                 }
                 TokenTypeConst.MACRO_INVOCATION -> {
-                    val macro = reader.macroValue()
-                    val macroVisitor = visitor.onEExpression(macro)
+                    val mi = reader.macroInvocation()
+                    val macroVisitor = visitor.onEExpression(mi.macro)
                     if (macroVisitor != null) {
-                        val args = reader.macroArguments(macro.signature)
-                        readAllValues(args, macroVisitor)
+                        for (a in mi.arguments) {
+                            templateReaderPool.getSequence(mi.arguments, a, 0, mi.arguments.constantPool()).use {
+                                readAllValues(it, macroVisitor)
+                            }
+                        }
                     } else {
-                        val args = reader.macroArgumentsNew(macro.signature)
-                        nextReader = templateReaderPool.startEvaluation(macro, args)
+                        nextReader = mi.evaluate(templateReaderPool)
                         break
                     }
                 }
@@ -529,22 +534,22 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     readAllStructFields(reader.expressionGroup(), visitor, fieldName, fieldNameSid)
                 }
                 TokenTypeConst.MACRO_INVOCATION -> {
-                    val macro = reader.macroValue()
-                    val macroVisitor = visitor.onEExpression(macro)
+                    val mi = reader.macroInvocation()
+                    val macroVisitor = visitor.onEExpression(mi.macro)
                     if (macroVisitor != null) {
-                        reader.macroArguments(macro.signature).use { args ->
-                            // TODO: This is weird. We might not have called onField yet.
-                            readAllValues(args, macroVisitor);
+                        for (a in mi.arguments) {
+                            templateReaderPool.getSequence(mi.arguments, a, 0, mi.arguments.constantPool()).use {
+                                readAllValues(it, macroVisitor)
+                            }
                         }
                     } else {
-                        reader.macroArgumentsNew(macro.signature).let { args ->
-                            templateReaderPool.startEvaluation(macro, args).use { evaluator ->
-                                readAllStructFields(evaluator, visitor, fieldName, fieldNameSid)
-                            }
+                        mi.evaluate(templateReaderPool).use { evaluator ->
+                            readAllStructFields(evaluator, visitor, fieldName, fieldNameSid)
                         }
                     }
                 }
                 TokenTypeConst.VARIABLE_REF -> {
+                    TODO()
                 }
                 else -> {
                     val fieldVisitor = visitor.onField(fieldName, fieldNameSid)
@@ -628,17 +633,17 @@ class ApplicationReaderDriver2 @JvmOverloads constructor(
                     reader = reader.expressionGroup()
                 }
                 TokenTypeConst.MACRO_INVOCATION -> {
-                    val macro = reader.macroValue()
-                    val macroVisitor = visitor.onEExpression(macro)
+                    val mi = reader.macroInvocation()
+                    val macroVisitor = visitor.onEExpression(mi.macro)
                     if (macroVisitor != null) {
-                        reader.macroArguments(macro.signature).use { args ->
-                            // TODO: This is weird. We might not have called onField yet.
-                            readAllValues(args, macroVisitor)
+                        for (a in mi.arguments) {
+                            templateReaderPool.getSequence(mi.arguments, a, 0, mi.arguments.constantPool()).use {
+                                readAllValues(it, macroVisitor)
+                            }
                         }
                     } else {
-                        reader.macroArgumentsNew(macro.signature).let { args ->
-                            templateReaderPool.startEvaluation(macro, args)
-                        }
+                        mi.evaluate(templateReaderPool)
+                            // ...
                     }
 
                 }

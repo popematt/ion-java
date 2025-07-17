@@ -3,11 +3,11 @@ package com.amazon.ion.v3.impl_1_1
 import com.amazon.ion.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.TemplateBodyExpressionModel.*
-import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.nio.ByteBuffer
 
 class Environment(
     val args: Array<TemplateBodyExpressionModel>,
@@ -35,7 +35,9 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 val bigInt = expr.valueObject as BigInteger
                 val cpIndex = constants.size
                 constants.add(bigInt)
+                // Unnecessary to add the cpIndex, but relatively cheap, and helpful for debugging.
                 bytecode.add(MacroBytecode.OP_CP_BIG_INT.opToInstruction(cpIndex))
+                bytecode.unsafeAddReference(bigInt)
             } else {
                 val longValue = expr.primitiveValue
                 if (longValue.toShort().toLong() == longValue) {
@@ -62,18 +64,22 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
             val cpIndex = constants.size
             constants.add(decimal)
             bytecode.add(MacroBytecode.OP_CP_DECIMAL.opToInstruction(cpIndex))
+            bytecode.unsafeAddReference(decimal)
         }
         Kind.TIMESTAMP -> {
             val ts = expr.valueObject as Timestamp
             val cpIndex = constants.size
             constants.add(ts)
             bytecode.add(MacroBytecode.OP_CP_TIMESTAMP.opToInstruction(cpIndex))
+            bytecode.unsafeAddReference(ts)
         }
         Kind.STRING -> {
             val str = expr.valueObject as String
             val cpIndex = constants.size
             constants.add(str)
             bytecode.add(MacroBytecode.OP_CP_STRING.opToInstruction(cpIndex))
+            bytecode.unsafeAddReference(str)
+
         }
         Kind.SYMBOL -> {
             val str = expr.valueObject as String?
@@ -81,15 +87,26 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 val cpIndex = constants.size
                 constants.add(str)
                 bytecode.add(MacroBytecode.OP_CP_SYMBOL.opToInstruction(cpIndex))
-                // bytecode.unsafeAddReference(str)
+                bytecode.unsafeAddReference(str)
             } else {
                 println("Unknown Symbol!")
                 bytecode.add(MacroBytecode.OP_UNKNOWN_SYMBOL.opToInstruction())
             }
         }
-
-        Kind.BLOB -> TODO()
-        Kind.CLOB -> TODO()
+        Kind.BLOB -> {
+            val blob = expr.valueObject as ByteBuffer
+            val cpIndex = constants.size
+            constants.add(blob)
+            bytecode.add(MacroBytecode.OP_CP_BLOB.opToInstruction(cpIndex))
+            bytecode.unsafeAddReference(blob)
+        }
+        Kind.CLOB -> {
+            val clob = expr.valueObject as ByteBuffer
+            val cpIndex = constants.size
+            constants.add(clob)
+            bytecode.add(MacroBytecode.OP_CP_CLOB.opToInstruction(cpIndex))
+            bytecode.unsafeAddReference(clob)
+        }
         Kind.LIST -> handleContainerLikeThingWithArgs(MacroBytecode.OP_LIST_START, MacroBytecode.OP_LIST_END, expr, env, bytecode, constants)
         Kind.STRUCT -> handleContainerLikeThingWithArgs(MacroBytecode.OP_STRUCT_START, MacroBytecode.OP_STRUCT_END, expr, env, bytecode, constants)
         Kind.SEXP -> handleContainerLikeThingWithArgs(MacroBytecode.OP_SEXP_START, MacroBytecode.OP_SEXP_END, expr, env, bytecode, constants)
@@ -100,12 +117,14 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 val cpIndex = constants.size
                 constants.add(ann)
                 bytecode.add(MacroBytecode.OP_CP_ONE_ANNOTATION.opToInstruction(cpIndex))
+                bytecode.unsafeAddReference(ann)
             } else {
                 bytecode.add(MacroBytecode.OP_CP_N_ANNOTATIONS.opToInstruction(anns.size))
                 for (ann in anns) {
-                    val cpIndex = constants.size
+                    // val cpIndex = constants.size
                     constants.add(ann)
-                    bytecode.add(cpIndex)
+                    // bytecode.add(cpIndex)
+                    bytecode.unsafeAddReference(ann)
                 }
             }
         }
@@ -114,6 +133,7 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
             val cpIndex = constants.size
             constants.add(fn)
             bytecode.add(MacroBytecode.OP_CP_FIELD_NAME.opToInstruction(cpIndex))
+            bytecode.unsafeAddReference(fn)
         }
         Kind.EXPRESSION_GROUP -> {
             val content = expr.childExpressions
@@ -136,37 +156,35 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
         Kind.INVOCATION -> {
             val macro = expr.valueObject as MacroV2
 
-            if (macro.signature.getOrNull(0)?.variableName == "class") {
-                println("Compiling invocation of 'metric'")
-            }
-
             if (macro.body != null) {
                 templateExpressionToBytecode(macro.body, Environment(expr.childExpressions, env), bytecode, constants)
                 return
             }
 
             val args = expr.childExpressions
-            if (macro.systemAddress == SystemMacro.DEFAULT_ADDRESS) {
-//                println("Attempting compile-time resolution of Default")
-                var firstArg = args[0]
-                // TODO: multiple layers of variable resolution
-                if (firstArg.expressionKind == TokenTypeConst.VARIABLE_REF && env != null) {
-                    firstArg = env.args[0]
-                    if (firstArg.expressionKind == TokenTypeConst.VARIABLE_REF && env.parent != null) {
-                        firstArg = env.parent.args[0]
-                    }
-                }
-//                println(firstArg)
-                if (firstArg.expressionKind == TokenTypeConst.EXPRESSION_GROUP && firstArg.childExpressions.isEmpty()) {
-                    // It's for sure `none`
-                    templateExpressionToBytecode(args[1], env, bytecode, constants)
-                    return
-                } else if (firstArg.expressionKind < TokenTypeConst.FIELD_NAME) {
-                    // It's for sure a data-model value
-                    templateExpressionToBytecode(firstArg, env, bytecode, constants)
-                    return
-                }
-            }
+
+
+//            if (macro.systemAddress == SystemMacro.DEFAULT_ADDRESS) {
+////                println("Attempting compile-time resolution of Default")
+//                var firstArg = args[0]
+//                // TODO: multiple layers of variable resolution
+//                if (firstArg.expressionKind == TokenTypeConst.VARIABLE_REF && env != null) {
+//                    firstArg = env.args[0]
+//                    if (firstArg.expressionKind == TokenTypeConst.VARIABLE_REF && env.parent != null) {
+//                        firstArg = env.parent.args[0]
+//                    }
+//                }
+////                println(firstArg)
+//                if (firstArg.expressionKind == TokenTypeConst.EXPRESSION_GROUP && firstArg.childExpressions.isEmpty()) {
+//                    // It's for sure `none`
+//                    templateExpressionToBytecode(args[1], env, bytecode, constants)
+//                    return
+//                } else if (firstArg.expressionKind < TokenTypeConst.FIELD_NAME) {
+//                    // It's for sure a data-model value
+//                    templateExpressionToBytecode(firstArg, env, bytecode, constants)
+//                    return
+//                }
+//            }
 
 //            println("Fallback to postfix invocation for macro: $macro")
             for (arg in args) {
@@ -179,9 +197,14 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 bytecode[argStartIndex] =
                     (MacroBytecode.OP_START_ARGUMENT_VALUE.opToInstruction(end - start))
             }
-            val cpIndex = constants.size
-            constants.add(macro)
-            bytecode.add(MacroBytecode.OP_INVOKE_MACRO.opToInstruction(cpIndex))
+            if (macro.systemAddress != SystemMacro.DEFAULT_ADDRESS) {
+                val cpIndex = constants.size
+                constants.add(macro)
+                bytecode.add(MacroBytecode.OP_INVOKE_MACRO.opToInstruction(cpIndex))
+                bytecode.unsafeAddReference(macro)
+            } else {
+                bytecode.add(MacroBytecode.OP_INVOKE_SYS_MACRO.opToInstruction(macro.systemAddress))
+            }
 
         }
         else -> throw IllegalStateException("Invalid Expression: $expr")

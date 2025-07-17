@@ -4,6 +4,7 @@ import com.amazon.ion.impl.bin.utf8.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.template.*
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder

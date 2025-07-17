@@ -3,19 +3,15 @@ package com.amazon.ion.v3.impl_1_1.binary
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.*
-import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.template.*
+import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.bytecodeToString
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-
-object Debug {
-    var enabled = false
-}
 
 abstract class ValueReaderBase(
     @JvmField
@@ -193,15 +189,7 @@ abstract class ValueReaderBase(
                 if (sid < 0) r.fieldName()
                 return
             } else if (opcode < 0x60) {
-                val macro = macroValue()
-                val args = macroArguments(macro.signature)
-//                while (args.nextToken() != TokenTypeConst.END) {
-//                    args.skip()
-//                }
-//                args.close()
-//                val end = args.calculateEndPosition()
-//                args.close()
-//                source.position(end)
+                macroInvocation()
             } else when (opcode) {
                 // Symbol with FlexUInt SID
                 0xE3 -> symbolValueSid()
@@ -234,12 +222,7 @@ abstract class ValueReaderBase(
                 0xE4, 0xE5, 0xE6,
                 0xE7, 0xE8, 0xE9  -> annotations().close()
                 // E-Expressions that do not have a length prefix.
-                0xEF, 0xF4 -> {
-                    val macro = macroValue()
-                    // TODO: If we stop eagerly calculating the size of macro args, this may need to change.
-                    macroArguments(macro.signature)
-                        //.close()
-                }
+                0xEF, 0xF4 -> macroInvocation()
                 else -> {
                     TODO("Skipping an opcode: 0x${opcode.toString(16)}")
                 }
@@ -458,8 +441,7 @@ abstract class ValueReaderBase(
     }
 
 
-    final override fun macroValue(): MacroV2 {
-        val opcode = opcode.toInt()
+    private fun macroValue(opcode: Int): MacroV2 {
         when (opcode shr 4) {
             0x0, 0x1, 0x2, 0x3 -> {
                 if (opcode >= macroTable.size) {
@@ -508,52 +490,22 @@ abstract class ValueReaderBase(
         }
     }
 
-    final override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader {
+    final override fun macroInvocation(): MacroInvocation {
         val opcode = opcode.toInt()
+        val macro = macroValue(opcode)
         this.opcode = TID_UNSET
-        if (signature.isEmpty()) {
-            IdMappings.length(opcode, source)
-            return NoneReader
-        }
-
-        val length = IdMappings.length(opcode, source)
-        val position = source.position()
-        val reader = if (length < 0) {
-            val maxPossibleLength = source.limit() - position
-            val args = pool.getEExpArgs(position, maxPossibleLength, this, signature, symbolTable, macroTable)
-            // TODO: See if we can avoid eagerly calculating the length of the arguments
-            source.position(args.calculateEndPosition())
-            args
-        } else {
-            source.position(position + length)
-            pool.getEExpArgs(position, length, this, signature, symbolTable, macroTable)
-        }
-        return reader
-    }
-
-    final override fun macroArgumentsNew(signature: Array<Macro.Parameter>): ArgumentBytecode {
-        val opcode = opcode.toInt()
-        this.opcode = TID_UNSET
-        if (signature.isEmpty()) {
-            IdMappings.length(opcode, source)
-            return EExpArguments(emptyArray(), emptyArray(), source, signature, symbolTable, macroTable, pool)
-        }
         // We read the length in case it is there, but we don't actually need to use it.
         IdMappings.length(opcode, source)
-        return parseArgs(signature)
+        val args = parseArgs(macro)
+        return MacroInvocation(macro, args) { it.startEvaluation(macro, args) }
     }
 
-    private fun parseArgs(signature: Array<Macro.Parameter>): EExpArguments {
+    private fun parseArgs(macro: MacroV2): EExpArguments {
+        val signature = macro.signature
         // TODO: Consider moving this to a different class so that the ownership of `source` is more clear.
         val presenceBitsSource = source.slice()
         // TODO: Precompute this and store it in the macro definition
-        val numPresenceBitsRequired = signature.count { it.iCardinality != 1 } * 2
-        val numPresenceBytesRequired = if (numPresenceBitsRequired == 0) {
-            0
-        } else {
-            (numPresenceBitsRequired / 8) + 1
-        }
-        val firstArgPosition = source.position() + numPresenceBytesRequired
+        val firstArgPosition = source.position() + macro.numPresenceBytesRequired
         source.position(firstArgPosition)
 
         var presenceByteOffset = 8
@@ -563,7 +515,7 @@ abstract class ValueReaderBase(
 
         val bytecode = IntList()
 
-        val arguments = Array<IntArray>(signature.size) { EExpArguments.EMPTY_ARG }
+        val arguments = Array<IntArray>(signature.size) { ArgumentBytecode.EMPTY_ARG }
 
         // TODO: replace this with an array.
         val constants = mutableListOf<Any>()
@@ -593,160 +545,33 @@ abstract class ValueReaderBase(
                     // TODO: Support for tagless types.
                     val tokenType = this.nextToken()
 //                    println("Handling ${TokenTypeConst(tokenType)}")
-
-                    // TODO: Lazy parsing of values.
-                    when (tokenType) {
-                        TokenTypeConst.NULL -> {
-                            val nullType = this.nullValue()
-                            if (nullType == IonType.NULL) {
-                                bytecode.add(MacroBytecode.OP_NULL_NULL.opToInstruction())
-                            } else {
-                                bytecode.add(MacroBytecode.OP_NULL_TYPED.opToInstruction(nullType.ordinal))
-                            }
-                        }
-                        TokenTypeConst.BOOL -> {
-                            val bool = if (this.booleanValue()) 1 else 0
-                            bytecode.add(MacroBytecode.OP_BOOL.opToInstruction(bool))
-                        }
-                        TokenTypeConst.INT -> {
-                            // TODO: Support BigIntegers
-                            val longValue = this.longValue()
-                            bytecode.add(MacroBytecode.OP_INLINE_LONG.opToInstruction())
-                            bytecode.add((longValue shr 32).toInt())
-                            bytecode.add(longValue.toInt())
-                        }
-                        TokenTypeConst.FLOAT -> {
-                            bytecode.add(MacroBytecode.OP_INLINE_DOUBLE.opToInstruction())
-                            val doubleBits = this.doubleValue().toRawBits()
-                            bytecode.add(doubleBits.toInt())
-                            bytecode.add((doubleBits shr 32).toInt())
-                        }
-                        TokenTypeConst.DECIMAL -> {
-                            val decimal = this.decimalValue()
-                            val cpIndex = constants.size
-                            constants.add(decimal)
-                            bytecode.add(MacroBytecode.OP_CP_DECIMAL.opToInstruction(cpIndex))
-                        }
-                        TokenTypeConst.TIMESTAMP -> {
-                            val ts = this.timestampValue()
-                            val cpIndex = constants.size
-                            constants.add(ts)
-                            bytecode.add(MacroBytecode.OP_CP_TIMESTAMP.opToInstruction(cpIndex))
-                        }
-                        TokenTypeConst.STRING -> {
-                            val str = this.stringValue()
-                            val cpIndex = constants.size
-                            constants.add(str)
-                            bytecode.add(MacroBytecode.OP_CP_STRING.opToInstruction(cpIndex))
-                        }
-                        TokenTypeConst.SYMBOL -> {
-                            val sid = symbolValueSid()
-                            val text = if (sid < 0) {
-                                symbolValue()
-                            } else {
-                                lookupSid(sid)
-                            }
-
-                            if (text != null) {
-                                val cpIndex = constants.size
-                                constants.add(text)
-                                bytecode.add(MacroBytecode.OP_CP_SYMBOL.opToInstruction(cpIndex))
-                                // bytecode.unsafeAddReference(str)
-                            } else {
-                                println("Unknown symbol! (2)")
-                                bytecode.add(MacroBytecode.OP_UNKNOWN_SYMBOL.opToInstruction())
-                            }
-                        }
-                        TokenTypeConst.BLOB -> TODO()
-                        TokenTypeConst.CLOB -> TODO()
-                        TokenTypeConst.LIST -> {
-                            val opcode = opcode.toInt()
-                            this.opcode = TID_UNSET
-                            val start: Int
-                            val length: Int
-                            if (opcode shr 4 == 0xB) {
-                                length = opcode and 0xF
-                                start = source.position()
-                                source.position(start + length)
-                            } else if (opcode == 0xFB) {
-                                length = IntHelper.readFlexUInt(source)
-                                start = source.position()
-                                source.position(start + length)
-                            } else if (opcode == 0xF1) {
-                                start = source.position()
-                                pool.getDelimitedSequence(start, this, symbolTable, macroTable).close()
-                                val end = source.position()
-                                length = end - start
-                            } else {
-                                throw IonException("Not positioned on a list")
-                            }
-                            bytecode.add(MacroBytecode.OP_REF_LIST.opToInstruction(length))
-                            bytecode.add(start)
-                        }
-                        TokenTypeConst.SEXP -> {
-                            val opcode = opcode.toInt()
-                            this.opcode = TID_UNSET
-                            val start: Int
-                            val length: Int
-                            if (opcode shr 4 == 0xC) {
-                                length = opcode and 0xF
-                                start = source.position()
-                                source.position(start + length)
-                            } else if (opcode == 0xFC) {
-                                length = IntHelper.readFlexUInt(source)
-                                start = source.position()
-                                source.position(start + length)
-                            } else if (opcode == 0xF2) {
-                                start = source.position()
-                                pool.getDelimitedSequence(start, this, symbolTable, macroTable).close()
-                                val end = source.position()
-                                length = end - start
-                            } else {
-                                throw IonException("Not positioned on a sexp")
-                            }
-                            bytecode.add(MacroBytecode.OP_REF_SEXP.opToInstruction(length))
-                            bytecode.add(start)
-                        }
-                        TokenTypeConst.STRUCT -> {
-                            val opcode = opcode.toInt()
-                            this.opcode = TID_UNSET
-                            var length = IdMappings.length(opcode, source)
-                            val start: Int = source.position()
-                            var bytecodeOperation: Int = MacroBytecode.OP_REF_SID_STRUCT
-                            if (length < 0) {
-                                // Delimited container
-                                pool.getDelimitedStruct(start, this, symbolTable, macroTable).close()
-                                val end = source.position()
-                                length = end - start
-                                bytecodeOperation = MacroBytecode.OP_REF_FLEXSYM_STRUCT
-                            } else {
-                                source.position(start + length)
-                            }
-                            bytecode.add(bytecodeOperation.opToInstruction(length))
-                            bytecode.add(start)
-                        }
-                        TokenTypeConst.EXPRESSION_GROUP -> TODO("Should be unreachable")
-                        TokenTypeConst.MACRO_INVOCATION -> {
-                            val macro = macroValue()
-                            val macroCpIndex = constants.size
-                            constants.add(macro)
-                            bytecode.add(MacroBytecode.OP_REF_MACRO_INVOCATION.opToInstruction(macroCpIndex))
-                            val args = macroArgumentsNew(macro.signature)
-                            val argsCpIndex = constants.size
-                            constants.add(args)
-                            bytecode.add(argsCpIndex)
-                        }
-                        TokenTypeConst.ANNOTATIONS -> TODO("Read the annotations, and then go back to read the value")
-                        TokenTypeConst.FIELD_NAME -> TODO("Should be unreachable")
-                        else -> TODO("${TokenTypeConst(tokenType)} at ~${source.position()}")
-                    }
+                    readArgumentValue(tokenType, bytecode, constants)
                     bytecode.add(MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction())
                     arguments[i] = bytecode.toArray()
                     bytecode.clear()
                 }
                 else -> {
-                    // Expression group
-                    TODO()
+                    val length = IntHelper.readFlexUInt(source)
+                    val position = source.position()
+                    // TODO: Check if we're on a tagless parameter.
+                    //       For now, we'll assume that they are all tagged.
+                    val expressionGroup = if (length == 0) {
+                        // TODO: We might be able to get the length based on the argument indices.
+                        pool.getDelimitedSequence(position, this, symbolTable, macroTable)
+                    } else {
+                        source.position(position + length)
+                        pool.getList(position, length, symbolTable, macroTable)
+                    }
+                    expressionGroup.use {
+                        var tokenType = nextToken()
+                        while (tokenType != TokenTypeConst.END) {
+                            readArgumentValue(tokenType, bytecode, constants)
+                            tokenType = nextToken()
+                        }
+                        bytecode.add(MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction())
+                        arguments[i] = bytecode.toArray()
+                        bytecode.clear()
+                    }
                 }
             }
 
@@ -754,6 +579,14 @@ abstract class ValueReaderBase(
 
             i++
         }
+
+//        if (macro.systemName == null) {
+//            println("Macro: signature=${macro.signature.contentToString()}")
+//            arguments.forEachIndexed { index, ints ->
+//                println("  $index. ${ints.bytecodeToString()}")
+//            }
+//        }
+
         return EExpArguments(
             source = source.slice(),
             arguments = arguments,
@@ -765,8 +598,153 @@ abstract class ValueReaderBase(
         )
     }
 
+    private fun readArgumentValue(tokenType: Int, bytecode: IntList, constants: MutableList<Any>) {
+        // TODO: Lazy parsing of values.
+        when (tokenType) {
+            TokenTypeConst.NULL -> {
+                val nullType = this.nullValue()
+                if (nullType == IonType.NULL) {
+                    bytecode.add(MacroBytecode.OP_NULL_NULL.opToInstruction())
+                } else {
+                    bytecode.add(MacroBytecode.OP_NULL_TYPED.opToInstruction(nullType.ordinal))
+                }
+            }
+            TokenTypeConst.BOOL -> {
+                val bool = if (this.booleanValue()) 1 else 0
+                bytecode.add(MacroBytecode.OP_BOOL.opToInstruction(bool))
+            }
+            TokenTypeConst.INT -> {
+                // TODO: Support BigIntegers
+                val longValue = this.longValue()
+                bytecode.add(MacroBytecode.OP_INLINE_LONG.opToInstruction())
+                bytecode.add((longValue shr 32).toInt())
+                bytecode.add(longValue.toInt())
+            }
+            TokenTypeConst.FLOAT -> {
+                bytecode.add(MacroBytecode.OP_INLINE_DOUBLE.opToInstruction())
+                val doubleBits = this.doubleValue().toRawBits()
+                bytecode.add(doubleBits.toInt())
+                bytecode.add((doubleBits shr 32).toInt())
+            }
+            TokenTypeConst.DECIMAL -> {
+                val decimal = this.decimalValue()
+                val cpIndex = constants.size
+                constants.add(decimal)
+                bytecode.add(MacroBytecode.OP_CP_DECIMAL.opToInstruction(cpIndex))
+                bytecode.unsafeAddReference(decimal)
+            }
+            TokenTypeConst.TIMESTAMP -> {
+                val ts = this.timestampValue()
+                val cpIndex = constants.size
+                constants.add(ts)
+                bytecode.add(MacroBytecode.OP_CP_TIMESTAMP.opToInstruction(cpIndex))
+                bytecode.unsafeAddReference(ts)
+            }
+            TokenTypeConst.STRING -> {
+                val str = this.stringValue()
+                val cpIndex = constants.size
+                constants.add(str)
+                bytecode.add(MacroBytecode.OP_CP_STRING.opToInstruction(cpIndex))
+                bytecode.unsafeAddReference(str)
+            }
+            TokenTypeConst.SYMBOL -> {
+                val sid = symbolValueSid()
+                val text = if (sid < 0) {
+                    symbolValue()
+                } else {
+                    lookupSid(sid)
+                }
 
-
+                if (text != null) {
+                    val cpIndex = constants.size
+                    constants.add(text)
+                    bytecode.add(MacroBytecode.OP_CP_SYMBOL.opToInstruction(cpIndex))
+                    bytecode.unsafeAddReference(text)
+                } else {
+                    bytecode.add(MacroBytecode.OP_UNKNOWN_SYMBOL.opToInstruction())
+                }
+            }
+            TokenTypeConst.BLOB -> TODO()
+            TokenTypeConst.CLOB -> TODO()
+            TokenTypeConst.LIST -> {
+                val opcode = opcode.toInt()
+                this.opcode = TID_UNSET
+                val start: Int
+                val length: Int
+                if (opcode shr 4 == 0xB) {
+                    length = opcode and 0xF
+                    start = source.position()
+                    source.position(start + length)
+                } else if (opcode == 0xFB) {
+                    length = IntHelper.readFlexUInt(source)
+                    start = source.position()
+                    source.position(start + length)
+                } else if (opcode == 0xF1) {
+                    start = source.position()
+                    pool.getDelimitedSequence(start, this, symbolTable, macroTable).close()
+                    val end = source.position()
+                    length = end - start
+                } else {
+                    throw IonException("Not positioned on a list")
+                }
+                bytecode.add(MacroBytecode.OP_REF_LIST.opToInstruction(length))
+                bytecode.add(start)
+            }
+            TokenTypeConst.SEXP -> {
+                val opcode = opcode.toInt()
+                this.opcode = TID_UNSET
+                val start: Int
+                val length: Int
+                if (opcode shr 4 == 0xC) {
+                    length = opcode and 0xF
+                    start = source.position()
+                    source.position(start + length)
+                } else if (opcode == 0xFC) {
+                    length = IntHelper.readFlexUInt(source)
+                    start = source.position()
+                    source.position(start + length)
+                } else if (opcode == 0xF2) {
+                    start = source.position()
+                    pool.getDelimitedSequence(start, this, symbolTable, macroTable).close()
+                    val end = source.position()
+                    length = end - start
+                } else {
+                    throw IonException("Not positioned on a sexp")
+                }
+                bytecode.add(MacroBytecode.OP_REF_SEXP.opToInstruction(length))
+                bytecode.add(start)
+            }
+            TokenTypeConst.STRUCT -> {
+                val opcode = opcode.toInt()
+                this.opcode = TID_UNSET
+                var length = IdMappings.length(opcode, source)
+                val start: Int = source.position()
+                var bytecodeOperation: Int = MacroBytecode.OP_REF_SID_STRUCT
+                if (length < 0) {
+                    // Delimited container
+                    pool.getDelimitedStruct(start, this, symbolTable, macroTable).close()
+                    val end = source.position()
+                    length = end - start
+                    bytecodeOperation = MacroBytecode.OP_REF_FLEXSYM_STRUCT
+                } else {
+                    source.position(start + length)
+                }
+                bytecode.add(bytecodeOperation.opToInstruction(length))
+                bytecode.add(start)
+            }
+            TokenTypeConst.EXPRESSION_GROUP -> TODO("Should be unreachable")
+            TokenTypeConst.MACRO_INVOCATION -> {
+                val macroInvocation = macroInvocation()
+                val macroCpIndex = constants.size
+                constants.add(macroInvocation)
+                bytecode.add(MacroBytecode.OP_CP_MACRO_INVOCATION.opToInstruction(macroCpIndex))
+                bytecode.unsafeAddReference(macroInvocation)
+            }
+            TokenTypeConst.ANNOTATIONS -> TODO("Read the annotations, and then go back to read the value")
+            TokenTypeConst.FIELD_NAME -> TODO("Should be unreachable")
+            else -> TODO("${TokenTypeConst(tokenType)} at ~${source.position()}")
+        }
+    }
 
 
     final override fun annotations(): AnnotationIterator {

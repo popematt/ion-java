@@ -84,17 +84,6 @@ class TemplateVariableReaderImpl(
     override fun annotations(): AnnotationIterator = arguments.annotations()
     override fun doubleValue(): Double = arguments.doubleValue()
     override fun decimalValue(): Decimal = arguments.decimalValue()
-    override fun macroValue(): MacroV2 = arguments.macroValue()
-
-    override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader {
-//        println("Getting argument reader from variable reader.")
-        return arguments.macroArguments(signature)
-    }
-
-    override fun macroArgumentsNew(signature: Array<Macro.Parameter>): ArgumentBytecode {
-//        println("Getting argument reader from variable reader.")
-        return arguments.macroArgumentsNew(signature)
-    }
 
     override fun expressionGroup(): SequenceReader = arguments.expressionGroup()
 

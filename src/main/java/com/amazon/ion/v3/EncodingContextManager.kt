@@ -83,12 +83,10 @@ internal class EncodingContextManager(
     /**
      * Short-circuit evaluation of `add_symbols` and `set_symbols`.
      */
-    fun addOrSetSymbols(argReader: ArgumentReader, append: Boolean) {
+    fun addOrSetSymbols(argReader: ValueReader, append: Boolean) {
         val newSymbols = mutableListOf<String?>()
-        argReader.seekToArgument(0)
-        val sl = argReader.expressionGroup()
         // IonReaderShim will take care of closing the expression group instance.
-        ionReaderShim.init(sl)
+        ionReaderShim.init(argReader)
         moduleReader.readSymbolsList(newSymbols)
 
 
@@ -110,12 +108,10 @@ internal class EncodingContextManager(
     /**
      * Short-circuit evaluation of `add_macros` and `set_macros`.
      */
-    fun addOrSetMacros(argReader: ArgumentReader, append: Boolean) {
+    fun addOrSetMacros(argReader: ValueReader, append: Boolean) {
         val moduleMacros = if (append) defaultModule.macros.toMutableList() else mutableListOf()
-        argReader.seekToArgument(0)
-        val sl = argReader.expressionGroup()
         // IonReaderShim will take care of closing the expression group instance.
-        ionReaderShim.init(sl)
+        ionReaderShim.init(argReader)
 
         // TODO: I wonder if we can get a performance improvement by using a threadlocal cache of
         //       bytes to macro definitions. A radix tree could be a very quick lookup. We would

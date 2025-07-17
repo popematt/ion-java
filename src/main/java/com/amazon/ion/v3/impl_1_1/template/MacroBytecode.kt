@@ -130,8 +130,6 @@ object MacroBytecode {
     const val OP_CP_TIMESTAMP = 0x0D
     const val OP_CP_STRING = 0x0E
     const val OP_CP_SYMBOL = 0x0F
-    // TODO: scrap this
-    const val OP_CP_SYMBOL_ID = 0x10
     const val OP_CP_BLOB = 0x11
     const val OP_CP_CLOB = 0x12
 
@@ -171,8 +169,41 @@ object MacroBytecode {
     /** DATA is a constant pool index to the `Macro` instance */
     const val OP_INVOKE_MACRO = 0x24
 
-    /** TODO: Special instructions for system macros that should be hard coded, e.g. `add` */
+    /**
+     * TODO: Special instructions for system macros that should be hard coded
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     */
     const val OP_INVOKE_SYS_MACRO = 0x25
+
+
+
 
     // TODO: See if we can coalesce the different "End" and "EOF" instructions.
     const val EOF = 0x26
@@ -189,8 +220,6 @@ object MacroBytecode {
     /** DATA is length; OPERAND is start_index */
     const val OP_REF_INT = 0x30
     /** DATA is length; OPERAND is start_index */
-    const val OP_REF_FLOAT = 0x31
-    /** DATA is length; OPERAND is start_index */
     const val OP_REF_DECIMAL = 0x32
     /** DATA is opcode, length is implicit; OPERAND is start_index */
     const val OP_REF_TIMESTAMP_SHORT = 0x33
@@ -206,8 +235,8 @@ object MacroBytecode {
     /** DATA is length; OPERAND is start_index */
     const val OP_REF_FLEXSYM_STRUCT = 0x38
 
-    /** DATA is constant pool index to MacroV2; OPERAND is constant pool index to an [ArgumentBytecode][com.amazon.ion.v3.ArgumentBytecode] instance */
-    const val OP_REF_MACRO_INVOCATION = 0x3A
+    /** DATA is constant pool index to MacroInvocation instance */
+    const val OP_CP_MACRO_INVOCATION = 0x3A
 
     // TODO: REMAINING REF OPS
 

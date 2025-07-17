@@ -3,6 +3,8 @@ package com.amazon.ion.v3
 import com.amazon.ion.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.template.*
+import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.nio.ByteBuffer
 
 /**
@@ -137,29 +139,7 @@ interface ValueReader: AutoCloseable {
 
     fun decimalValue(): Decimal
 
-    /**
-     * Returns the current macro id.
-     * If the returned value is positive, it is exactly the macro address in user space.
-     * If the returned value is negative, it is `(id or Int.MIN_VALUE)` where `id` is a System Macro ID.
-     */
-//    fun eexpValue(): Int = throw IonException("E-expressions are not supported by this reader")
-//
-//    fun eexpMacroRef(): MacroRef = throw IonException("E-expressions are not supported by this reader")
-
-    // TODO: Re-introduce a function that can get a macro reference. Used for informational purposes only,
-    //       and/or system-level transcoding.
-
-    fun macroValue(): MacroV2 = throw IonException("Macro invocations are not supported by this reader.")
-
-    /**
-     * Very low level API. Do not use unless you are trying to bypass macro evaluation.
-     * For example, you would use this for transcoding E-expressions between text and binary or
-     * for hydrating a POJO with a known macro definition without using the evaluator.
-     *
-     * If passing this off to a macro evaluator, the macro evaluator is responsible for closing it.
-     */
-    fun macroArgumentsNew(signature: Array<Macro.Parameter>): ArgumentBytecode = TODO()
-    fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader = TODO()
+    fun macroInvocation(): MacroInvocation = TODO()
 
     /**
      * Returns a sequence of values.
@@ -231,8 +211,15 @@ interface ArgumentReader: ValueReader {
     val signature: Array<Macro.Parameter>
 }
 
+class ArgEnvironment(
+    val arguments: ArgumentBytecode,
+    val parent: ArgEnvironment? = null,
+)
+
 interface ArgumentBytecode {
     fun constantPool(): Array<Any?>
+
+    operator fun iterator(): Iterator<IntArray>
 
     fun getArgument(parameterIndex: Int): IntArray
 
@@ -243,8 +230,18 @@ interface ArgumentBytecode {
     fun getSymbol(sid: Int): String?
 
     companion object {
+
         @JvmStatic
-        val NO_ARGS = object : ArgumentBytecode {
+        val EMPTY_ARG = intArrayOf(
+            MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction()
+        )
+
+        @JvmStatic
+        val _NO_ARGS = object : ArgumentBytecode {
+            override fun iterator(): Iterator<IntArray> = object : Iterator<IntArray> {
+                override fun hasNext(): Boolean = false
+                override fun next(): IntArray = throw NoSuchElementException()
+            }
             override fun constantPool(): Array<Any?> = emptyArray()
             override fun getArgument(parameterIndex: Int): IntArray = intArrayOf()
             override fun getList(start:Int, length:Int) = TODO()

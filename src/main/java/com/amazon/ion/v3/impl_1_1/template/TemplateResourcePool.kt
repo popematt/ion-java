@@ -6,6 +6,7 @@ import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.impl.macro.TemplateMacro
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.template.TemplateReaderBase.Companion.INSTRUCTION_NOT_SET
 import java.io.Closeable
 
 class TemplateResourcePool private constructor(): Closeable {
@@ -90,17 +91,24 @@ class TemplateResourcePool private constructor(): Closeable {
 
     private fun invokeDefault(arguments: ArgumentBytecode): ValueReader {
 //        println("Invoking Default with arguments: $arguments")
-        val firstArg = arguments.getArgument(0)
-        // TODO: This doesn't properly handle the case where there's an empty expression group in binary
-        //       Same thing for all of the `if` macros
 
-        // TODO: Actually evaluate the first argument until we've found the first value token or else END
+        val firstArg = getSequence(arguments, arguments.getArgument(0), 0, arguments.constantPool())
+        // TODO: Add a cheap way to restart the sequence
+        // TODO: Check to see that the macro evaluates to something.
+
+        if (firstArg.nextToken() != TokenTypeConst.END) {
+            firstArg.rewind()
+            return firstArg
+        } else {
+            firstArg.close()
+            return getSequence(arguments, arguments.getArgument(1), 0, arguments.constantPool())
+        }
+
 //        if (firstArg.size > 1) {
 //            return getVariable(arguments, 0, isArgumentOwner = true)
 //        } else {
 //            return getVariable(arguments, 1, isArgumentOwner = true)
 //        }
-        TODO()
     }
 
     private fun invokeIfNone(arguments: ArgumentReader): ValueReader {

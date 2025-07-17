@@ -27,7 +27,12 @@ data class MacroV2 internal constructor(
     val systemName: SystemSymbols_1_1? = null,
 ) {
 
-    val tokens = (body ?: TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY).map { it.expressionKind }.toMutableList().also{ it.add(TokenTypeConst.END)}.toIntArray()
+    val numPresenceBitsRequired = signature.count { it.iCardinality != 1 } * 2
+    val numPresenceBytesRequired = if (numPresenceBitsRequired == 0) {
+        0
+    } else {
+        (numPresenceBitsRequired / 8) + 1
+    }
 
     val bytecode: IntArray
     val constants: Array<Any?>

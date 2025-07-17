@@ -1,14 +1,11 @@
 package com.amazon.ion.v3.impl_1_1.template
 
 import com.amazon.ion.*
-import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.bytecodeToString
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.instructionToOp
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.math.BigDecimal
-import java.math.BigInteger
 import java.nio.ByteBuffer
 
 abstract class TemplateReaderBase(
@@ -30,14 +27,15 @@ abstract class TemplateReaderBase(
     @JvmField
     var constantPool: Array<Any?> = arrayOf()
 
-    private var bytecode1: IntArray? = null
-    private var i1 = -1
-    private var constantPool1: Array<Any?>? = null
+    private var stackHeight: Byte = 0
+    private var bytecodeStack: Array<IntArray?> = arrayOfNulls(INITIAL_STACK_SIZE)
+    private var iStack = IntArray(INITIAL_STACK_SIZE) { -1 }
+    private var constantPoolStack: Array<Array<Any?>?> = arrayOfNulls(INITIAL_STACK_SIZE)
 
     private var argumentValueIndices: MutableList<Int> = mutableListOf()
 
     @JvmField
-    var arguments: ArgumentBytecode = ArgumentBytecode.NO_ARGS
+    var arguments: ArgumentBytecode = ArgumentBytecode._NO_ARGS
 
     @JvmField
     var instruction: Int = INSTRUCTION_NOT_SET
@@ -45,6 +43,8 @@ abstract class TemplateReaderBase(
 
     companion object {
         const val INSTRUCTION_NOT_SET = MacroBytecode.UNSET shl 24
+
+        private const val INITIAL_STACK_SIZE = 32
     }
 
     fun init(
@@ -60,74 +60,86 @@ abstract class TemplateReaderBase(
         i = 0
     }
 
-    override fun nextToken(): Int {
-        var instruction = INSTRUCTION_NOT_SET
-        while (instruction == INSTRUCTION_NOT_SET) {
-            instruction = bytecode[i++]
-            val op = instruction ushr 24
-            when (op) {
-                MacroBytecode.OP_START_ARGUMENT_VALUE -> {
-                    argumentValueIndices.add(i - 1)
-                }
-                MacroBytecode.OP_ARGUMENT_REF_TYPE -> {
-                    if (bytecode1 != null) throw IllegalStateException("Need to push more than one set of variables.")
-                    bytecode1 = bytecode
-                    i1 = i
-                    constantPool1 = constantPool
-                    bytecode = arguments.getArgument(instruction and 0xFFFFFF)
-                    i = 0
-                    constantPool = arguments.constantPool()
-                    instruction = INSTRUCTION_NOT_SET
-                }
-                MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION -> {
-                    bytecode = bytecode1!!
-                    bytecode1 = null
-                    constantPool = constantPool1!!
-                    i = i1
-                    instruction = INSTRUCTION_NOT_SET
-                }
-            }
-        }
-        this.instruction = instruction
-        return tokenType(instruction ushr 24).also {
-            if (it == TokenTypeConst.UNSET) {
-                throw Exception("TokenTypeConst == UNSET; instruction: ${instruction.toString(16)}; i=$i, i1=$i1")
-            }
-        }
+    internal fun rewind() {
+        instruction = INSTRUCTION_NOT_SET
+        i = 0
     }
 
-    private fun _nextToken(): Int {
+    override fun nextToken(): Int {
+//        print(javaClass.simpleName + "@" + Integer.toHexString(System.identityHashCode(this)) + " -> ")
+        if (instruction == MacroBytecode.EOF.opToInstruction()) {
+            return tokenType(MacroBytecode.EOF)
+        }
         var instruction = INSTRUCTION_NOT_SET
         while (instruction == INSTRUCTION_NOT_SET) {
+
             instruction = bytecode[i++]
             val op = instruction ushr 24
             when (op) {
                 MacroBytecode.OP_START_ARGUMENT_VALUE -> {
+                    // Put args positions on stack for template macro invocations to use in evaluation
                     argumentValueIndices.add(i - 1)
+                    i += instruction and 0xFFFFFF
+                    instruction = INSTRUCTION_NOT_SET
+                    continue
                 }
                 MacroBytecode.OP_ARGUMENT_REF_TYPE -> {
-                    if (bytecode1 != null) throw IllegalStateException("Need to push more than one set of variables.")
-                    bytecode1 = bytecode
-                    i1 = i
-                    constantPool1 = constantPool
+                    if (stackHeight.toInt() == iStack.size) {
+                        TODO("Grow the stacks")
+                    }
+                    val s = (stackHeight++).toInt()
+                    bytecodeStack[s] = bytecode
+                    iStack[s] = i
+                    constantPoolStack[s] = constantPool
                     bytecode = arguments.getArgument(instruction and 0xFFFFFF)
                     i = 0
                     constantPool = arguments.constantPool()
                     instruction = INSTRUCTION_NOT_SET
                 }
+                MacroBytecode.OP_END_ARGUMENT_VALUE,
                 MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION -> {
-                    bytecode = bytecode1!!
-                    bytecode1 = null
-                    constantPool = constantPool1!!
-                    i = i1
-                    instruction = INSTRUCTION_NOT_SET
+                    if (stackHeight.toInt() == 0) {
+                        instruction = MacroBytecode.EOF.opToInstruction()
+                    } else {
+                        val s = (--stackHeight).toInt()
+                        bytecode = bytecodeStack[s]!!
+                        constantPool = constantPoolStack[s]!!
+                        i = iStack[s]
+                        instruction = INSTRUCTION_NOT_SET
+                    }
+                }
+                MacroBytecode.OP_INVOKE_SYS_MACRO -> when (instruction and 0xFF) {
+                    SystemMacro.DEFAULT_ADDRESS -> {
+                        val secondArgStartIndex = argumentValueIndices.removeLast()
+                        val firstArgStartIndex = argumentValueIndices.removeLast()
+                        val currentI = i
+                        if (stackHeight.toInt() == iStack.size) {
+                            TODO("Grow the stacks")
+                        }
+                        val s = (stackHeight++).toInt()
+                        bytecodeStack[s] = bytecode
+                        iStack[s] = currentI
+                        constantPoolStack[s] = constantPool
+
+                        val firstArg = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool)
+
+                        i = if (firstArg.nextToken() != TokenTypeConst.END) {
+                            firstArgStartIndex + 1
+                        } else {
+                            secondArgStartIndex + 1
+                        }
+                        firstArg.close()
+                        instruction = INSTRUCTION_NOT_SET
+                    }
+                    else -> TODO("Instruction not supported ${MacroBytecode(instruction)}")
                 }
             }
         }
         this.instruction = instruction
         return tokenType(instruction ushr 24).also {
+//            println(MacroBytecode(instruction))
             if (it == TokenTypeConst.UNSET) {
-                throw Exception("TokenTypeConst == UNSET; instruction: ${instruction.toString(16)}; i=$i, i1=$i1")
+                throw Exception("TokenTypeConst == UNSET; ${MacroBytecode(instruction)} instruction: ${instruction.toString(16)}; i=$i")
             }
         }
     }
@@ -144,6 +156,12 @@ abstract class TemplateReaderBase(
         // TODO: This method is >10% of all.
         //       See if we can align the MacroBytecode and the TokenTypeConst values so that
         //       We can perform a simple arithmatic operation instead of a jump table.
+        //
+        //       abcd efgh
+        //       abcdef == TokenTypeConst value
+        //       gh discriminates between ref, constant, inline, etc.
+        //       Then, we have an efficient TableSwitch for the different variants of ints, etc.
+        //       And we can basically just map from MacroBytecode to TokenTypeConst with `(x ushl 2)`
         when (operation) {
             // TODO: Reference instructions
             MacroBytecode.OP_NULL_NULL,
@@ -160,7 +178,6 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_CP_STRING,
             MacroBytecode.OP_EMPTY_STRING -> return TokenTypeConst.STRING
             MacroBytecode.OP_CP_SYMBOL,
-            MacroBytecode.OP_CP_SYMBOL_ID,
             MacroBytecode.OP_UNKNOWN_SYMBOL -> return TokenTypeConst.SYMBOL
             MacroBytecode.OP_CP_BLOB -> return TokenTypeConst.BLOB
             MacroBytecode.OP_CP_CLOB -> return TokenTypeConst.CLOB
@@ -171,7 +188,6 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_REF_SID_STRUCT,
             MacroBytecode.OP_REF_FLEXSYM_STRUCT,
             MacroBytecode.OP_STRUCT_START -> return TokenTypeConst.STRUCT
-            MacroBytecode.OP_INVOKE_MACRO -> return TokenTypeConst.MACRO_INVOCATION
             MacroBytecode.OP_CP_FIELD_NAME,
             MacroBytecode.OP_FIELD_NAME_SID -> return TokenTypeConst.FIELD_NAME
             MacroBytecode.OP_CP_ONE_ANNOTATION,
@@ -179,11 +195,12 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_LIST_END,
             MacroBytecode.OP_SEXP_END,
             MacroBytecode.OP_STRUCT_END,
-            MacroBytecode.EOF -> return TokenTypeConst.END
-            MacroBytecode.UNSET -> return TokenTypeConst.UNSET
-            MacroBytecode.OP_REF_MACRO_INVOCATION -> return TokenTypeConst.MACRO_INVOCATION
-            MacroBytecode.OP_START_ARGUMENT_VALUE -> return TokenTypeConst.EXPRESSION_GROUP
+            MacroBytecode.EOF,
             MacroBytecode.OP_END_ARGUMENT_VALUE -> return TokenTypeConst.END
+            MacroBytecode.UNSET -> return TokenTypeConst.UNSET
+            MacroBytecode.OP_INVOKE_MACRO,
+            MacroBytecode.OP_CP_MACRO_INVOCATION -> return TokenTypeConst.MACRO_INVOCATION
+            MacroBytecode.OP_START_ARGUMENT_VALUE -> return TokenTypeConst.EXPRESSION_GROUP
             // TODO: Arguments?
             else -> TODO("Op: ${operation.toHexString()}")
         }
@@ -215,7 +232,6 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_CP_STRING,
             MacroBytecode.OP_EMPTY_STRING -> return IonType.STRING
             MacroBytecode.OP_CP_SYMBOL,
-            MacroBytecode.OP_CP_SYMBOL_ID,
             MacroBytecode.OP_UNKNOWN_SYMBOL -> return IonType.SYMBOL
             MacroBytecode.OP_CP_BLOB -> return IonType.BLOB
             MacroBytecode.OP_CP_CLOB -> return IonType.CLOB
@@ -223,11 +239,10 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_SEXP_START -> return IonType.SEXP
             MacroBytecode.OP_STRUCT_START -> return IonType.STRUCT
 
-            MacroBytecode.OP_REF_MACRO_INVOCATION,
-
+            MacroBytecode.OP_INVOKE_MACRO,
+            MacroBytecode.OP_CP_MACRO_INVOCATION,
             MacroBytecode.UNSET,
-            MacroBytecode.EOF,
-            MacroBytecode.OP_INVOKE_MACRO -> return null
+            MacroBytecode.EOF -> return null
 
             else -> TODO()
         }
@@ -241,7 +256,7 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_CP_BIG_INT -> 9
             MacroBytecode.OP_CP_BLOB,
             MacroBytecode.OP_CP_CLOB -> {
-                (constantPool[instruction and 0xFFFFFF] as ByteBuffer).remaining()
+                (bytecode.unsafeGetReferenceAt<ByteBuffer>(i)).remaining()
             }
             else -> TODO("Op: ${instruction.instructionToOp()}")
         }
@@ -252,6 +267,19 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_INLINE_INT -> i++
             MacroBytecode.OP_INLINE_DOUBLE,
             MacroBytecode.OP_INLINE_LONG -> i += 2
+
+            // Things with unsafe object references
+            MacroBytecode.OP_CP_BIG_INT,
+            MacroBytecode.OP_CP_BLOB,
+            MacroBytecode.OP_CP_CLOB,
+            MacroBytecode.OP_CP_FIELD_NAME,
+            MacroBytecode.OP_CP_SYMBOL,
+            MacroBytecode.OP_CP_STRING,
+            MacroBytecode.OP_CP_DECIMAL,
+            MacroBytecode.OP_CP_MACRO_INVOCATION,
+            MacroBytecode.OP_CP_TIMESTAMP -> i += 2
+
+
             MacroBytecode.OP_LIST_START,
             MacroBytecode.OP_SEXP_START,
             MacroBytecode.OP_STRUCT_START -> {
@@ -268,32 +296,149 @@ abstract class TemplateReaderBase(
         instruction = INSTRUCTION_NOT_SET
     }
 
-    override fun macroValue(): MacroV2 {
-        val constantPoolIndex = (instruction and 0xFFFFFF)
-        // instruction = MacroBytecode.NONE.opToInstruction()
-        return constantPool[constantPoolIndex] as MacroV2
-    }
+    override fun macroInvocation(): MacroInvocation {
+        val instruction = instruction
+        // val cpIndex = (instruction and 0xFFFFFF) // bytecode[i++]
+        val op = instruction.instructionToOp()
+        this.instruction = INSTRUCTION_NOT_SET
+        when (op) {
+            MacroBytecode.OP_INVOKE_MACRO -> {
+                val macro = bytecode.unsafeGetReferenceAt(i) as MacroV2
+                i += 2
+                // TODO: Ensure that there are no elided args in the bytecode.
+                val sig = macro.signature
+                /**
+                 * TODO:
+                 *
+                 * ### Option 1:
+                 *
+                 * Append individual args to the environment stack, and record the offset for the current stack frame.
+                 * When appending args to the stack, adjust any variable indices. Now, all variables in the args
+                 * point to the correct location. Any variables in the callee must use the offset to calculate the
+                 * correct argument position in the environment stack.
+                 *
+                 * Pros: No array copying, Decent-ish data locality
+                 *
+                 * Cons: Requires pre-parsing the arguments (each time we use them), lots of bookkeeping(?)
+                 *
+                 * ```
+                 * val environment = Array<IntArray>()
+                 * ```
+                 *
+                 * ### Option 2:
+                 *
+                 * When building the arguments, read them and resolve any variables in them by copying the
+                 * resolved values into the arguments.
+                 *
+                 * Environment is always flat because we only need one level of arguments (all prior levels are inlined already).
+                 *
+                 * Pros: Very good data locality
+                 *
+                 * Cons: A lot of array copying, requires re-reading the argument bytecode (each time we use them)
+                 *
+                 * ### Option 3:
+                 *
+                 * Environment object that has the current args and a reference to the parent environment
+                 *
+                 * ```
+                 * class Environment(
+                 *     val arguments: Array<IntArray>,
+                 *     val argumentConstantPool: Array<Any>,
+                 *     val parent: Environment? = null,
+                 * )
+                 * ```
+                 *
+                 * Pros: No preprocessing required
+                 *
+                 * Cons: Terrible data locality and indirection
+                 *
+                 * ### Option 4:
+                 *
+                 * All args are in a single array. The environment is a stack of these arrays. When encountering
+                 * a variable, it is possible to skip-scan to the correct argument in the next entry down the stack.
+                 *
+                 * ```
+                 * val environment = Array<IntArray>
+                 * ```
+                 *
+                 *
+                 * Pros: decent data locality, no pre-processing of args required.
+                 *
+                 * Cons: some indirection
+                 *
+                 * TODO: Also consider:
+                 *
+                 * How are the constant pools getting dealt with? (Note that this problem goes away if
+                 * we can use `Unsafe` because we can put an object reference inline)
+                 * Any time we need to copy data, we also need to copy the constants somehow.
+                 * If we append the constant pool to an existing constant pool, then we need to go and adjust constant
+                 * pool indices accordingly, which could be tedious and/or expensive, although no worse than updating
+                 * variable indices. (Or, we need to track a constant pool offset and adjust accordingly.)
+                 * If we don't append the constants to an existing constant pool, then we need to have a stack of
+                 * constant pools that we can reference.
+                 *
+                 * Unfortunately, `Unsafe.getObject()` is incredibly slow. How else can we maintain a single constant pool?
+                 * We could have a HashMap<Long, Any?> that holds the value, where the `Long` is the address, but is that
+                 * going to be too expensive? The nice thing is that it can be a shared instance since we don't need to
+                 * worry about creating new copies for every macro invocation. It would need to have some sort of lifetime
+                 * in order to avoid memory leaks, but the lifetime could just be the life of the reader.
+                 *
+                 * Actually, we could use a bespoke map, based on IdentityHashMap that uses the memory address as the key.
+                 * That would mean we don't have to box the keys, and we have a stable identifier in the bytecode that
+                 * doesn't ever have to be rewritten if the data is moved to a new array.
+                 *
+                 * Alternately, we could use an array of objects, and then use `Unsafe` to read integers from it. That
+                 * might be faster, although slightly more complicated because we have to ensure that our opcodes work
+                 * with the alignment of the object array.
+                 *
+                 */
+                val args = Array(sig.size) { ArgumentBytecode.EMPTY_ARG }
 
-    override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader {
-        if (signature.isEmpty()) {
-            instruction = INSTRUCTION_NOT_SET
-            return NoneReader
+                var j = sig.size
+                while (j-- > 0) {
+                    val argJIndex = argumentValueIndices.removeLast()
+                    val argJInstruction = bytecode[argJIndex]
+                    val argJLength = argJInstruction and 0xFFFFFF
+                    val argJ = IntArray(argJLength)
+                    // TODO: check for variables here and update the variable number
+                    System.arraycopy(bytecode, argJIndex + 1, argJ, 0, argJLength)
+                    argJ[argJLength - 1] = MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction()
+                    args[j] = argJ
+                }
+
+                val argBytecode = TemplateMacroArgs(args, constantPool)
+
+                return MacroInvocation(
+                    macro,
+                    argBytecode,
+                    { pool -> pool.startEvaluation(macro, argBytecode) }
+                )
+                // TODO("OP_INVOKE_MACRO")
+            }
+            MacroBytecode.OP_CP_MACRO_INVOCATION -> {
+                // val invocation = (constantPool[cpIndex] as MacroInvocation)
+                val invocation = bytecode.unsafeGetReferenceAt(i) as MacroInvocation
+                i += 2
+                "foo".intern()
+                return invocation
+            }
+            else -> throw IllegalStateException("Not positioned on macro: ${MacroBytecode(instruction)}")
         }
-        TODO()
     }
 
-    override fun macroArgumentsNew(signature: Array<Macro.Parameter>): ArgumentBytecode {
-        instruction = INSTRUCTION_NOT_SET
-        val cpIndex = bytecode[i++]
-        return constantPool[cpIndex] as ArgumentBytecode
-    }
-
+    // TODO: Maybe we can eliminate some of the copying by making this thing lazily return stuff from the source bytecode.
     class TemplateMacroArgs(
         private val arguments: Array<IntArray>,
         private val constantPool: Array<Any?>
     ): ArgumentBytecode {
         override fun constantPool(): Array<Any?> {
             return constantPool
+        }
+
+        override fun iterator(): Iterator<IntArray> = object : Iterator<IntArray> {
+            private var i = 0
+            override fun hasNext(): Boolean = i < arguments.size
+            override fun next(): IntArray = arguments[i++]
         }
 
         override fun getArgument(parameterIndex: Int): IntArray {
@@ -327,15 +472,25 @@ abstract class TemplateReaderBase(
 
     override fun annotations(): AnnotationIterator {
         val annotations = when (instruction.instructionToOp()) {
-            MacroBytecode.OP_CP_N_ANNOTATIONS -> {
-                val constantPoolIndex = (instruction and 0xFFFFFF)
+            MacroBytecode.OP_CP_ONE_ANNOTATION -> {
+                // val constantPoolIndex = (instruction and 0xFFFFFF)
                 val annotations = arrayOfNulls<String?>(1)
-                annotations[0] = constantPool[constantPoolIndex] as String?
+                // annotations[0] = constantPool[constantPoolIndex] as String?
+                annotations[0] = bytecode.unsafeGetReferenceAt(i)
+                i += 2
                 annotations
             }
-            MacroBytecode.OP_CP_ONE_ANNOTATION -> {
+            MacroBytecode.OP_CP_N_ANNOTATIONS -> {
                 val nAnnotations = (instruction and 0xFFFFFF)
-                Array(nAnnotations) { constantPool[bytecode[i++]] as String? }
+//                Array(nAnnotations) { constantPool[bytecode[i++]] as String? }
+                var localI = i
+                val annotations = Array(nAnnotations) {
+                    val ann = bytecode.unsafeGetReferenceAt<String?>(localI)
+                    localI += 2
+                    ann
+                }
+                i = localI
+                annotations
             }
             else -> TODO("Op: ${instruction.instructionToOp()}")
         }
@@ -344,8 +499,9 @@ abstract class TemplateReaderBase(
     }
 
     override fun nullValue(): IonType {
+        val instruction = this.instruction
+        this.instruction = INSTRUCTION_NOT_SET
         val op = instruction.instructionToOp()
-        instruction = INSTRUCTION_NOT_SET
         return when (op) {
             MacroBytecode.OP_NULL_NULL -> IonType.NULL
             MacroBytecode.OP_NULL_TYPED -> IonType.entries[(instruction and 0xFF)]
@@ -386,11 +542,6 @@ abstract class TemplateReaderBase(
                 val lsb = bytecode[i++].toLong() and 0xFFFFFFFF
                 val msb = bytecode[i++].toLong() and 0xFFFFFFFF
                 Double.fromBits((msb shl 32) or lsb)
-                // val double = bytecode.unsafeGetDoubleAt(i)
-//                val msb = bytecode[i++]
-//                val lsb = bytecode[i++]
-//                print(intArrayOf(msb, lsb).contentToString())
-//                println(" -> " + intArrayOf(msb, lsb).unsafeGetDoubleAt(0))
             }
             else -> TODO("Op: $op")
         }
@@ -402,9 +553,12 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_DECIMAL -> {
-                val constantPoolIndex = (instruction and 0xFFFFFF)
+                // val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                return constantPool[constantPoolIndex] as Decimal
+                val i = this.i
+                val decimal = bytecode.unsafeGetReferenceAt<BigDecimal>(i)
+                this.i = i + 2
+                return Decimal.valueOf(decimal)
             }
             else -> TODO("Op: $op")
         }
@@ -413,9 +567,12 @@ abstract class TemplateReaderBase(
     override fun stringValue(): String {
         when (instruction.instructionToOp()) {
             MacroBytecode.OP_CP_STRING -> {
-                val constantPoolIndex = (instruction and 0xFFFFFF)
+//                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                return constantPool[constantPoolIndex] as String
+                val i = this.i
+                val string = bytecode.unsafeGetReferenceAt<String>(i)
+                this.i = i + 2
+                return string
             }
             else -> TODO("Op: ${instruction.instructionToOp()}")
         }
@@ -424,14 +581,11 @@ abstract class TemplateReaderBase(
     override fun symbolValue(): String? {
         when (instruction.instructionToOp()) {
             MacroBytecode.OP_CP_SYMBOL -> {
-                val constantPoolIndex = (instruction and 0xFFFFFF)
+                // val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-//                val text = bytecode.unsafeGetReferenceAt<String>(i)
-//                if (text != null) {
-//                    i += 2
-//                    return text
-//                }
-                return constantPool[constantPoolIndex] as String
+                val text = bytecode.unsafeGetReferenceAt<String>(i)
+                i += 2
+                return text
             }
             MacroBytecode.OP_UNKNOWN_SYMBOL -> {
                 instruction = INSTRUCTION_NOT_SET
@@ -458,15 +612,12 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_TIMESTAMP -> {
-                val constantPoolIndex = (instruction and 0xFFFFFF)
+//                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                try {
-                    return constantPool[constantPoolIndex] as Timestamp
-                } catch (t: Throwable) {
-                    println("Constant pool: ${constantPool.contentToString()}")
-                    println("CP Index: $constantPoolIndex")
-                    throw t
-                }
+                val i = this.i
+                val ts = bytecode.unsafeGetReferenceAt<Timestamp>(i)
+                this.i = i + 2
+                return ts
             }
             else -> TODO("Op: $op")
         }
@@ -477,9 +628,12 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_CLOB -> {
-                val constantPoolIndex = (instruction and 0xFFFFFF)
+//                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                return constantPool[constantPoolIndex] as ByteBuffer
+                val i = this.i
+                val clob = bytecode.unsafeGetReferenceAt<ByteBuffer>(i)
+                this.i = i + 2
+                return clob
             }
             else -> TODO("Op: $op")
         }
@@ -489,14 +643,18 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_BLOB -> {
-                val constantPoolIndex = (instruction and 0xFFFFFF)
+//                val constantPoolIndex = (instruction and 0xFFFFFF)
                 instruction = INSTRUCTION_NOT_SET
-                return constantPool[constantPoolIndex] as ByteBuffer
+                val i = this.i
+                val blob = bytecode.unsafeGetReferenceAt<ByteBuffer>(i)
+                this.i = i + 2
+                return blob
             }
             else -> TODO("Op: $op")
         }
     }
 
+    @OptIn(ExperimentalStdlibApi::class)
     override fun listValue(): ListReader {
         val op = instruction.instructionToOp()
         when (op) {
@@ -513,7 +671,7 @@ abstract class TemplateReaderBase(
                 val start = bytecode[i++]
                 return arguments.getList(start, length)
             }
-            else -> TODO("Op: $op")
+            else -> TODO("Op: ${op.toHexString()}")
         }
     }
 

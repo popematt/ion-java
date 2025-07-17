@@ -709,15 +709,56 @@ class TypedReadersTest {
                 )
                 stream.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
                 stream.startMacroEvaluation(pool).use { m1 ->
-                    m1.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                        .startMacroEvaluation(pool).use { m2 ->
-                            m2.assertNextToken(TokenTypeConst.INT).skip()
-                            m2.assertNextToken(TokenTypeConst.END)
-                        }
+                    m1.assertNextToken(TokenTypeConst.INT).skip()
                     m1.assertNextToken(TokenTypeConst.END)
                 }
                 stream.assertNextToken(TokenTypeConst.END)
             }
+        }
+
+        @Test
+        fun invokeDefaultInTDL() {
+            val macro = MacroV2(
+                signature = listOf(),
+                body = templateBody {
+                    list {
+                        macro(SystemMacro.Default) {
+                            int(2)
+                            bool(true)
+                        }
+                        macro(SystemMacro.Default) {
+                            expressionGroup {  }
+                            float(1.0)
+                        }
+                    }
+                }
+            )
+            val data = toByteBuffer("""
+                    00
+                """)
+
+            val pool = TemplateResourcePool.getInstance()
+
+            StreamReaderImpl(data).use {
+                (it as ValueReaderBase).initTables(
+                    symbolTable = arrayOf(null),
+                    macroTable = arrayOf(macro),
+                )
+                it.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                it.startMacroEvaluation(pool).use { m ->
+                    m.assertNextToken(TokenTypeConst.LIST)
+                    val list = m.listValue()
+                    list.use { l ->
+                        l.assertNextToken(TokenTypeConst.INT).skip()
+                        l.assertNextToken(TokenTypeConst.FLOAT).skip()
+                        l.assertNextToken(TokenTypeConst.END)
+                    }
+                }
+                it.assertNextToken(TokenTypeConst.END)
+            }
+
+
+
         }
 
         /*
@@ -1035,32 +1076,15 @@ class TypedReadersTest {
 
                 it.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
                 it.startMacroEvaluation(pool).use { m ->
-                    m.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                    m.startMacroEvaluation(pool).use { i4 ->
-                        i4.assertNextToken(TokenTypeConst.STRUCT)
-                            .structValue()
-                            .use { s ->
-                                s.assertFieldNameAndType("Name", TokenTypeConst.SYMBOL)
-                                    .skip()
-                                s.assertFieldNameAndType("Sum", TokenTypeConst.FLOAT)
-                                    .skip()
-                                s.assertFieldNameAndType("Unit", TokenTypeConst.MACRO_INVOCATION)
-                                    .startMacroEvaluation(pool)
-                                    .use { i5 ->
-                                        i5.assertNextToken(TokenTypeConst.SYMBOL).skip()
-                                        i5.assertNextToken(TokenTypeConst.END)
-                                    }
-
-                                s.assertFieldNameAndType("Count", TokenTypeConst.MACRO_INVOCATION)
-                                    .startMacroEvaluation(pool)
-                                    .use { i6 ->
-                                        i6.assertNextToken(TokenTypeConst.INT).skip()
-                                        i6.assertNextToken(TokenTypeConst.END)
-                                    }
-                                s.assertNextToken(TokenTypeConst.END)
-                            }
-                        i4.assertNextToken(TokenTypeConst.END)
-                    }
+                    m.assertNextToken(TokenTypeConst.STRUCT)
+                        .structValue()
+                        .use { s ->
+                            s.assertFieldNameAndType("Name", TokenTypeConst.SYMBOL).skip()
+                            s.assertFieldNameAndType("Sum", TokenTypeConst.FLOAT).skip()
+                            s.assertFieldNameAndType("Unit", TokenTypeConst.SYMBOL).skip()
+                            s.assertFieldNameAndType("Count", TokenTypeConst.INT).skip()
+                            s.assertNextToken(TokenTypeConst.END)
+                        }
                     m.assertNextToken(TokenTypeConst.END)
                 }
                 it.assertNextToken(TokenTypeConst.END)
@@ -1159,54 +1183,28 @@ class TypedReadersTest {
 
                 it.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
                 it.startMacroEvaluation(pool).use { m ->
-                    m.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                    m.startMacroEvaluation(pool).use { i4 ->
-                        i4.assertNextToken(TokenTypeConst.STRUCT)
-                            .structValue()
-                            .use { s ->
-                                s.assertFieldNameAndType("Name", TokenTypeConst.SYMBOL)
-                                    .skip()
-                                s.assertFieldNameAndType("Samples", TokenTypeConst.LIST)
-                                    .listValue()
-                                    .use { l ->
-                                        l.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                                            .startMacroEvaluation(pool)
-                                            .use { m2 ->
-                                                m2.assertNextToken(TokenTypeConst.STRUCT)
-                                                    .structValue()
-                                                    .use { s2 ->
-                                                        s2.assertFieldNameAndType("Value", TokenTypeConst.FLOAT).skip()
-                                                        s2.assertFieldNameAndType("Repeat", TokenTypeConst.MACRO_INVOCATION)
-                                                            .startMacroEvaluation(pool)
-                                                            .use { m3 ->
-                                                                m3.assertNextToken(TokenTypeConst.INT).skip()
-                                                                m3.assertNextToken(TokenTypeConst.END)
-                                                            }
-                                                        s2.assertNextToken(TokenTypeConst.END)
-                                                    }
-                                                m2.assertNextToken(TokenTypeConst.END)
-                                            }
-                                        l.assertNextToken(TokenTypeConst.END)
-                                    }
-                                s.assertFieldNameAndType("Unit", TokenTypeConst.MACRO_INVOCATION)
-                                    .startMacroEvaluation(pool)
-                                    .use { i5 ->
-                                        println("======== Looking for 'Unit' value. ========")
-                                        i5.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                                            .startMacroEvaluation(pool)
-                                            .use { m4 ->
-                                                m4.assertNextToken(TokenTypeConst.SYMBOL).skip()
-                                                m4.assertNextToken(TokenTypeConst.END)
-                                            }
-                                        i5.assertNextToken(TokenTypeConst.END)
-                                    }
-
-                                s.assertFieldName("Dimensions")
-                                s.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
-                                s.assertNextToken(TokenTypeConst.END)
-                            }
-                        i4.assertNextToken(TokenTypeConst.END)
-                    }
+                    m.assertNextToken(TokenTypeConst.STRUCT)
+                        .structValue()
+                        .use { s ->
+                            s.assertFieldNameAndType("Name", TokenTypeConst.SYMBOL)
+                                .skip()
+                            s.assertFieldNameAndType("Samples", TokenTypeConst.LIST)
+                                .listValue()
+                                .use { l ->
+                                    l.assertNextToken(TokenTypeConst.STRUCT)
+                                        .structValue()
+                                        .use { s2 ->
+                                            s2.assertFieldNameAndType("Value", TokenTypeConst.FLOAT).skip()
+                                            s2.assertFieldNameAndType("Repeat", TokenTypeConst.INT).skip()
+                                            s2.assertNextToken(TokenTypeConst.END)
+                                        }
+                                    l.assertNextToken(TokenTypeConst.END)
+                                }
+                            s.assertFieldNameAndType("Unit", TokenTypeConst.SYMBOL).skip()
+                            s.assertFieldName("Dimensions")
+//                            s.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
+                            s.assertNextToken(TokenTypeConst.END)
+                        }
                     m.assertNextToken(TokenTypeConst.END)
                 }
                 it.assertNextToken(TokenTypeConst.END)
@@ -1218,9 +1216,7 @@ class TypedReadersTest {
 
 
         private fun ValueReader.startMacroEvaluation(pool: TemplateResourcePool): ValueReader {
-            val macro = macroValue()
-            val args = macroArgumentsNew(macro.signature)
-            return pool.startEvaluation(macro, args)
+            return macroInvocation().evaluate(pool)
         }
 
         private fun StructReader.assertFieldNameAndType(name: String, token: Int) = apply {
@@ -2679,6 +2675,131 @@ class TypedReadersTest {
                     value("3")
                 }
             }
+
+
+            @Test
+            fun constantNestedInvocationTemplateMacro() {
+                val macro2 = MacroV2(
+                    signature = listOf(),
+                    body = templateBody {
+                        int(2)
+                    }
+                )
+                val macro = MacroV2(
+                    signature = listOf(),
+                    body = templateBody {
+                        list {
+                            int(1)
+                            macro(macro2) {}
+                            int(3)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 04
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro, macro2)).expect {
+                    value("0")
+                    value("[1, 2, 3]")
+                    value("4")
+                }
+            }
+
+
+
+            @Test
+            fun nestedInvocationTemplateMacroWithOneVariable() {
+                val macro2 = MacroV2(
+                    signature = listOf(exactlyOneTagged("x")),
+                    body = templateBody {
+                        list {
+                            variable("x", 0)
+                        }
+                    }
+                )
+                val macro = MacroV2(
+                    signature = listOf(),
+                    body = templateBody {
+                        list {
+                            int(1)
+                            macro(macro2) { int(2) }
+                            int(3)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 04
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro, macro2)).expect {
+                    value("0")
+                    value("[1, [2], 3]")
+                    value("4")
+                }
+            }
+
+
+            @Test
+            fun simpleInvocationOfDefault() {
+                val macro = MacroV2(
+                    signature = listOf(),
+                    body = templateBody {
+                        list {
+                            macro(SystemMacro.Default) {
+                                int(2)
+                                int(3)
+                            }
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 04
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("[2]")
+                    value("4")
+                }
+            }
+
+            @Test
+            fun simpleInvocationOfDefaultThatUsesTheDefaultValue() {
+                val macro = MacroV2(
+                    signature = listOf(),
+                    body = templateBody {
+                        list {
+                            macro(SystemMacro.Default) {
+                                expressionGroup {  }
+                                int(3)
+                            }
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18
+                    61 04
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("[3]")
+                    value("4")
+                }
+            }
+
 
             @Test
             fun complexConstantMacro() {

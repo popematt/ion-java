@@ -42,7 +42,6 @@ class StreamReaderWithEncodingContextManagement(source: ByteBuffer): ValueReader
                 // this.delegate = (delegate as TemplateReader).deprecated_variableValue()
             }
             TokenTypeConst.MACRO_INVOCATION -> {
-                val m = macroValue()
 
                 TODO()
             }
@@ -131,9 +130,7 @@ class StreamReaderWithEncodingContextManagement(source: ByteBuffer): ValueReader
     override fun isTokenSet(): Boolean = delegate.isTokenSet()
     override fun ionType(): IonType? = delegate.ionType()
 
-    override fun macroValue(): MacroV2 = delegate.macroValue()
-    override fun macroArguments(signature: Array<Macro.Parameter>): ArgumentReader = delegate.macroArguments(signature)
-    override fun macroArgumentsNew(signature: Array<Macro.Parameter>): ArgumentBytecode = delegate.macroArgumentsNew(signature)
+    override fun macroInvocation(): MacroInvocation = delegate.macroInvocation()
 
     override fun position(): Int = delegate.position()
     override fun seekTo(position: Int) = delegate.seekTo(position)

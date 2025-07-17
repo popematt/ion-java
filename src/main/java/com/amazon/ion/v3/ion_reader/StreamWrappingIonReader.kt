@@ -113,9 +113,8 @@ class StreamWrappingIonReader: IonReader {
                 }
             }
             TokenTypeConst.MACRO_INVOCATION -> {
-                val macro = reader.macroValue()
-                val args = reader.macroArgumentsNew(macro.signature)
-                val eexp = templateReaderPool.startEvaluation(macro, args)
+                val macro = reader.macroInvocation()
+                val eexp = macro.evaluate(templateReaderPool)
                 readerManager.pushReader(eexp)
                 reader = eexp
                 type = null

@@ -85,20 +85,21 @@ object SystemMacro {
     // The real macros
 
     @JvmStatic
-    val None = MacroV2(
-        signature = emptyList(),
-        body = null,
-        systemName = NONE,
-        systemAddress = NONE_ADDRESS,
-    )
-
-    @JvmStatic
     val Values = MacroV2(
         signature = arrayOf(zeroToManyTagged("values")),
         body = templateBody { variable("values", 0) },
         systemName = VALUES,
         systemAddress = VALUES_ADDRESS
     )
+
+    @JvmStatic
+    val None = MacroV2(
+        signature = emptyArray(),
+        body = templateBody { macro(Values) { expressionGroup {  } } },
+        systemName = NONE,
+        systemAddress = NONE_ADDRESS,
+    )
+
 
     @JvmStatic
     val Default = MacroV2(

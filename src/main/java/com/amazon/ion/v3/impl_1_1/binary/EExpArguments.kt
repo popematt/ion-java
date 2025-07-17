@@ -24,15 +24,16 @@ class EExpArguments(
     val pool: ResourcePool,
 ): ArgumentBytecode {
 
-    companion object {
-        @JvmStatic
-        val EMPTY_ARG = intArrayOf(
-            MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction()
-        )
-    }
+
 
     override fun constantPool(): Array<Any?> {
         return constants
+    }
+
+    override fun iterator(): Iterator<IntArray> = object : Iterator<IntArray> {
+        private var i = 0
+        override fun hasNext(): Boolean = i < arguments.size
+        override fun next(): IntArray = arguments[i++]
     }
 
     override fun getArgument(parameterIndex: Int): IntArray {
