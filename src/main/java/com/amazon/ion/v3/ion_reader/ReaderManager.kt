@@ -2,6 +2,7 @@ package com.amazon.ion.v3.ion_reader
 
 import com.amazon.ion.IonException
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.template.*
 import java.io.Closeable
 
 internal class ReaderManager: Closeable {
@@ -56,7 +57,7 @@ internal class ReaderManager: Closeable {
         get() = readerStackSize
 
     fun pushContainer(reader: ValueReader) {
-        isInStruct = reader is StructReader
+        isInStruct = if (reader is TemplateReaderImpl) reader.isStruct else reader is StructReader
         if (containerStackSize >= containerStack.size) {
             containerStack = containerStack.grow()
         }

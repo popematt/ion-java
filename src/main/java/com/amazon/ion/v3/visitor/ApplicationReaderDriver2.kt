@@ -203,7 +203,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     }
                     continue
                 }
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 -> {
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 -> {
                     i++
                     when (token) {
                         TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue())
@@ -525,7 +525,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
 
                     a.close()
                 }
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 -> {
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 -> {
                     val fieldValueVisitor = annotatedValueVisitor ?: visitor.onField(fieldName, fieldNameSid)
                     if (fieldValueVisitor == null) {
                         reader.skip()

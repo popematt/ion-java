@@ -189,7 +189,7 @@ abstract class ValueReaderBase(
                 if (sid < 0) r.fieldName()
                 return
             } else if (opcode < 0x60) {
-                macroInvocation()
+                skipMacroInvocation()
             } else when (opcode) {
                 // Symbol with FlexUInt SID
                 0xE3 -> symbolValueSid()
@@ -222,7 +222,7 @@ abstract class ValueReaderBase(
                 0xE4, 0xE5, 0xE6,
                 0xE7, 0xE8, 0xE9  -> annotations().close()
                 // E-Expressions that do not have a length prefix.
-                0xEF, 0xF4 -> macroInvocation()
+                0xEF, 0xF4 -> skipMacroInvocation()
                 else -> {
                     TODO("Skipping an opcode: 0x${opcode.toString(16)}")
                 }
@@ -444,10 +444,6 @@ abstract class ValueReaderBase(
     private fun macroValue(opcode: Int): MacroV2 {
         when (opcode shr 4) {
             0x0, 0x1, 0x2, 0x3 -> {
-                if (opcode >= macroTable.size) {
-                    println("opcode=$opcode, source=$source")
-                }
-
                 return macroTable[opcode]
             }
             0x4 -> {
@@ -490,6 +486,18 @@ abstract class ValueReaderBase(
         }
     }
 
+    private fun skipMacroInvocation() {
+        val opcode = opcode.toInt()
+        this.opcode = TID_UNSET
+        val macro = macroValue(opcode)
+        val length = IdMappings.length(opcode, source)
+        if (length < 0) {
+            skipArgs(macro)
+        } else {
+            source.position(source.position() + length)
+        }
+    }
+
     final override fun macroInvocation(): MacroInvocation {
         val opcode = opcode.toInt()
         val macro = macroValue(opcode)
@@ -500,10 +508,12 @@ abstract class ValueReaderBase(
         return MacroInvocation(macro, args) { it.startEvaluation(macro, args) }
     }
 
+    private val scratch = IntList(32)
+
     private fun parseArgs(macro: MacroV2): EExpArguments {
         val signature = macro.signature
         // TODO: Consider moving this to a different class so that the ownership of `source` is more clear.
-        val presenceBitsSource = source.slice()
+        var presenceBitsPosition = source.position()
         // TODO: Precompute this and store it in the macro definition
         val firstArgPosition = source.position() + macro.numPresenceBytesRequired
         source.position(firstArgPosition)
@@ -513,7 +523,8 @@ abstract class ValueReaderBase(
 
         var i = 0
 
-        val bytecode = IntList()
+        val bytecode = scratch
+        bytecode.clear()
 
         val arguments = Array<IntArray>(signature.size) { ArgumentBytecode.EMPTY_ARG }
 
@@ -527,7 +538,7 @@ abstract class ValueReaderBase(
                 // Read a value from the presence bitmap
                 // But we might need to "refill" our presence byte first
                 if (presenceByteOffset > 7) {
-                    presenceByte = presenceBitsSource.get().toInt() and 0xFF
+                    presenceByte = source.get(presenceBitsPosition++).toInt() and 0xFF
                     presenceByteOffset = 0
                 }
                 presence = (presenceByte ushr presenceByteOffset) and 0b11
@@ -597,6 +608,63 @@ abstract class ValueReaderBase(
             pool = pool,
         )
     }
+
+    private fun skipArgs(macro: MacroV2) {
+        val signature = macro.signature
+        // TODO: Consider moving this to a different class so that the ownership of `source` is more clear.
+        var presenceBitsPosition = source.position()
+        // TODO: Precompute this and store it in the macro definition
+        val firstArgPosition = source.position() + macro.numPresenceBytesRequired
+        source.position(firstArgPosition)
+
+        var presenceByteOffset = 8
+        var presenceByte = 0
+
+        var i = 0
+
+        while (i < signature.size) {
+            var presence: Int
+            val parameter = signature[i]
+            if (parameter.iCardinality != 1) {
+                // Read a value from the presence bitmap
+                // But we might need to "refill" our presence byte first
+                if (presenceByteOffset > 7) {
+                    presenceByte = source.get(presenceBitsPosition++).toInt() and 0xFF
+                    presenceByteOffset = 0
+                }
+                presence = (presenceByte ushr presenceByteOffset) and 0b11
+                presenceByteOffset += 2
+            } else {
+                // Or set it to the implied "1" value
+                presence = 1
+            }
+
+            when (presence) {
+                0 -> {
+                    // Do nothing. All the arg slots are pre-initialized to "EMPTY"
+                }
+                1 -> {
+                    // TODO: Support for tagless types.
+                    nextToken()
+                    skip()
+                }
+                else -> {
+                    val length = IntHelper.readFlexUInt(source)
+                    val position = source.position()
+                    // TODO: Check if we're on a tagless parameter.
+                    //       For now, we'll assume that they are all tagged.
+                    if (length == 0) {
+                        // TODO: We might be able to get the length based on the argument indices.
+                        pool.getDelimitedSequence(position, this, symbolTable, macroTable).close()
+                    } else {
+                        source.position(position + length)
+                    }
+                }
+            }
+            i++
+        }
+    }
+
 
     private fun readArgumentValue(tokenType: Int, bytecode: IntList, constants: MutableList<Any>) {
         // TODO: Lazy parsing of values.
@@ -740,7 +808,6 @@ abstract class ValueReaderBase(
             else -> TODO("${TokenTypeConst(tokenType)} at ~${source.position()}")
         }
     }
-
 
     final override fun annotations(): AnnotationIterator {
         val opcode = opcode.toInt()

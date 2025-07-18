@@ -8,17 +8,19 @@ import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.math.BigDecimal
 import java.nio.ByteBuffer
 
-abstract class TemplateReaderBase(
-    @JvmField
+open class TemplateReaderImpl internal constructor(
     val pool: TemplateResourcePool,
     // Available modules? No. That's already resolved in the compiler.
     // Macro table? No. That's already resolved in the compiler.
-): ValueReader, TemplateReader {
+): ValueReader, SexpReader, ListReader, SequenceReader, TemplateReader {
 
     // TODO:
     //   Switch this to use the bytecode from the macro definition. See if we get a perf improvement.
     //   Try to convert E-Exp args to bytecode as well.
     //   Also try inlining macro invocations as well.
+
+    @JvmField
+    var isStruct: Boolean = false
 
     @JvmField
     var bytecode: IntArray = IntArray(0)
@@ -27,12 +29,14 @@ abstract class TemplateReaderBase(
     @JvmField
     var constantPool: Array<Any?> = arrayOf()
 
+    private var argStackSize: Byte = 0
+    private var argumentValueIndicesStack = IntArray(INITIAL_STACK_SIZE)
+
+    // TODO: See if we can get rid of these stacks.
     private var stackHeight: Byte = 0
     private var bytecodeStack: Array<IntArray?> = arrayOfNulls(INITIAL_STACK_SIZE)
     private var iStack = IntArray(INITIAL_STACK_SIZE) { -1 }
     private var constantPoolStack: Array<Array<Any?>?> = arrayOfNulls(INITIAL_STACK_SIZE)
-
-    private var argumentValueIndices: MutableList<Int> = mutableListOf()
 
     @JvmField
     var arguments: ArgumentBytecode = ArgumentBytecode._NO_ARGS
@@ -71,6 +75,7 @@ abstract class TemplateReaderBase(
             return tokenType(MacroBytecode.EOF)
         }
         var instruction = INSTRUCTION_NOT_SET
+        var i = this.i
         while (instruction == INSTRUCTION_NOT_SET) {
 
             instruction = bytecode[i++]
@@ -78,7 +83,7 @@ abstract class TemplateReaderBase(
             when (op) {
                 MacroBytecode.OP_START_ARGUMENT_VALUE -> {
                     // Put args positions on stack for template macro invocations to use in evaluation
-                    argumentValueIndices.add(i - 1)
+                    argumentValueIndicesStack[(argStackSize++).toInt()] = i - 1
                     i += instruction and 0xFFFFFF
                     instruction = INSTRUCTION_NOT_SET
                     continue
@@ -110,8 +115,8 @@ abstract class TemplateReaderBase(
                 }
                 MacroBytecode.OP_INVOKE_SYS_MACRO -> when (instruction and 0xFF) {
                     SystemMacro.DEFAULT_ADDRESS -> {
-                        val secondArgStartIndex = argumentValueIndices.removeLast()
-                        val firstArgStartIndex = argumentValueIndices.removeLast()
+                        val secondArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
+                        val firstArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
                         val currentI = i
                         if (stackHeight.toInt() == iStack.size) {
                             TODO("Grow the stacks")
@@ -136,6 +141,7 @@ abstract class TemplateReaderBase(
             }
         }
         this.instruction = instruction
+        this.i = i
         return tokenType(instruction ushr 24).also {
 //            println(MacroBytecode(instruction))
             if (it == TokenTypeConst.UNSET) {
@@ -144,14 +150,10 @@ abstract class TemplateReaderBase(
         }
     }
 
-    final override fun close() {
-        returnToPool()
+    override fun close() {
+        pool.returnSequence(this)
     }
 
-    protected abstract fun returnToPool()
-
-
-    @OptIn(ExperimentalStdlibApi::class)
     private fun tokenType(operation: Int): Int {
         // TODO: This method is >10% of all.
         //       See if we can align the MacroBytecode and the TokenTypeConst values so that
@@ -161,49 +163,45 @@ abstract class TemplateReaderBase(
         //       abcdef == TokenTypeConst value
         //       gh discriminates between ref, constant, inline, etc.
         //       Then, we have an efficient TableSwitch for the different variants of ints, etc.
-        //       And we can basically just map from MacroBytecode to TokenTypeConst with `(x ushl 2)`
-        when (operation) {
-            // TODO: Reference instructions
-            MacroBytecode.OP_NULL_NULL,
-            MacroBytecode.OP_NULL_TYPED -> return TokenTypeConst.NULL
-            MacroBytecode.OP_BOOL -> return TokenTypeConst.BOOL
-            MacroBytecode.OP_SMALL_INT,
-            MacroBytecode.OP_INLINE_INT,
-            MacroBytecode.OP_INLINE_LONG,
-            MacroBytecode.OP_CP_BIG_INT -> return TokenTypeConst.INT
-            MacroBytecode.OP_INLINE_DOUBLE -> return TokenTypeConst.FLOAT
-            MacroBytecode.OP_CP_DECIMAL,
-            MacroBytecode.OP_DECIMAL_ZERO -> return TokenTypeConst.DECIMAL
-            MacroBytecode.OP_CP_TIMESTAMP -> return TokenTypeConst.TIMESTAMP
-            MacroBytecode.OP_CP_STRING,
-            MacroBytecode.OP_EMPTY_STRING -> return TokenTypeConst.STRING
-            MacroBytecode.OP_CP_SYMBOL,
-            MacroBytecode.OP_UNKNOWN_SYMBOL -> return TokenTypeConst.SYMBOL
-            MacroBytecode.OP_CP_BLOB -> return TokenTypeConst.BLOB
-            MacroBytecode.OP_CP_CLOB -> return TokenTypeConst.CLOB
-            MacroBytecode.OP_REF_LIST,
-            MacroBytecode.OP_LIST_START -> return TokenTypeConst.LIST
-            MacroBytecode.OP_REF_SEXP,
-            MacroBytecode.OP_SEXP_START -> return TokenTypeConst.SEXP
-            MacroBytecode.OP_REF_SID_STRUCT,
-            MacroBytecode.OP_REF_FLEXSYM_STRUCT,
-            MacroBytecode.OP_STRUCT_START -> return TokenTypeConst.STRUCT
-            MacroBytecode.OP_CP_FIELD_NAME,
-            MacroBytecode.OP_FIELD_NAME_SID -> return TokenTypeConst.FIELD_NAME
-            MacroBytecode.OP_CP_ONE_ANNOTATION,
-            MacroBytecode.OP_CP_N_ANNOTATIONS -> return TokenTypeConst.ANNOTATIONS
-            MacroBytecode.OP_LIST_END,
-            MacroBytecode.OP_SEXP_END,
-            MacroBytecode.OP_STRUCT_END,
-            MacroBytecode.EOF,
-            MacroBytecode.OP_END_ARGUMENT_VALUE -> return TokenTypeConst.END
-            MacroBytecode.UNSET -> return TokenTypeConst.UNSET
-            MacroBytecode.OP_INVOKE_MACRO,
-            MacroBytecode.OP_CP_MACRO_INVOCATION -> return TokenTypeConst.MACRO_INVOCATION
-            MacroBytecode.OP_START_ARGUMENT_VALUE -> return TokenTypeConst.EXPRESSION_GROUP
-            // TODO: Arguments?
-            else -> TODO("Op: ${operation.toHexString()}")
-        }
+        //       And we can basically just map from MacroBytecode to TokenTypeConst with `(x ushr 2)`
+        return operation ushr 2
+//        when (operation) {
+//            // TODO: Reference instructions
+//            MacroBytecode.OP_NULL_NULL,
+//            MacroBytecode.OP_NULL_TYPED -> return TokenTypeConst.NULL
+//            MacroBytecode.OP_BOOL -> return TokenTypeConst.BOOL
+//            MacroBytecode.OP_SMALL_INT,
+//            MacroBytecode.OP_INLINE_INT,
+//            MacroBytecode.OP_INLINE_LONG,
+//            MacroBytecode.OP_CP_BIG_INT -> return TokenTypeConst.INT
+//            MacroBytecode.OP_INLINE_DOUBLE -> return TokenTypeConst.FLOAT
+//            MacroBytecode.OP_CP_DECIMAL -> return TokenTypeConst.DECIMAL
+//            MacroBytecode.OP_CP_TIMESTAMP -> return TokenTypeConst.TIMESTAMP
+//            MacroBytecode.OP_CP_STRING -> return TokenTypeConst.STRING
+//            MacroBytecode.OP_CP_SYMBOL,
+//            MacroBytecode.OP_UNKNOWN_SYMBOL -> return TokenTypeConst.SYMBOL
+//            MacroBytecode.OP_CP_BLOB -> return TokenTypeConst.BLOB
+//            MacroBytecode.OP_CP_CLOB -> return TokenTypeConst.CLOB
+//            MacroBytecode.OP_REF_LIST,
+//            MacroBytecode.OP_LIST_START -> return TokenTypeConst.LIST
+//            MacroBytecode.OP_REF_SEXP,
+//            MacroBytecode.OP_SEXP_START -> return TokenTypeConst.SEXP
+//            MacroBytecode.OP_REF_SID_STRUCT,
+//            MacroBytecode.OP_REF_FLEXSYM_STRUCT,
+//            MacroBytecode.OP_STRUCT_START -> return TokenTypeConst.STRUCT
+//            MacroBytecode.OP_CP_FIELD_NAME,
+//            MacroBytecode.OP_FIELD_NAME_SID -> return TokenTypeConst.FIELD_NAME
+//            MacroBytecode.OP_CP_ONE_ANNOTATION,
+//            MacroBytecode.OP_CP_N_ANNOTATIONS -> return TokenTypeConst.ANNOTATIONS
+//            MacroBytecode.OP_CONTAINER_END,
+//            MacroBytecode.EOF -> return TokenTypeConst.END
+//            MacroBytecode.UNSET -> return TokenTypeConst.UNSET
+//            MacroBytecode.OP_INVOKE_MACRO,
+//            MacroBytecode.OP_CP_MACRO_INVOCATION -> return TokenTypeConst.MACRO_INVOCATION
+//            MacroBytecode.OP_START_ARGUMENT_VALUE -> return TokenTypeConst.EXPRESSION_GROUP
+//            // TODO: Arguments?
+//            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+//        }
     }
 
     // TODO: Make sure that this also returns END when at the end of the input.
@@ -213,7 +211,10 @@ abstract class TemplateReaderBase(
         return tokenType(op)
     }
 
-    // TODO: See if we can eliminate this from the API.
+    /**
+     * This is only used in [StreamReaderAsIonReader] to make sure to skip a value when `next()` is called because it
+     * has a different contract than [ValueReader].
+     */
     override fun isTokenSet(): Boolean = currentToken() != TokenTypeConst.UNSET
 
     override fun ionType(): IonType? {
@@ -226,11 +227,9 @@ abstract class TemplateReaderBase(
             MacroBytecode.OP_INLINE_LONG,
             MacroBytecode.OP_CP_BIG_INT -> return IonType.INT
             MacroBytecode.OP_INLINE_DOUBLE -> return IonType.FLOAT
-            MacroBytecode.OP_CP_DECIMAL,
-            MacroBytecode.OP_DECIMAL_ZERO -> return IonType.DECIMAL
+            MacroBytecode.OP_CP_DECIMAL -> return IonType.DECIMAL
             MacroBytecode.OP_CP_TIMESTAMP -> return IonType.TIMESTAMP
-            MacroBytecode.OP_CP_STRING,
-            MacroBytecode.OP_EMPTY_STRING -> return IonType.STRING
+            MacroBytecode.OP_CP_STRING -> return IonType.STRING
             MacroBytecode.OP_CP_SYMBOL,
             MacroBytecode.OP_UNKNOWN_SYMBOL -> return IonType.SYMBOL
             MacroBytecode.OP_CP_BLOB -> return IonType.BLOB
@@ -244,7 +243,7 @@ abstract class TemplateReaderBase(
             MacroBytecode.UNSET,
             MacroBytecode.EOF -> return null
 
-            else -> TODO()
+            else -> throw IllegalStateException("Unknown instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -259,7 +258,7 @@ abstract class TemplateReaderBase(
                 val cpindex = instruction and 0xFFFFFF
                 (constantPool[cpindex] as ByteBuffer).remaining()
             }
-            else -> TODO("Op: ${instruction.instructionToOp()}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -303,6 +302,7 @@ abstract class TemplateReaderBase(
         val op = instruction.instructionToOp()
         this.instruction = INSTRUCTION_NOT_SET
         when (op) {
+            // This should be unreachable if we have flattened all the macro invocations.
             MacroBytecode.OP_INVOKE_MACRO -> {
                 val macro = constantPool[cpIndex] as MacroV2
                 // TODO: Ensure that there are no elided args in the bytecode.
@@ -396,70 +396,22 @@ abstract class TemplateReaderBase(
 
                 var j = sig.size
                 while (j-- > 0) {
-                    val argJIndex = argumentValueIndices.removeLast()
+                    val argJIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
                     val argJInstruction = bytecode[argJIndex]
                     val argJLength = argJInstruction and 0xFFFFFF
                     val argJ = IntArray(argJLength)
-                    // TODO: check for variables here and update the variable number
                     System.arraycopy(bytecode, argJIndex + 1, argJ, 0, argJLength)
                     argJ[argJLength - 1] = MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction()
                     args[j] = argJ
                 }
 
-                val argBytecode = TemplateMacroArgs(args, constantPool)
-
-                return MacroInvocation(
-                    macro,
-                    argBytecode,
-                    { pool -> pool.startEvaluation(macro, argBytecode) }
-                )
-                // TODO("OP_INVOKE_MACRO")
+                TODO("OP_INVOKE_MACRO")
             }
             MacroBytecode.OP_CP_MACRO_INVOCATION -> {
                  val invocation = (constantPool[cpIndex] as MacroInvocation)
                 return invocation
             }
             else -> throw IllegalStateException("Not positioned on macro: ${MacroBytecode(instruction)}")
-        }
-    }
-
-    // TODO: Maybe we can eliminate some of the copying by making this thing lazily return stuff from the source bytecode.
-    class TemplateMacroArgs(
-        private val arguments: Array<IntArray>,
-        private val constantPool: Array<Any?>
-    ): ArgumentBytecode {
-        override fun constantPool(): Array<Any?> {
-            return constantPool
-        }
-
-        override fun iterator(): Iterator<IntArray> = object : Iterator<IntArray> {
-            private var i = 0
-            override fun hasNext(): Boolean = i < arguments.size
-            override fun next(): IntArray = arguments[i++]
-        }
-
-        override fun getArgument(parameterIndex: Int): IntArray {
-            return arguments[parameterIndex]
-        }
-
-        override fun getList(start: Int, length: Int): ListReader {
-            TODO("Not yet implemented")
-        }
-
-        override fun getSexp(start: Int, length: Int): SexpReader {
-            TODO("Not yet implemented")
-        }
-
-        override fun getStruct(start: Int, length: Int, flexsymMode: Boolean): StructReader {
-            TODO("Not yet implemented")
-        }
-
-        override fun getMacro(macroAddress: Int): MacroV2 {
-            TODO("Not yet implemented")
-        }
-
-        override fun getSymbol(sid: Int): String? {
-            TODO("Not yet implemented")
         }
     }
 
@@ -484,7 +436,7 @@ abstract class TemplateReaderBase(
                 i = localI
                 annotations
             }
-            else -> TODO("Op: ${instruction.instructionToOp()}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
         instruction = INSTRUCTION_NOT_SET
         return pool.getAnnotations(annotations)
@@ -497,7 +449,7 @@ abstract class TemplateReaderBase(
         return when (op) {
             MacroBytecode.OP_NULL_NULL -> IonType.NULL
             MacroBytecode.OP_NULL_TYPED -> IonType.entries[(instruction and 0xFF)]
-            else -> TODO("Not a null value: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -521,7 +473,7 @@ abstract class TemplateReaderBase(
                 val lsb = bytecode[i++].toLong()
                 (msb shl 32) or lsb
             }
-            else -> TODO("Op: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
         instruction = INSTRUCTION_NOT_SET
         return long
@@ -535,7 +487,7 @@ abstract class TemplateReaderBase(
                 val msb = bytecode[i++].toLong() and 0xFFFFFFFF
                 Double.fromBits((msb shl 32) or lsb)
             }
-            else -> TODO("Op: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
         instruction = INSTRUCTION_NOT_SET
         return double
@@ -549,7 +501,7 @@ abstract class TemplateReaderBase(
                 instruction = INSTRUCTION_NOT_SET
                 return Decimal.valueOf(constantPool[constantPoolIndex] as BigDecimal)
             }
-            else -> TODO("Op: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -560,7 +512,7 @@ abstract class TemplateReaderBase(
                 instruction = INSTRUCTION_NOT_SET
                 return constantPool[constantPoolIndex] as String
             }
-            else -> TODO("Op: ${instruction.instructionToOp()}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -575,7 +527,7 @@ abstract class TemplateReaderBase(
                 instruction = INSTRUCTION_NOT_SET
                 return null
             }
-            else -> TODO("Op: ${instruction.instructionToOp()}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -586,7 +538,7 @@ abstract class TemplateReaderBase(
                 instruction = INSTRUCTION_NOT_SET
                 return 0
             }
-            else -> TODO("Op: ${instruction.instructionToOp()}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -600,7 +552,7 @@ abstract class TemplateReaderBase(
                 instruction = INSTRUCTION_NOT_SET
                 return constantPool[constantPoolIndex] as Timestamp
             }
-            else -> TODO("Op: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -613,7 +565,7 @@ abstract class TemplateReaderBase(
                 instruction = INSTRUCTION_NOT_SET
                 return constantPool[constantPoolIndex] as ByteBuffer
             }
-            else -> TODO("Op: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -625,11 +577,10 @@ abstract class TemplateReaderBase(
                 instruction = INSTRUCTION_NOT_SET
                 return constantPool[constantPoolIndex] as ByteBuffer
             }
-            else -> TODO("Op: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
     override fun listValue(): ListReader {
         val op = instruction.instructionToOp()
         when (op) {
@@ -646,7 +597,7 @@ abstract class TemplateReaderBase(
                 val start = bytecode[i++]
                 return arguments.getList(start, length)
             }
-            else -> TODO("Op: ${op.toHexString()}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -666,7 +617,7 @@ abstract class TemplateReaderBase(
                 val start = bytecode[i++]
                 return arguments.getSexp(start, length)
             }
-            else -> TODO("Op: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
@@ -678,7 +629,7 @@ abstract class TemplateReaderBase(
                 val start = i
                 i += length
                 instruction = INSTRUCTION_NOT_SET
-                return pool.getStruct(arguments, bytecode, constantPool, start)
+                return pool.getStruct(arguments, bytecode, start, constantPool)
             }
             MacroBytecode.OP_REF_FLEXSYM_STRUCT -> {
                 val length = (instruction and 0xFFFFFF)
@@ -692,13 +643,32 @@ abstract class TemplateReaderBase(
                 val start = bytecode[i++]
                 return arguments.getStruct(start, length, flexsymMode = false)
             }
-            else -> TODO("Op: $op")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+        }
+    }
+
+    protected fun _fieldName(): String? {
+        when (instruction.instructionToOp()) {
+            MacroBytecode.OP_CP_FIELD_NAME -> {
+                val constantPoolIndex = instruction and 0xFFFFFF
+                instruction = INSTRUCTION_NOT_SET
+                val fieldName = constantPool[constantPoolIndex] as String?
+                return fieldName
+            }
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+        }
+    }
+
+    protected fun _fieldNameSid(): Int {
+        when (instruction.instructionToOp()) {
+            MacroBytecode.OP_CP_FIELD_NAME -> return -1
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
     override fun getIonVersion(): Short = 0x0101
 
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")
-    override fun seekTo(position: Int) = TODO("This method only applies to readers that support IVMs.")
-    override fun position(): Int  = TODO("This method only applies to readers that support IVMs.")
+    override fun seekTo(position: Int) = throw UnsupportedOperationException("This method only applies to readers that support IVMs.")
+    override fun position(): Int  = throw UnsupportedOperationException("This method only applies to readers that support IVMs.")
 }

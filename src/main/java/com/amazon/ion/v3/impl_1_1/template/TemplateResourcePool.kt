@@ -1,15 +1,19 @@
 package com.amazon.ion.v3.impl_1_1.template
 
-import com.amazon.ion.SymbolToken
-import com.amazon.ion.impl.macro.Expression
-import com.amazon.ion.impl.macro.Macro
-import com.amazon.ion.impl.macro.TemplateMacro
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.template.TemplateReaderBase.Companion.INSTRUCTION_NOT_SET
 import java.io.Closeable
 
-class TemplateResourcePool private constructor(): Closeable {
+interface ITemplateResourcePool {
+    fun getSequence(args: ArgumentBytecode, bytecode: IntArray, start: Int, constantPool: Array<Any?>): TemplateReaderImpl
+    fun returnSequence(sequence: TemplateReaderImpl)
+    fun getStruct(args: ArgumentBytecode, bytecode: IntArray, start: Int, constantPool: Array<Any?>): TemplateStructReader
+    fun returnStruct(struct: TemplateStructReader)
+    fun getAnnotations(annotationSymbols: Array<String?>): AnnotationIterator
+    fun returnAnnotations(annotations: AnnotationIterator)
+}
+
+class TemplateResourcePool private constructor(): Closeable, ITemplateResourcePool {
 
     companion object {
         // TODO: See if it's cheaper to just allocate a new one.
@@ -33,15 +37,11 @@ class TemplateResourcePool private constructor(): Closeable {
     }
 
     @JvmField
-    val structs = ArrayList<TemplateStructReaderImpl>()
+    val templateReaders = ArrayList<TemplateReaderImpl>()
     @JvmField
-    val sequences = ArrayList<TemplateSequenceReaderImpl>()
+    val templateStructReaders = ArrayList<TemplateStructReader>()
     @JvmField
-    val annotations = ArrayList<AnnotationIterator>()
-    @JvmField
-    val variables = ArrayList<TemplateVariableReaderImpl>()
-    @JvmField
-    val arguments = ArrayList<TemplateArgumentReaderImpl>()
+    val annotationIterators = ArrayList<AnnotationIterator>()
 
     /**
      * This takes ownership of the ArgumentReader and closes it when this evaluator is closed.
@@ -77,7 +77,7 @@ class TemplateResourcePool private constructor(): Closeable {
     }
 
     private fun invokeTemplate(macro: MacroV2, arguments: ArgumentBytecode): ValueReader {
-        val reader = sequences.removeLastOrNull() ?: TemplateSequenceReaderImpl(this)
+        val reader = templateReaders.removeLastOrNull() ?: TemplateReaderImpl(this)
         reader.init(
             macro.bytecode,
             macro.constants,
@@ -92,7 +92,7 @@ class TemplateResourcePool private constructor(): Closeable {
     private fun invokeDefault(arguments: ArgumentBytecode): ValueReader {
 //        println("Invoking Default with arguments: $arguments")
 
-        val firstArg = getSequence(arguments, arguments.getArgument(0), 0, arguments.constantPool())
+        val firstArg = getSequence(arguments, arguments.getArgument(0), 0, arguments.constantPool()) as TemplateReaderImpl
         // TODO: Add a cheap way to restart the sequence
         // TODO: Check to see that the macro evaluates to something.
 
@@ -103,54 +103,28 @@ class TemplateResourcePool private constructor(): Closeable {
             firstArg.close()
             return getSequence(arguments, arguments.getArgument(1), 0, arguments.constantPool())
         }
-
-//        if (firstArg.size > 1) {
-//            return getVariable(arguments, 0, isArgumentOwner = true)
-//        } else {
-//            return getVariable(arguments, 1, isArgumentOwner = true)
-//        }
-    }
-
-    private fun invokeIfNone(arguments: ArgumentReader): ValueReader {
-        arguments.seekToBeforeArgument(0)
-        val firstArg = arguments.nextToken()
-//        println("Checking first arg for 'if_none': ${TokenTypeConst(arguments.currentToken())}")
-        return if (firstArg == TokenTypeConst.ABSENT_ARGUMENT) {
-            getVariable(arguments, 1, isArgumentOwner = true)
-        } else {
-            getVariable(arguments, 2, isArgumentOwner = true)
-        }
-    }
-
-    fun invokeIfSome(arguments: ArgumentReader): ValueReader {
-        arguments.seekToBeforeArgument(0)
-        val firstArg = arguments.nextToken()
-//        println("Checking first arg for 'if_some': ${TokenTypeConst(arguments.currentToken())}")
-        return if (firstArg != TokenTypeConst.ABSENT_ARGUMENT) {
-            getVariable(arguments, 1, isArgumentOwner = true)
-        } else {
-            getVariable(arguments, 2, isArgumentOwner = true)
-        }
     }
 
 
-    fun getSequence(args: ArgumentBytecode, bytecode: IntArray, start: Int, constantPool: Array<Any?>): TemplateSequenceReaderImpl {
-        val reader = sequences.removeLastOrNull() ?: TemplateSequenceReaderImpl(this)
+    override fun getSequence(args: ArgumentBytecode, bytecode: IntArray, start: Int, constantPool: Array<Any?>): TemplateReaderImpl {
+        val reader = templateReaders.removeLastOrNull() ?: TemplateReaderImpl(this)
         reader.init(bytecode, constantPool, args, isArgumentOwner = false)
+        reader.isStruct = false
         reader.i = start
         return reader
     }
 
-    fun getStruct(arguments: ArgumentBytecode, bytecode: IntArray, constantPool: Array<Any?>, start: Int): TemplateStructReaderImpl {
-        val reader = structs.removeLastOrNull()
-            ?: TemplateStructReaderImpl(this)
-        reader.init(bytecode, constantPool, arguments, isArgumentOwner = false)
+    override fun getStruct(args: ArgumentBytecode, bytecode: IntArray, start: Int, constantPool: Array<Any?>): TemplateStructReader {
+        val reader = templateStructReaders.removeLastOrNull()
+            ?: TemplateStructReader(this)
+        reader.init(bytecode, constantPool, args, isArgumentOwner = false)
+        reader.isStruct = true
         reader.i = start
         return reader
     }
 
-    fun getAnnotations(annotationSymbols: Array<String?>): AnnotationIterator {
-        val reader = annotations.removeLastOrNull() as TemplateAnnotationIteratorImpl?
+    override fun getAnnotations(annotationSymbols: Array<String?>): AnnotationIterator {
+        val reader = annotationIterators.removeLastOrNull() as TemplateAnnotationIteratorImpl?
         if (reader != null) {
             reader.init(annotationSymbols)
             return reader
@@ -159,26 +133,15 @@ class TemplateResourcePool private constructor(): Closeable {
         }
     }
 
-    fun getVariable(argReader: ArgumentReader, index: Int, isArgumentOwner: Boolean): TemplateVariableReaderImpl {
-//        println("Getting variable: $index")
-        val reader = variables.removeLastOrNull()
-        if (reader != null) {
-            reader.init(index, argReader, isArgumentOwner)
-            return reader
-        } else {
-            return TemplateVariableReaderImpl(this, index, argReader, isArgumentOwner)
-        }
+    override fun returnAnnotations(annotations: AnnotationIterator) {
+        annotationIterators.add(annotations)
     }
 
-    fun getArguments(args: ArgumentReader, signature: Array<Macro.Parameter>, source: Array<TemplateBodyExpressionModel>, tokens: IntArray): ArgumentReader {
-        if (signature.isEmpty()) {
-            return NoneReader
-        }
-//        val argReader = arguments.removeLastOrNull()
-//            ?.apply { init(source, tokens, args, isArgumentOwner = false) }
-//            ?: TemplateArgumentReaderImpl(this, source, tokens, args, isArgumentOwner = false)
-//        argReader.initArgs(signature)
-        TODO()
+    override fun returnSequence(sequence: TemplateReaderImpl) {
+        templateReaders.add(sequence)
+    }
+    override fun returnStruct(struct: TemplateStructReader) {
+        templateStructReaders.add(struct)
     }
 
     override fun close() {

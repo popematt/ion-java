@@ -33,7 +33,7 @@ internal class TemplateAnnotationIteratorImpl(
 
     override fun close() {
 //        if (this in pool.annotations) throw IllegalStateException("Already closed: $this")
-        pool.annotations.add(this)
+        pool.returnAnnotations(this)
     }
 
     fun init(annotations: Array<String?>) {

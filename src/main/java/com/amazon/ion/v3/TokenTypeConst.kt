@@ -6,65 +6,62 @@ package com.amazon.ion.v3
  * For example, `null.string` is a Null token, and `(:make_string)` is an EEXP token.
  */
 object TokenTypeConst {
-    const val NULL = 0
-    const val BOOL = 1
-    const val INT = 2
-    const val FLOAT = 3
-    const val DECIMAL = 4
-    const val TIMESTAMP = 5
-    const val STRING = 6
-    const val SYMBOL = 7
-    const val CLOB = 8
-    const val BLOB = 9
-    const val LIST = 10
-    const val SEXP = 11
-    const val STRUCT = 12
-    const val ANNOTATIONS = 13
-    const val FIELD_NAME = 14
-    const val NOP = 15
     /** There is no current Token Type */
-    const val UNSET = 16
+    const val UNSET = 0
+    // Types
+    const val NULL = 1
+    const val BOOL = 2
+    const val INT = 3
+    const val FLOAT = 4
+    const val DECIMAL = 5
+    const val TIMESTAMP = 6
+    const val STRING = 7
+    const val SYMBOL = 8
+    const val CLOB = 9
+    const val BLOB = 10
+    const val LIST = 11
+    const val SEXP = 12
+    const val STRUCT = 13
+    const val ANNOTATIONS = 14
+    const val FIELD_NAME = 15
+    const val NOP = 16
     /** End of a container */
     const val END = 17
     const val IVM = 18
     /** Reader is positioned on a TypeId or Opcode that is reserved. This should be an error. */
-    const val RESERVED = 19
-    const val MACRO_INVOCATION = 20
-    const val EXPRESSION_GROUP = 21
+    const val MACRO_INVOCATION = 19
+    const val EXPRESSION_GROUP = 20
+    const val VARIABLE_REF = 21
 
     const val ABSENT_ARGUMENT = 22 // Try making this the same number as NOP
-    const val VARIABLE_REF = 23
-
-    // TODO: Do we need END_OF_INVOCATION, or could we just re-use END?
-    //       We will just use `END`, and add a "requiresStepOut" flag to readers if we need to.
-    // const val END_OF_INVOCATION = 24
+    const val RESERVED = 23 // TODO: Remove this?
 
     operator fun invoke(i: Int) : String {
         return when (i) {
-            0 -> "NULL"
-            1 -> "BOOL"
-            2 -> "INT"
-            3 -> "FLOAT"
-            4 -> "DECIMAL"
-            5 -> "TIMESTAMP"
-            6 -> "STRING"
-            7 -> "SYMBOL"
-            8 -> "CLOB"
-            9 -> "BLOB"
-            10 -> "LIST"
-            11 -> "SEXP"
-            12 -> "STRUCT"
-            13 -> "ANNOTATIONS"
-            14 -> "FIELD_NAME"
-            15 -> "NOP"
-            16 -> "UNSET"
+            0 -> "UNSET"
+            1 -> "NULL"
+            2 -> "BOOL"
+            3 -> "INT"
+            4 -> "FLOAT"
+            5 -> "DECIMAL"
+            6 -> "TIMESTAMP"
+            7 -> "STRING"
+            8 -> "SYMBOL"
+            9 -> "CLOB"
+            10 -> "BLOB"
+            11 -> "LIST"
+            12 -> "SEXP"
+            13 -> "STRUCT"
+            14 -> "ANNOTATIONS"
+            15 -> "FIELD_NAME"
+            16 -> "NOP"
             17 -> "END"
             18 -> "IVM"
-            19 -> "RESERVED"
-            20 -> "MACRO_INVOCATION"
-            21 -> "EXPRESSION_GROUP"
+            19 -> "MACRO_INVOCATION"
+            20 -> "EXPRESSION_GROUP"
+            21 -> "VARIABLE_REF"
             22 -> "EMPTY_ARGUMENT"
-            23 -> "VARIABLE_REF"
+            23 -> "RESERVED"
             else -> "UNKNOWN"
         } + "($i)"
     }
