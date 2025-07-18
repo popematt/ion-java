@@ -8,7 +8,6 @@ private val unsafe = try {
         setAccessible(true)
         get(null) as Unsafe
     }
-        //.also { println("Acquired instance of sun.misc.Unsafe") }
 } catch (t: Throwable) {
     null
 }

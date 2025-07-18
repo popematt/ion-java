@@ -84,7 +84,6 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 bytecode.add(MacroBytecode.OP_CP_SYMBOL.opToInstruction(cpIndex))
 
             } else {
-                println("Unknown Symbol!")
                 bytecode.add(MacroBytecode.OP_UNKNOWN_SYMBOL.opToInstruction())
             }
         }
@@ -137,7 +136,6 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
             val parameterIndex = expr.primitiveValue.toInt()
             if (env != null) {
                 val argExpression = if (parameterIndex >= env.args.size) {
-//                    println("Adding implicit absent argument $parameterIndex")
                     TemplateBodyExpressionModel.ABSENT_ARG_EXPRESSION
                 } else {
                     env.args[parameterIndex]

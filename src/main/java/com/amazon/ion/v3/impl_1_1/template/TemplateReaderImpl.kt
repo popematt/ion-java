@@ -44,9 +44,10 @@ open class TemplateReaderImpl internal constructor(
     @JvmField
     var instruction: Int = INSTRUCTION_NOT_SET
 
-
     companion object {
         const val INSTRUCTION_NOT_SET = MacroBytecode.UNSET shl 24
+
+        const val INSTRUCTION_END = MacroBytecode.EOF shl 24
 
         private const val INITIAL_STACK_SIZE = 32
     }
@@ -71,8 +72,8 @@ open class TemplateReaderImpl internal constructor(
 
     override fun nextToken(): Int {
 //        print(javaClass.simpleName + "@" + Integer.toHexString(System.identityHashCode(this)) + " -> ")
-        if (instruction == MacroBytecode.EOF.opToInstruction()) {
-            return tokenType(MacroBytecode.EOF)
+        if (instruction == INSTRUCTION_END) {
+            return TokenTypeConst.END
         }
         var instruction = INSTRUCTION_NOT_SET
         var i = this.i
@@ -80,74 +81,81 @@ open class TemplateReaderImpl internal constructor(
 
             instruction = bytecode[i++]
             val op = instruction ushr 24
-            when (op) {
-                MacroBytecode.OP_START_ARGUMENT_VALUE -> {
-                    // Put args positions on stack for template macro invocations to use in evaluation
-                    argumentValueIndicesStack[(argStackSize++).toInt()] = i - 1
-                    i += instruction and 0xFFFFFF
-                    instruction = INSTRUCTION_NOT_SET
-                    continue
-                }
-                MacroBytecode.OP_ARGUMENT_REF_TYPE -> {
-                    if (stackHeight.toInt() == iStack.size) {
-                        TODO("Grow the stacks")
-                    }
-                    val s = (stackHeight++).toInt()
-                    bytecodeStack[s] = bytecode
-                    iStack[s] = i
-                    constantPoolStack[s] = constantPool
-                    bytecode = arguments.getArgument(instruction and 0xFFFFFF)
-                    i = 0
-                    constantPool = arguments.constantPool()
-                    instruction = INSTRUCTION_NOT_SET
-                }
-                MacroBytecode.OP_END_ARGUMENT_VALUE,
-                MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION -> {
-                    if (stackHeight.toInt() == 0) {
-                        instruction = MacroBytecode.EOF.opToInstruction()
-                    } else {
-                        val s = (--stackHeight).toInt()
-                        bytecode = bytecodeStack[s]!!
-                        constantPool = constantPoolStack[s]!!
-                        i = iStack[s]
+            if (op > 68) {
+                when (op) {
+                    MacroBytecode.OP_START_ARGUMENT_VALUE -> {
+                        // Put args positions on stack for template macro invocations to use in evaluation
+                        argumentValueIndicesStack[(argStackSize++).toInt()] = i - 1
+                        i += instruction and 0xFFFFFF
                         instruction = INSTRUCTION_NOT_SET
+                        continue
                     }
-                }
-                MacroBytecode.OP_INVOKE_SYS_MACRO -> when (instruction and 0xFF) {
-                    SystemMacro.DEFAULT_ADDRESS -> {
-                        val secondArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
-                        val firstArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
-                        val currentI = i
+
+                    MacroBytecode.OP_ARGUMENT_REF_TYPE -> {
                         if (stackHeight.toInt() == iStack.size) {
                             TODO("Grow the stacks")
                         }
                         val s = (stackHeight++).toInt()
                         bytecodeStack[s] = bytecode
-                        iStack[s] = currentI
+                        iStack[s] = i
                         constantPoolStack[s] = constantPool
-
-                        val firstArg = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool)
-
-                        i = if (firstArg.nextToken() != TokenTypeConst.END) {
-                            firstArgStartIndex + 1
-                        } else {
-                            secondArgStartIndex + 1
-                        }
-                        firstArg.close()
+                        bytecode = arguments.getArgument(instruction and 0xFFFFFF)
+                        i = 0
+                        constantPool = arguments.constantPool()
                         instruction = INSTRUCTION_NOT_SET
                     }
-                    else -> TODO("Instruction not supported ${MacroBytecode(instruction)}")
+
+                    MacroBytecode.OP_END_ARGUMENT_VALUE,
+                    MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION -> {
+                        if (stackHeight.toInt() == 0) {
+                            instruction = MacroBytecode.EOF.opToInstruction()
+                        } else {
+                            val s = (--stackHeight).toInt()
+                            bytecode = bytecodeStack[s]!!
+                            constantPool = constantPoolStack[s]!!
+                            i = iStack[s]
+                            instruction = INSTRUCTION_NOT_SET
+                        }
+                    }
+
+                    MacroBytecode.OP_INVOKE_SYS_MACRO -> when (instruction and 0xFF) {
+                        SystemMacro.DEFAULT_ADDRESS -> {
+                            val secondArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
+                            val firstArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
+                            val currentI = i
+                            if (stackHeight.toInt() == iStack.size) {
+                                TODO("Grow the stacks")
+                            }
+                            val s = (stackHeight++).toInt()
+                            bytecodeStack[s] = bytecode
+                            iStack[s] = currentI
+                            constantPoolStack[s] = constantPool
+
+                            val firstArg = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool)
+
+                            i = if (firstArg.nextToken() != TokenTypeConst.END) {
+                                firstArgStartIndex + 1
+                            } else {
+                                secondArgStartIndex + 1
+                            }
+                            firstArg.close()
+                            instruction = INSTRUCTION_NOT_SET
+                        }
+
+                        else -> TODO("Instruction not supported ${MacroBytecode(instruction)}")
+                    }
                 }
             }
         }
         this.instruction = instruction
         this.i = i
-        return tokenType(instruction ushr 24).also {
-//            println(MacroBytecode(instruction))
-            if (it == TokenTypeConst.UNSET) {
-                throw Exception("TokenTypeConst == UNSET; ${MacroBytecode(instruction)} instruction: ${instruction.toString(16)}; i=$i")
-            }
-        }
+        return tokenType(instruction ushr 24)
+//            .also {
+////            println(MacroBytecode(instruction))
+//            if (it == TokenTypeConst.UNSET) {
+//                throw Exception("TokenTypeConst == UNSET; ${MacroBytecode(instruction)} instruction: ${instruction.toString(16)}; i=$i")
+//            }
+//        }
     }
 
     override fun close() {
@@ -165,50 +173,12 @@ open class TemplateReaderImpl internal constructor(
         //       Then, we have an efficient TableSwitch for the different variants of ints, etc.
         //       And we can basically just map from MacroBytecode to TokenTypeConst with `(x ushr 2)`
         return operation ushr 2
-//        when (operation) {
-//            // TODO: Reference instructions
-//            MacroBytecode.OP_NULL_NULL,
-//            MacroBytecode.OP_NULL_TYPED -> return TokenTypeConst.NULL
-//            MacroBytecode.OP_BOOL -> return TokenTypeConst.BOOL
-//            MacroBytecode.OP_SMALL_INT,
-//            MacroBytecode.OP_INLINE_INT,
-//            MacroBytecode.OP_INLINE_LONG,
-//            MacroBytecode.OP_CP_BIG_INT -> return TokenTypeConst.INT
-//            MacroBytecode.OP_INLINE_DOUBLE -> return TokenTypeConst.FLOAT
-//            MacroBytecode.OP_CP_DECIMAL -> return TokenTypeConst.DECIMAL
-//            MacroBytecode.OP_CP_TIMESTAMP -> return TokenTypeConst.TIMESTAMP
-//            MacroBytecode.OP_CP_STRING -> return TokenTypeConst.STRING
-//            MacroBytecode.OP_CP_SYMBOL,
-//            MacroBytecode.OP_UNKNOWN_SYMBOL -> return TokenTypeConst.SYMBOL
-//            MacroBytecode.OP_CP_BLOB -> return TokenTypeConst.BLOB
-//            MacroBytecode.OP_CP_CLOB -> return TokenTypeConst.CLOB
-//            MacroBytecode.OP_REF_LIST,
-//            MacroBytecode.OP_LIST_START -> return TokenTypeConst.LIST
-//            MacroBytecode.OP_REF_SEXP,
-//            MacroBytecode.OP_SEXP_START -> return TokenTypeConst.SEXP
-//            MacroBytecode.OP_REF_SID_STRUCT,
-//            MacroBytecode.OP_REF_FLEXSYM_STRUCT,
-//            MacroBytecode.OP_STRUCT_START -> return TokenTypeConst.STRUCT
-//            MacroBytecode.OP_CP_FIELD_NAME,
-//            MacroBytecode.OP_FIELD_NAME_SID -> return TokenTypeConst.FIELD_NAME
-//            MacroBytecode.OP_CP_ONE_ANNOTATION,
-//            MacroBytecode.OP_CP_N_ANNOTATIONS -> return TokenTypeConst.ANNOTATIONS
-//            MacroBytecode.OP_CONTAINER_END,
-//            MacroBytecode.EOF -> return TokenTypeConst.END
-//            MacroBytecode.UNSET -> return TokenTypeConst.UNSET
-//            MacroBytecode.OP_INVOKE_MACRO,
-//            MacroBytecode.OP_CP_MACRO_INVOCATION -> return TokenTypeConst.MACRO_INVOCATION
-//            MacroBytecode.OP_START_ARGUMENT_VALUE -> return TokenTypeConst.EXPRESSION_GROUP
-//            // TODO: Arguments?
-//            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
-//        }
     }
 
     // TODO: Make sure that this also returns END when at the end of the input.
     // TODO: See if we can eliminate this from the API.
     override fun currentToken(): Int {
-        val op = instruction ushr 24
-        return tokenType(op)
+        return instruction ushr 26
     }
 
     /**
@@ -218,32 +188,28 @@ open class TemplateReaderImpl internal constructor(
     override fun isTokenSet(): Boolean = currentToken() != TokenTypeConst.UNSET
 
     override fun ionType(): IonType? {
-        when (instruction.instructionToOp()) {
-            MacroBytecode.OP_NULL_NULL -> return IonType.NULL
-            MacroBytecode.OP_NULL_TYPED -> return IonType.entries[(instruction and 0xFF)]
-            MacroBytecode.OP_BOOL -> return IonType.BOOL
-            MacroBytecode.OP_SMALL_INT,
-            MacroBytecode.OP_INLINE_INT,
-            MacroBytecode.OP_INLINE_LONG,
-            MacroBytecode.OP_CP_BIG_INT -> return IonType.INT
-            MacroBytecode.OP_INLINE_DOUBLE -> return IonType.FLOAT
-            MacroBytecode.OP_CP_DECIMAL -> return IonType.DECIMAL
-            MacroBytecode.OP_CP_TIMESTAMP -> return IonType.TIMESTAMP
-            MacroBytecode.OP_CP_STRING -> return IonType.STRING
-            MacroBytecode.OP_CP_SYMBOL,
-            MacroBytecode.OP_UNKNOWN_SYMBOL -> return IonType.SYMBOL
-            MacroBytecode.OP_CP_BLOB -> return IonType.BLOB
-            MacroBytecode.OP_CP_CLOB -> return IonType.CLOB
-            MacroBytecode.OP_LIST_START -> return IonType.LIST
-            MacroBytecode.OP_SEXP_START -> return IonType.SEXP
-            MacroBytecode.OP_STRUCT_START -> return IonType.STRUCT
-
-            MacroBytecode.OP_INVOKE_MACRO,
-            MacroBytecode.OP_CP_MACRO_INVOCATION,
-            MacroBytecode.UNSET,
-            MacroBytecode.EOF -> return null
-
-            else -> throw IllegalStateException("Unknown instruction ${MacroBytecode(instruction)}")
+        val instruction = instruction
+        return when (instruction ushr 26) {
+                TokenTypeConst.NULL -> {
+                    if (instruction and 0x01000000 == 0) {
+                        IonType.NULL
+                    } else {
+                        IonType.entries[instruction and 0xFF]
+                    }
+                }
+                TokenTypeConst.BOOL -> IonType.BOOL
+                TokenTypeConst.INT -> IonType.INT
+                TokenTypeConst.FLOAT -> IonType.FLOAT
+                TokenTypeConst.DECIMAL -> IonType.DECIMAL
+                TokenTypeConst.TIMESTAMP -> IonType.TIMESTAMP
+                TokenTypeConst.SYMBOL -> IonType.SYMBOL
+                TokenTypeConst.STRING -> IonType.STRING
+                TokenTypeConst.CLOB -> IonType.CLOB
+                TokenTypeConst.BLOB -> IonType.BLOB
+                TokenTypeConst.LIST -> IonType.LIST
+                TokenTypeConst.SEXP -> IonType.SEXP
+                TokenTypeConst.STRUCT -> IonType.STRUCT
+                else -> null
         }
     }
 
@@ -267,29 +233,14 @@ open class TemplateReaderImpl internal constructor(
             MacroBytecode.OP_INLINE_INT -> i++
             MacroBytecode.OP_INLINE_DOUBLE,
             MacroBytecode.OP_INLINE_LONG -> i += 2
-
-            // Things with unsafe object references
-//            MacroBytecode.OP_CP_BIG_INT,
-//            MacroBytecode.OP_CP_BLOB,
-//            MacroBytecode.OP_CP_CLOB,
-//            MacroBytecode.OP_CP_FIELD_NAME,
-//            MacroBytecode.OP_CP_SYMBOL,
-//            MacroBytecode.OP_CP_STRING,
-//            MacroBytecode.OP_CP_DECIMAL,
-//            MacroBytecode.OP_CP_MACRO_INVOCATION,
-//            MacroBytecode.OP_CP_TIMESTAMP -> i += 2
-
-
             MacroBytecode.OP_LIST_START,
             MacroBytecode.OP_SEXP_START,
             MacroBytecode.OP_STRUCT_START -> {
                 val length = instruction and 0xFFFFFF
-                i+= length
+                i += length
             }
             MacroBytecode.EOF,
-            MacroBytecode.OP_LIST_END,
-            MacroBytecode.OP_SEXP_END,
-            MacroBytecode.OP_STRUCT_END -> {
+            MacroBytecode.OP_CONTAINER_END -> {
                 throw UnsupportedOperationException("Cannot skip past end.")
             }
         }

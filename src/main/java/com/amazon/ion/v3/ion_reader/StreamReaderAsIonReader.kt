@@ -227,7 +227,6 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         }
 
         if (!isShortCircuitEvaluation) {
-            // FIXME: 7% of all
             val eexp = macroInvocation.evaluate(templateReaderPool)
             readerManager.pushReader(eexp)
             reader = eexp

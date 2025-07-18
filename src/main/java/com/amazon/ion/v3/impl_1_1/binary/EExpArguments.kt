@@ -60,7 +60,6 @@ class EExpArguments(
     }
 
     override fun getSymbol(sid: Int): String? {
-        println("Get symbol for $sid: ${symbolTable[sid]}")
         if (sid == 0) throw Exception("SID = 0")
         return symbolTable[sid]
     }

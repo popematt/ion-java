@@ -50,8 +50,6 @@ internal class FlatMacroCompiler(
             reader.confirmNoAnnotations("macro name")
             if (reader.type != IonType.NULL) {
                 macroName = reader.stringValue().also { confirm(isIdentifierSymbol(it!!)) { "invalid macro name: '$it'" } }
-
-//                println("Compiling `$macroName`")
             }
             reader.nextAndCheckType(IonType.SEXP, "macro signature")
             reader.confirmNoAnnotations("macro signature")
@@ -441,28 +439,6 @@ internal class FlatMacroCompiler(
                 unclassifiedExpression.childTokens = args.toTokenArray()
             }
         }
-    }
-
-
-    private fun IonReader.compileInlineMacroInvocation(destination: MutableList<TemplateBodyExpressionModel>, macro: MacroV2, args: List<TemplateBodyExpressionModel>) {
-        // Copy the macro inline.
-        // Steps:
-        //  - Need to read the arguments into a map
-        //  - Copy the body into this one
-        //  - Replace variables with the arguments
-
-//        println("Inlining macro $macro")
-//        println("Reading arguments...")
-        // Read the args to the macro invocation
-        // val args: MutableList<TemplateBodyExpressionModel> = mutableListOf()
-        // TODO: Capture rest args in an expression group
-        // compileExpressionTail(args, readLiterally = false, ParentType.MacroInvocation)
-//        println("  " + args)
-
-        // Copy to body into this macro body
-//        println("Copying macro body")
-        val body = macro.body!!
-        copyInlinedContent(0, body.size, body, destination, args)
     }
 
     // Visible for testing

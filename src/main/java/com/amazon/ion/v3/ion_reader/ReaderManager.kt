@@ -66,8 +66,10 @@ internal class ReaderManager: Closeable {
     }
 
     fun pushReader(reader: ValueReader) {
+        var readerStack = readerStack
         if (readerStackSize >= readerStack.size) {
             readerStack = readerStack.grow()
+            this.readerStack = readerStack
         }
         readerStack[readerStackSize++] = reader
     }
@@ -79,6 +81,9 @@ internal class ReaderManager: Closeable {
      */
     fun popContainer(): ValueReader {
         val readerStack = readerStack
+        var readerStackSize = readerStackSize
+        var containerStackSize = containerStackSize
+
         if (containerStackSize == 0) {
             throw IonException("Nothing to step out of")
         }
@@ -91,6 +96,8 @@ internal class ReaderManager: Closeable {
         } else {
             isInStruct = false
         }
+        this.containerStackSize = containerStackSize
+        this.readerStackSize = readerStackSize
         return readerStack[readerStackSize - 1]!!
     }
 
