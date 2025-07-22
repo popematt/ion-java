@@ -34,11 +34,8 @@ import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
 import kotlin.text.StringBuilder
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.params.ParameterizedTest
@@ -432,6 +429,78 @@ class TypedReadersTest {
         }
 
         @Test
+        fun skipDelimitedListWithNestedDelimitedContainers() {
+            val data = toByteBuffer("""
+                    E0 01 01 EA
+                    F1                   | List
+                       61 01             | Int 1
+                       61 02             | Int 2
+                       F1
+                           61 03
+                           61 04         | Int 4
+                       F0
+                       F3 01 F0
+                       F1
+                           61 03
+                           61 04         | Int 4
+                           F1
+                               61 03
+                               61 04         | Int 4
+                           F0
+                       F0
+                    F0
+                    F1
+                       61 05
+                       61 06             | Int 4
+                    F0
+                    60
+                """)
+            StreamReaderImpl(data).use { reader ->
+                assertEquals(TokenTypeConst.IVM, reader.nextToken())
+                reader.ivm()
+                assertEquals(TokenTypeConst.LIST, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.LIST, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(0, reader.longValue())
+            }
+        }
+
+        @Test
+        fun skipDelimitedListWithNestedMacroInvocation() {
+            val data = toByteBuffer("""
+                    E0 01 01 EA
+                    F1                   | List
+                       61 01             | Int 1
+                       61 02             | Int 2
+                       EF 01 01 60       | (:values 0)
+                    F0
+                    F1
+                       61 03
+                       61 04             | Int 4
+                       EF 01 02 01       | (:values (::
+                          61 01          |     1
+                          61 02          |     2
+                          61 03          |     3
+                       F0                | ))
+                    F0
+                    60
+                """)
+            StreamReaderImpl(data).use { reader ->
+                assertEquals(TokenTypeConst.IVM, reader.nextToken())
+                reader.ivm()
+                assertEquals(TokenTypeConst.LIST, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.LIST, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(0, reader.longValue())
+            }
+        }
+
+
+        @Test
         fun skipDelimitedSexp() {
             val data = toByteBuffer("""
                     E0 01 01 EA
@@ -481,13 +550,51 @@ class TypedReadersTest {
                 assertEquals(TokenTypeConst.INT, reader.nextToken())
                 assertEquals(0, reader.longValue())
                 assertEquals(TokenTypeConst.STRUCT, reader.nextToken())
+                println(reader.source.position())
                 reader.skip()
+                println(reader.source.position())
                 assertEquals(TokenTypeConst.STRUCT, reader.nextToken())
                 reader.skip()
                 assertEquals(TokenTypeConst.INT, reader.nextToken())
                 assertEquals(0, reader.longValue())
             }
         }
+
+        @Test
+        fun templateMacroWithOneVariableAndListArgument() {
+            val macro = template("foo") { variable(0) }
+
+            val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    00 B2 61 01
+                    00 F1 61 02 F0
+                    61 03
+                """)
+
+            val pool = TemplateResourcePool.getInstance()
+
+            StreamReaderImpl(data).use { reader ->
+                assertEquals(TokenTypeConst.IVM, reader.nextToken())
+                reader.ivm()
+
+                reader.initTables(arrayOf(null), arrayOf(macro))
+
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(0, reader.longValue())
+                assertEquals(TokenTypeConst.MACRO_INVOCATION, reader.nextToken())
+                reader.macroInvocation().evaluate(pool).use { m ->
+                    m.assertNextToken(TokenTypeConst.LIST).skip()
+                    m.assertNextToken(TokenTypeConst.END)
+                }
+                println(reader.source.position())
+                assertEquals(TokenTypeConst.LIST, reader.nextToken())
+                reader.skip()
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(3, reader.longValue())
+            }
+        }
+
 
         // Ion 1.0
         val smallLog = "$" + """ion_log::"ServiceQueryLog_1_0"
@@ -617,43 +724,6 @@ class TypedReadersTest {
                 }
 
         }
-
-        @Test
-        fun readTemplateArgs() {
-            val data = "00"
-            val signature = template("foo", "bar?", "baz?"){}.signature
-
-            val source = toByteBuffer(data)
-            val pool = ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN))
-
-            val reader = EExpArgumentReaderImpl(
-                source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
-                pool,
-                symbolTable = arrayOf(),
-                macroTable = arrayOf(),
-                pool.getList(0, 0, arrayOf(), arrayOf()),
-            )
-            reader.initArgs(signature)
-
-            reader.seekToBeforeArgument(1)
-            reader.assertNextToken(TokenTypeConst.BOOL).skip()
-
-            reader.seekToBeforeArgument(0)
-            reader.assertNextToken(TokenTypeConst.INT).skip()
-
-            reader.seekToBeforeArgument(1)
-            reader.assertNextToken(TokenTypeConst.BOOL).skip()
-
-            reader.seekToBeforeArgument(2)
-            reader.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
-
-            reader.seekToBeforeArgument(1)
-            reader.assertNextToken(TokenTypeConst.BOOL).skip()
-
-            reader.seekToBeforeArgument(0)
-            reader.assertNextToken(TokenTypeConst.INT).skip()
-        }
-
 
         @Test
         fun readVariableThatReferencesEExpArgs() {
@@ -2346,12 +2416,21 @@ class TypedReadersTest {
                     B4
                        61 03
                        61 04             | Int 4
+                    61 05
                 """)
 
                 StreamReaderAsIonReader(data).expect {
                     value("0")
                     value("[1, 2]")
                     value("[3, 4]")
+                    value("5")
+                }
+
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    value("[1, 2]")
+                    value("[3, 4]")
+                    value("5")
                 }
             }
 
@@ -2368,12 +2447,22 @@ class TypedReadersTest {
                        61 03
                        61 04             | Int 4
                     F0
+                    61 05
                 """)
 
                 StreamReaderAsIonReader(data).expect {
                     value("0")
                     value("[1, 2]")
                     value("[3, 4]")
+                    value("5")
+                }
+
+
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    this.next() // skip
+                    this.next() // skip
+                    value("5")
                 }
             }
 
@@ -2409,11 +2498,20 @@ class TypedReadersTest {
                        61 03
                        61 04             | Int 4
                     F0
+                    61 05
                 """)
                 StreamReaderAsIonReader(data).expect {
                     value("0")
                     value("(1 2)")
                     value("(3 4)")
+                    value("5")
+                }
+
+                StreamReaderAsIonReader(data).expect {
+                    value("0")
+                    this.next() // skip
+                    this.next() // skip
+                    value("5")
                 }
             }
 
@@ -3583,8 +3681,44 @@ class TypedReadersTest {
                 val data = toByteBuffer("""
                     E0 01 01 EA
                     60
-                    18 B2 61 01
-                    18 F1 61 02 F0
+                    18 F1 61 01 F0
+                    18 B2 61 02
+                    61 03
+                """)
+
+                val r = StreamReaderAsIonReader(data, additionalMacros = listOf(macro))
+                r.expect {
+                    println("Position: " + r.ion11Reader.position())
+                    value("0")
+                    println("Position: " + r.ion11Reader.position())
+                    r.next()
+                    assertEquals(IonType.LIST, r.type)
+                    r.stepIn()
+                    println("Position: " + r.ion11Reader.position())
+
+                    assertEquals(IonType.INT, r.next())
+                    assertEquals(1, r.intValue())
+                    assertNull(r.next())
+                    r.stepOut()
+
+
+                    println("Position: " + r.ion11Reader.position())
+                    value("[2]")
+                    println("Position: " + r.ion11Reader.position())
+                    value("3")
+                    println("Position: " + r.ion11Reader.position())
+                }
+            }
+
+            @Test
+            fun templateMacroWithListOfOneVariable() {
+                val macro = template("foo") { list { variable(0) } }
+
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 61 01
+                    18 61 02
                     61 03
                 """)
 
@@ -3596,15 +3730,16 @@ class TypedReadersTest {
                 }
             }
 
+
             @Test
-            fun templateMacroWithOneVariableAndSexpArgument() {
+            fun templateMacroWithOneVariableAndSexpArguments() {
                 val macro = template("foo") { variable(0) }
 
                 val data = toByteBuffer("""
                     E0 01 01 EA
                     60
-                    18 C2 61 01
-                    18 F2 61 02 F0
+                    18 F2 61 01 F0
+                    18 C2 61 02
                     61 03
                 """)
 
@@ -3615,6 +3750,43 @@ class TypedReadersTest {
                     value("3")
                 }
             }
+
+            @Test
+            fun templateMacroWithOneVariableAndDelimitedSexpArgument() {
+                val macro = template("foo") { variable(0) }
+
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 F2 61 01 F0
+                    61 03
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("(1)")
+                    value("3")
+                }
+            }
+
+            @Test
+            fun templateMacroWithOneVariableAndPrefixedSexpArgument() {
+                val macro = template("foo") { variable(0) }
+
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 C2 61 02
+                    61 03
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                    value("0")
+                    value("(2)")
+                    value("3")
+                }
+            }
+
 
             @Test
             fun templateMacroWithOneVariableAndPrefixedStructArgument() {

@@ -74,6 +74,9 @@ class StreamWrappingIonReader: IonReader {
 
     private tailrec fun _next(): IonType? {
         val token = reader.nextToken()
+        if (token == TokenTypeConst.UNSET) {
+            println("Got 'UNSET' from reader ${reader::class.java.canonicalName}")
+        }
 
         type = when (token) {
             TokenTypeConst.NULL -> reader.ionType()

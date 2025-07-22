@@ -17,138 +17,161 @@ object MacroBytecode {
     @OptIn(ExperimentalStdlibApi::class)
     @JvmStatic
     operator fun invoke(value: Int): String {
-        return when (value shr 24) {
+        return when (value ushr OPERATION_SHIFT_AMOUNT) {
             0x00 -> ""
-            0x01 -> "OP_NULL_NULL"
-            0x02 -> "OP_NULL_TYPED"
-            0x03 -> "OP_BOOL"
-            0x04 -> "OP_SMALL_INT"
-            0x05 -> "OP_INLINE_INT"
-            0x06 -> "OP_INLINE_LONG"
-            0x07 -> "OP_INLINE_DOUBLE"
-            0x08 -> "OP_DECIMAL_ZERO"
-            0x09 -> "OP_EMPTY_STRING"
-            0x0a -> "OP_UNKNOWN_SYMBOL"
-            0x0b -> "OP_CP_BIG_INT"
-            0x0c -> "OP_CP_DECIMAL"
-            0x0d -> "OP_CP_TIMESTAMP"
-            0x0e -> "OP_CP_STRING"
-            0x0f -> "OP_CP_SYMBOL"
-            0x11 -> "OP_CP_BLOB"
-            0x12 -> "OP_CP_CLOB"
-            0x13 -> "OP_LIST_START"
-            0x14 -> "OP_LIST_END"
-            0x15 -> "OP_SEXP_START"
-            0x16 -> "OP_SEXP_END"
-            0x17 -> "OP_STRUCT_START"
-            0x18 -> "OP_STRUCT_END"
-            0x19 -> "OP_FIELD_NAME_SID"
-            0x1A -> "OP_CP_FIELD_NAME"
-            0x1B -> "OP_ONE_ANNOTATION_SID"
-            0x1C -> "OP_CP_ONE_ANNOTATION"
-            0x1D -> "OP_N_ANNOTATION_SID"
-            0x1F -> "OP_CP_N_ANNOTATIONS"
-            0x21 -> "OP_START_ARGUMENT_VALUE"
-            0x22 -> "OP_END_ARGUMENT_VALUE"
-            0x23 -> "OP_ARGUMENT_REF_TYPE"
-            0x24 -> "OP_INVOKE_MACRO"
-            0x25 -> "OP_INVOKE_SYS_MACRO"
-            0x26 -> "EOF"
-            0x27 -> "END_OF_ARGUMENT_SUBSTITUTION"
-            0x30 -> "OP_REF_INT"
-            0x31 -> "OP_REF_FLOAT"
-            0x32 -> "OP_REF_DECIMAL"
-            0x33 -> "OP_REF_TIMESTAMP_SHORT"
-            0x34 -> "OP_REF_TIMESTAMP_LONG"
-            0x35 -> "OP_REF_LIST"
-            0x36 -> "OP_REF_SEXP"
-            0x37 -> "OP_REF_SID_STRUCT"
-            0x38 -> "OP_REF_FLEXSYM_STRUCT"
-            0x3A -> "OP_REF_MACRO_INVOCATION"
+            OP_NULL_NULL -> "OP_NULL_NULL"
+            OP_NULL_TYPED -> "OP_NULL_TYPED"
+            OP_BOOL -> "OP_BOOL"
+            OP_SMALL_INT -> "OP_SMALL_INT"
+            OP_INLINE_INT -> "OP_INLINE_INT"
+            OP_INLINE_LONG -> "OP_INLINE_LONG"
+            OP_REF_INT -> "OP_REF_INT"
+            OP_CP_BIG_INT -> "OP_CP_BIG_INT"
+            OP_INLINE_DOUBLE -> "OP_INLINE_DOUBLE"
+            OP_REF_DECIMAL -> "OP_REF_DECIMAL"
+            OP_CP_DECIMAL -> "OP_CP_DECIMAL"
+            OP_CP_TIMESTAMP -> "OP_CP_TIMESTAMP"
+            OP_REF_TIMESTAMP_SHORT -> "OP_REF_TIMESTAMP_SHORT"
+            OP_REF_TIMESTAMP_LONG -> "OP_REF_TIMESTAMP_LONG"
+            OP_CP_STRING -> "OP_CP_STRING"
+            OP_REF_STRING -> "OP_REF_STRING"
+            OP_UNKNOWN_SYMBOL -> "OP_UNKNOWN_SYMBOL"
+            OP_CP_SYMBOL_TEXT -> "OP_CP_SYMBOL_TEXT"
+            OP_REF_SYMBOL_TEXT -> "OP_REF_SYMBOL_TEXT"
+            OP_CP_BLOB -> "OP_CP_BLOB"
+            OP_REF_BLOB -> "OP_REF_BLOB"
+            OP_CP_CLOB -> "OP_CP_CLOB"
+            OP_REF_CLOB -> "OP_REF_CLOB"
+            OP_LIST_START -> "OP_LIST_START"
+            OP_REF_LIST -> "OP_REF_LIST"
+            OP_SEXP_START -> "OP_SEXP_START"
+            OP_REF_SEXP -> "OP_REF_SEXP"
+            OP_STRUCT_START -> "OP_STRUCT_START"
+            OP_REF_SID_STRUCT -> "OP_REF_SID_STRUCT"
+            OP_REF_FLEXSYM_STRUCT -> "OP_REF_FLEXSYM_STRUCT"
+            OP_FIELD_NAME_SID -> "OP_FIELD_NAME_SID"
+            OP_CP_FIELD_NAME -> "OP_CP_FIELD_NAME"
+            OP_UNKNOWN_FIELD_NAME -> "OP_UNKNOWN_FIELD_NAME"
+            OP_ONE_ANNOTATION_SID -> "OP_ONE_ANNOTATION_SID"
+            OP_CP_ONE_ANNOTATION -> "OP_CP_ONE_ANNOTATION"
+            OP_N_ANNOTATION_SID -> "OP_N_ANNOTATION_SID"
+            OP_CP_N_ANNOTATIONS -> "OP_CP_N_ANNOTATIONS"
+            OP_START_ARGUMENT_VALUE -> "OP_START_ARGUMENT_VALUE"
+            OP_ARGUMENT_REF_TYPE -> "OP_ARGUMENT_REF_TYPE"
+            OP_INVOKE_MACRO -> "OP_INVOKE_MACRO"
+            OP_INVOKE_SYS_MACRO -> "OP_INVOKE_SYS_MACRO"
+            OP_CP_MACRO_INVOCATION -> "OP_CP_MACRO_INVOCATION"
+            EOF -> "EOF"
+            OP_CONTAINER_END -> "OP_CONTAINER_END"
+            END_OF_ARGUMENT_SUBSTITUTION -> "OP_END_OF_ARGUMENT_SUBSTITUTION"
             else -> ""
         } + "(${value.toHexString()})"
     }
 
     // TODO: Compact the op numbers so that we can have an efficient jump table.
 
-    private const val TOKEN_TYPE_OFFSET = 2
+    const val TOKEN_TYPE_SHIFT_AMOUNT = 3
+    const val OPERATION_SHIFT_AMOUNT = 24
+
+    const val DATA_MASK = 0xFFFFFF
 
     /** If DATA is 0, this should raise an error. All other values of DATA may be used for state tracking by reader implementations.  */
     const val UNSET = 0x00
 
     /** No DATA */
-    const val OP_NULL_NULL = TokenTypeConst.NULL shl TOKEN_TYPE_OFFSET
+    const val OP_NULL_NULL = TokenTypeConst.NULL shl TOKEN_TYPE_SHIFT_AMOUNT
     /** DATA is the IonType ordinal */
-    const val OP_NULL_TYPED = (TokenTypeConst.NULL shl TOKEN_TYPE_OFFSET) + 1
+    const val OP_NULL_TYPED = (TokenTypeConst.NULL shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     /** DATA is 0 for false; 1 for true */
-    const val OP_BOOL = TokenTypeConst.BOOL shl TOKEN_TYPE_OFFSET
+    const val OP_BOOL = TokenTypeConst.BOOL shl TOKEN_TYPE_SHIFT_AMOUNT
     /** DATA is a 16-bit signed int */
-    const val OP_SMALL_INT = TokenTypeConst.INT shl TOKEN_TYPE_OFFSET
+    const val OP_SMALL_INT = TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT
     /** OPERAND is 32-bit signed int */
-    const val OP_INLINE_INT = (TokenTypeConst.INT shl TOKEN_TYPE_OFFSET) + 1
+    const val OP_INLINE_INT = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     /** OPERAND is 64-bit signed int. `(op0 shl 32) or op1` */
-    const val OP_INLINE_LONG = (TokenTypeConst.INT shl TOKEN_TYPE_OFFSET) + 2
-//    /** DATA is a 16-bit float */
-//    const val OP_FLOAT_16 = 0x06
+    const val OP_INLINE_LONG = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
+    /** DATA is u24 index into constant pool */
+    const val OP_CP_BIG_INT = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
+    /** DATA is length; OPERAND is start_index */
+    const val OP_REF_INT = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 4
 
-    // TODO: Inline float?
     /** OPERAND is 64-bit float. `Double.fromBits((op0 shl 32) or op1)` */
-    const val OP_INLINE_DOUBLE = TokenTypeConst.FLOAT shl TOKEN_TYPE_OFFSET
-
-    const val OP_UNKNOWN_SYMBOL = TokenTypeConst.SYMBOL shl TOKEN_TYPE_OFFSET
-
-
-    // Materialized (pooled) scalars
+    const val OP_INLINE_DOUBLE = TokenTypeConst.FLOAT shl TOKEN_TYPE_SHIFT_AMOUNT
 
     /** DATA is u24 index into constant pool */
-    const val OP_CP_BIG_INT = (TokenTypeConst.INT shl TOKEN_TYPE_OFFSET) + 3
-    const val OP_CP_DECIMAL = (TokenTypeConst.DECIMAL shl TOKEN_TYPE_OFFSET)
-    const val OP_CP_TIMESTAMP = (TokenTypeConst.TIMESTAMP shl TOKEN_TYPE_OFFSET)
-    const val OP_CP_STRING = (TokenTypeConst.STRING shl TOKEN_TYPE_OFFSET)
-    const val OP_CP_SYMBOL = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_OFFSET) + 1
-    const val OP_CP_BLOB = (TokenTypeConst.BLOB shl TOKEN_TYPE_OFFSET)
-    const val OP_CP_CLOB = (TokenTypeConst.CLOB shl TOKEN_TYPE_OFFSET)
+    const val OP_CP_DECIMAL = (TokenTypeConst.DECIMAL shl TOKEN_TYPE_SHIFT_AMOUNT)
+    /** DATA is length; OPERAND is start_index */
+    const val OP_REF_DECIMAL = (TokenTypeConst.DECIMAL shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+
+    /** DATA is u24 index into constant pool */
+    const val OP_CP_TIMESTAMP = (TokenTypeConst.TIMESTAMP shl TOKEN_TYPE_SHIFT_AMOUNT)
+    /** DATA is opcode, length is implicit; OPERAND is start_index */
+    const val OP_REF_TIMESTAMP_SHORT = (TokenTypeConst.TIMESTAMP shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    /** DATA is length; OPERAND is start_index */
+    const val OP_REF_TIMESTAMP_LONG = (TokenTypeConst.TIMESTAMP shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
+
+    /** DATA is u24 index into constant pool */
+    const val OP_CP_STRING = (TokenTypeConst.STRING shl TOKEN_TYPE_SHIFT_AMOUNT)
+    /** DATA is length; OPERAND is start_index */
+    const val OP_REF_STRING = (TokenTypeConst.STRING shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+
+    const val OP_UNKNOWN_SYMBOL = TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT
+    /** DATA is u24 index into constant pool */
+    const val OP_CP_SYMBOL_TEXT = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    /** DATA is length; OPERAND is start_index */
+    const val OP_REF_SYMBOL_TEXT = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
+
+    /** DATA is u24 index into constant pool */
+    const val OP_CP_BLOB = (TokenTypeConst.BLOB shl TOKEN_TYPE_SHIFT_AMOUNT)
+    /** DATA is length; OPERAND is start_index */
+    const val OP_REF_BLOB = (TokenTypeConst.BLOB shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+
+    /** DATA is u24 index into constant pool */
+    const val OP_CP_CLOB = (TokenTypeConst.CLOB shl TOKEN_TYPE_SHIFT_AMOUNT)
+    /** DATA is length; OPERAND is start_index */
+    const val OP_REF_CLOB = (TokenTypeConst.CLOB shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+
 
     // Data model containers
     // They are both length prefixed and delimited.
-    const val OP_LIST_START = TokenTypeConst.LIST shl TOKEN_TYPE_OFFSET
-    const val OP_SEXP_START = TokenTypeConst.SEXP shl TOKEN_TYPE_OFFSET
-    const val OP_STRUCT_START = TokenTypeConst.STRUCT shl TOKEN_TYPE_OFFSET
+    const val OP_LIST_START = TokenTypeConst.LIST shl TOKEN_TYPE_SHIFT_AMOUNT
+    const val OP_SEXP_START = TokenTypeConst.SEXP shl TOKEN_TYPE_SHIFT_AMOUNT
+    const val OP_STRUCT_START = TokenTypeConst.STRUCT shl TOKEN_TYPE_SHIFT_AMOUNT
 
 
     /** DATA is length; OPERAND is start_index */
-    const val OP_REF_LIST = (TokenTypeConst.LIST shl TOKEN_TYPE_OFFSET) + 1
+    const val OP_REF_LIST = (TokenTypeConst.LIST shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     /** DATA is length; OPERAND is start_index */
-    const val OP_REF_SEXP = (TokenTypeConst.SEXP shl TOKEN_TYPE_OFFSET) + 1
+    const val OP_REF_SEXP = (TokenTypeConst.SEXP shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     /** DATA is length; OPERAND is start_index */
-    const val OP_REF_SID_STRUCT = (TokenTypeConst.STRUCT shl TOKEN_TYPE_OFFSET) + 1
+    const val OP_REF_SID_STRUCT = (TokenTypeConst.STRUCT shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     /** DATA is length; OPERAND is start_index */
-    const val OP_REF_FLEXSYM_STRUCT = (TokenTypeConst.STRUCT shl TOKEN_TYPE_OFFSET) + 2
+    const val OP_REF_FLEXSYM_STRUCT = (TokenTypeConst.STRUCT shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
     // Metadata
     /** DATA is the SID */
-    const val OP_FIELD_NAME_SID = TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_OFFSET
-    const val OP_CP_FIELD_NAME = (TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_OFFSET) + 1
-    const val OP_UNKNOWN_FIELD_NAME = (TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_OFFSET) + 2
-    const val OP_ONE_ANNOTATION_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_OFFSET)
+    const val OP_FIELD_NAME_SID = TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_SHIFT_AMOUNT
+    const val OP_CP_FIELD_NAME = (TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    const val OP_UNKNOWN_FIELD_NAME = (TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
+    const val OP_ONE_ANNOTATION_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT)
     /** DATA is constant pool index */
-    const val OP_CP_ONE_ANNOTATION = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_OFFSET) + 1
-    const val OP_N_ANNOTATION_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_OFFSET) + 2
+    const val OP_CP_ONE_ANNOTATION = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    const val OP_N_ANNOTATION_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
     /** DATA is n; followed by n operands which are constant pool indexes */
-    const val OP_CP_N_ANNOTATIONS = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_OFFSET) + 3
+    const val OP_CP_N_ANNOTATIONS = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
 
     // Macros
     /**
      * DATA is the number of bytecodes until the end of the argument, including the closing delimiter.
      */
-    const val OP_START_ARGUMENT_VALUE = TokenTypeConst.EXPRESSION_GROUP shl TOKEN_TYPE_OFFSET
+    const val OP_START_ARGUMENT_VALUE = TokenTypeConst.EXPRESSION_GROUP shl TOKEN_TYPE_SHIFT_AMOUNT
 
     /** DATA is the index into the calling context's argument pool */
-    const val OP_ARGUMENT_REF_TYPE = TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_OFFSET
+    const val OP_ARGUMENT_REF_TYPE = TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT
 
     // Must be preceded by an acceptable number of ARGUMENT_VALUE
     /** DATA is a constant pool index to the `Macro` instance */
-    const val OP_INVOKE_MACRO = TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_OFFSET
+    const val OP_INVOKE_MACRO = TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_SHIFT_AMOUNT
 
     /**
      * TODO: Special instructions for system macros that should be hard coded
@@ -181,38 +204,28 @@ object MacroBytecode {
      * | use            | n                 | 0 or 1   | directive   |
      *
      */
-    const val OP_INVOKE_SYS_MACRO = (TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_OFFSET) + 1
+    const val OP_INVOKE_SYS_MACRO = (TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
 
     /** DATA is constant pool index to MacroInvocation instance */
-    const val OP_CP_MACRO_INVOCATION = (TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_OFFSET) + 2
+    const val OP_CP_MACRO_INVOCATION = (TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
     // TODO: See if we can coalesce the different "End" and "EOF" instructions.
-    const val EOF = TokenTypeConst.END shl TOKEN_TYPE_OFFSET
+    const val EOF = TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT
 
-    const val OP_LIST_END = (TokenTypeConst.END shl TOKEN_TYPE_OFFSET) + 1
-    const val OP_SEXP_END = (TokenTypeConst.END shl TOKEN_TYPE_OFFSET) + 1
-    const val OP_STRUCT_END = (TokenTypeConst.END shl TOKEN_TYPE_OFFSET) + 1
-    const val OP_END_ARGUMENT_VALUE = (TokenTypeConst.END shl TOKEN_TYPE_OFFSET) + 1
-    const val OP_CONTAINER_END = (TokenTypeConst.END shl TOKEN_TYPE_OFFSET) + 1
+    const val OP_LIST_END = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    const val OP_SEXP_END = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    const val OP_STRUCT_END = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    const val OP_END_ARGUMENT_VALUE = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    const val OP_CONTAINER_END = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
 
     // This is a "soft" end. It doesn't signal the end of a container or macro, but rather that the template reader
     // should switch back to the original source.
-    const val END_OF_ARGUMENT_SUBSTITUTION = (TokenTypeConst.END shl TOKEN_TYPE_OFFSET) + 2
+    const val END_OF_ARGUMENT_SUBSTITUTION = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
     // NOTE about ref opcodes
     // It seems that data locality is one of the most important concerns for performance.
     // So, for many scalars, it will probably be cheaper to eagerly materialize them to be able to
     // put them inline. Particularly for fixed-sized values.
-
-    /** DATA is length; OPERAND is start_index */
-    const val OP_REF_INT = 0x30
-    /** DATA is length; OPERAND is start_index */
-    const val OP_REF_DECIMAL = 0x32
-    /** DATA is opcode, length is implicit; OPERAND is start_index */
-    const val OP_REF_TIMESTAMP_SHORT = 0x33
-    /** DATA is length; OPERAND is start_index */
-    const val OP_REF_TIMESTAMP_LONG = 0x34
-
 
 
     // TODO: REMAINING REF OPS

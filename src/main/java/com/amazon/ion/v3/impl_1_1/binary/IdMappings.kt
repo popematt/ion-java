@@ -2,8 +2,9 @@ package com.amazon.ion.v3.impl_1_1.binary
 
 import com.amazon.ion.*
 import com.amazon.ion.v3.*
-import java.lang.IllegalStateException
+import com.amazon.ion.v3.impl_1_1.*
 import java.nio.ByteBuffer
+import kotlin.IllegalStateException
 
 /**
  * Helper class containing info about Ion 1.1 opcodes.
@@ -14,6 +15,110 @@ object IdMappings {
 
     @JvmStatic
     private val LENGTH_FOR_OPCODE = IntArray(256) { i -> lengthForOpCode(i) }
+
+    fun interface LengthCalculator {
+        fun calculate(source: ByteBuffer, macroTable: Array<MacroV2>, positionAfterOpcode: Int): Int
+    }
+
+    @JvmStatic
+    val LENGTH_FOR_OPCODE_CALCULATOR = Array(256) { opcode ->
+        when (opcode) {
+            in 0..0x5F -> LengthCalculator { s, m, p -> SkipHelper.skipMacro(s, m, opcode, p) - p }
+            in 0x60 .. 0x68 -> LengthCalculator { _, _, _ -> (opcode and 0xF) }
+            0x69 -> LengthCalculator { _, _, _ -> throw IonException("0x69 is reserved and not a valid opcode.")  }
+            // Floats
+            0x6A -> LengthCalculator { _, _, _ -> 0 }
+            0x6B -> LengthCalculator { _, _, _ -> 2 }
+            0x6C -> LengthCalculator { _, _, _ -> 4 }
+            0x6D -> LengthCalculator { _, _, _ -> 8 }
+            in 0x6E .. 0x6F -> LengthCalculator { _, _, _ -> 0 }
+            in 0x70 .. 0x7F -> LengthCalculator { _, _, _ -> (opcode and 0xF) }
+
+            // Short form timestamps
+            0x80 -> LengthCalculator { _, _, _ -> 1 }
+            0x81 -> LengthCalculator { _, _, _ -> 2 }
+            0x82 -> LengthCalculator { _, _, _ -> 2 }
+            0x83 -> LengthCalculator { _, _, _ -> 4 }
+            0x84 -> LengthCalculator { _, _, _ -> 5 }
+            0x85 -> LengthCalculator { _, _, _ -> 6 }
+            0x86 -> LengthCalculator { _, _, _ -> 7 }
+            0x87 -> LengthCalculator { _, _, _ -> 8 }
+            0x88 -> LengthCalculator { _, _, _ -> 5 }
+            0x89 -> LengthCalculator { _, _, _ -> 5 }
+            0x8A -> LengthCalculator { _, _, _ -> 7 }
+            0x8B -> LengthCalculator { _, _, _ -> 8 }
+            0x8C -> LengthCalculator { _, _, _ -> 9 }
+
+            in 0x8D .. 0x8F -> LengthCalculator { _, _, _ -> throw IonException("Reserved opcode") }
+            in 0x90 .. 0x9F -> LengthCalculator { _, _, _ -> (opcode and 0xF) }
+            in 0xA0 .. 0xAF -> LengthCalculator { _, _, _ -> (opcode and 0xF) }
+            in 0xB0 .. 0xBF -> LengthCalculator { _, _, _ -> (opcode and 0xF) }
+            in 0xC0 .. 0xCF -> LengthCalculator { _, _, _ -> (opcode and 0xF) }
+            0xD0 -> LengthCalculator { _, _, _ -> 0 }
+            0xD1 -> LengthCalculator { _, _, _ -> throw IonException("Invalid opcode") }
+            in 0xD2 .. 0xDF -> LengthCalculator { _, _, _ -> (opcode and 0xF) }
+            // IVM
+            0xE0 -> LengthCalculator { _, _, _ -> 3 }
+            // One byte SID
+            0xE1 -> LengthCalculator { _, _, _ -> 1 }
+            // Biased 2-byte SID
+            0xE2 -> LengthCalculator { _, _, _ -> 2 }
+            // FlexUInt SID
+            0xE3 -> LengthCalculator { s, _, p -> p + IntHelper.lengthOfFlexUIntAt(s, p) }
+            // SID Annotations
+            0xE4 -> LengthCalculator { s, _, p -> p + IntHelper.lengthOfFlexUIntAt(s, p) }
+            0xE5 -> LengthCalculator { s, _, p ->
+                var i = p
+                i += IntHelper.lengthOfFlexUIntAt(s, i)
+                i += IntHelper.lengthOfFlexUIntAt(s, i)
+                i - p
+            }
+            // Annotations with FlexUInt length
+            0xE6 -> LengthCalculator { s, _, p ->
+                val n = IntHelper.readFlexUIntAt(s, p)
+                var i = p + IntHelper.lengthOfFlexUIntAt(s, p)
+                repeat(n) {
+                    i += IntHelper.lengthOfFlexUIntAt(s, i)
+                }
+                i - p
+            }
+            0xE7 -> LengthCalculator { s, _, p -> FlexSymHelper.lengthOfFlexSymAt(s, p) }
+            0xE8 -> LengthCalculator { s, _, p ->
+                val l0 = FlexSymHelper.lengthOfFlexSymAt(s, p)
+                val l1 = FlexSymHelper.lengthOfFlexSymAt(s, p + l0)
+                l0 + l1
+            }
+            0xE9 -> LengthCalculator { s, _, p ->
+                val n = IntHelper.readFlexUIntAt(s, p)
+                var i = p + IntHelper.lengthOfFlexUIntAt(s, p)
+                repeat(n) {
+                    i += FlexSymHelper.lengthOfFlexSymAt(s, i)
+                }
+                i - p
+            }
+            0xEA -> LengthCalculator { _, _, _ -> 0 }
+            0xEB -> LengthCalculator { _, _, _ -> 1 }
+            0xEC -> LengthCalculator { _, _, _ -> 0 }
+            0xED -> LengthCalculator { s, _, p -> IntHelper.getLengthPlusValueOfFlexUIntAt(s, p) }
+            0xEE -> LengthCalculator { _, _, _ -> 1 }
+            0xEF -> LengthCalculator { s, m, p -> SkipHelper.skipMacro(s, m, opcode, p) - p }
+            0xF0 -> LengthCalculator { _, _, _, -> throw IonException("Delimited End is not a value or expression.") }
+            0xF1,
+            0xF2 -> LengthCalculator { s, m, p -> SkipHelper.seekToEndOfDelimitedContainer(s, m, isStruct = false, p) - p }
+            0xF3 ->	LengthCalculator { s, m, p -> SkipHelper.seekToEndOfDelimitedContainer(s, m, isStruct = true, p) - p }
+            0xF4 ->	LengthCalculator { s, m, p -> SkipHelper.skipMacro(s, m, opcode, p) - p }
+            0xF5 ->	LengthCalculator { s, _, p ->
+                // Macro Address
+                var l = IntHelper.readFlexUIntAt(s, p)
+                // Length of length prefix and arguments
+                l += IntHelper.getLengthPlusValueOfFlexUIntAt(s, p + l)
+                l
+            }
+            in 0xF6 .. 0xFF -> LengthCalculator { s, _, p -> IntHelper.getLengthPlusValueOfFlexUIntAt(s, p) }
+            else -> throw IllegalStateException("Unreachable")
+        }
+    }
+
 
     @JvmStatic
     private fun tokenTypeForOpCode(opcode: Int): Int {

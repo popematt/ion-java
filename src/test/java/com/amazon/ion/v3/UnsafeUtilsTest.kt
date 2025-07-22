@@ -1,6 +1,5 @@
 package com.amazon.ion.v3
 
-import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.bytecodeToString
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 

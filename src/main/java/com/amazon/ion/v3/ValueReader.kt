@@ -228,6 +228,7 @@ interface ArgumentBytecode {
     fun getStruct(start:Int, length:Int, flexsymMode: Boolean): StructReader
     fun getMacro(macroAddress: Int): MacroV2
     fun getSymbol(sid: Int): String?
+    fun readStringRef(position: Int, length: Int): String
 
     companion object {
 
@@ -249,6 +250,9 @@ interface ArgumentBytecode {
             override fun getStruct(start: Int, length: Int, flexsymMode: Boolean) = TODO()
             override fun getMacro(macroAddress: Int) = TODO()
             override fun getSymbol(sid: Int) = TODO()
+            override fun readStringRef(position: Int, length: Int): String {
+                TODO("Not yet implemented")
+            }
         }
     }
 }

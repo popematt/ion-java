@@ -6,6 +6,7 @@ import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 
 class EExpArguments(
     @JvmField
@@ -62,5 +63,13 @@ class EExpArguments(
     override fun getSymbol(sid: Int): String? {
         if (sid == 0) throw Exception("SID = 0")
         return symbolTable[sid]
+    }
+
+    override fun readStringRef(position: Int, length: Int): String {
+        val scratchBuffer = pool.scratchBuffer
+        scratchBuffer.limit(position + length)
+        scratchBuffer.position(position)
+        return StandardCharsets.UTF_8.decode(scratchBuffer).toString()
+        // return pool.utf8Decoder.decode(scratchBuffer, length)
     }
 }

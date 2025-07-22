@@ -57,6 +57,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
     private var fieldName: String? = null
     private var fieldNameSid: Int = -1
 
+    private var isNull = false
 
     private val annotationState = Annotations()
 
@@ -78,6 +79,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         type = null
         fieldName = null
         fieldNameSid = -1
+        isNull = false
         annotationState.annotationsSize = 0
     }
 
@@ -108,7 +110,10 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
 
         // TODO: Assign a local variable here.
         val proposedType = when (token) {
-            TokenTypeConst.NULL -> reader.ionType()
+            TokenTypeConst.NULL -> {
+                isNull = true
+                reader.ionType()
+            }
             TokenTypeConst.BOOL -> IonType.BOOL
             TokenTypeConst.INT -> IonType.INT
             TokenTypeConst.FLOAT -> IonType.FLOAT
@@ -121,7 +126,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
             TokenTypeConst.LIST -> IonType.LIST
             TokenTypeConst.SEXP -> IonType.SEXP
             TokenTypeConst.STRUCT -> {
-                if (annotationState.annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion_symbol_table") {
+                if (readerManager.containerDepth == 0 && annotationState.annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion_symbol_table") {
                     reader.structValue().use {
                         encodingContextManager.readLegacySymbolTable11(it)
                         encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
@@ -177,6 +182,10 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
                 this.reader = expressionGroup
                 null
             }
+            TokenTypeConst.UNSET -> {
+                // println("Got 'UNSET'. This is weird.")
+                null
+            }
             else -> {
                 TODO("Unreachable: ${TokenTypeConst(token)}")
             }
@@ -188,7 +197,6 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         return _next()
     }
 
-    // FIXME: 38% of All
     private fun handleMacro() {
         val macroInvocation = reader.macroInvocation()
         val macro = macroInvocation.macro
@@ -197,9 +205,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro.systemAddress) {
             SystemMacro.ADD_SYMBOLS_ADDRESS -> {
                 val symbolsList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
-                // FIXME: 6% of All
                 encodingContextManager.addOrSetSymbols(symbolsList, append = true)
-                // FIXME: 5% of All
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
 //                        println("Add symbols: ${ion11Reader.symbolTable.contentToString()}")
                 true
@@ -310,7 +316,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
 
     override fun getFieldNameSymbol(): SymbolToken = _Private_Utils.newSymbolToken(fieldName, fieldNameSid)
 
-    override fun isNullValue(): Boolean = reader.currentToken() == TokenTypeConst.NULL
+    override fun isNullValue(): Boolean = isNull
 
     override fun isInStruct(): Boolean {
         return readerManager.isInStruct

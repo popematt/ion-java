@@ -1,7 +1,6 @@
 package com.amazon.ion.v3.impl_1_1
 
 import com.amazon.ion.*
-import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.TemplateBodyExpressionModel.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
@@ -81,7 +80,7 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
             if (str != null) {
                 val cpIndex = constants.size
                 constants.add(str)
-                bytecode.add(MacroBytecode.OP_CP_SYMBOL.opToInstruction(cpIndex))
+                bytecode.add(MacroBytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
 
             } else {
                 bytecode.add(MacroBytecode.OP_UNKNOWN_SYMBOL.opToInstruction())
@@ -203,11 +202,17 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
 }
 
 private fun handleContainerLikeThingWithArgs(startOp: Int, endOp: Int, expr: TemplateBodyExpressionModel, env: Environment?, bytecode: MutableList<Int>, constants: MutableList<Any?>) {
+    generateBytecodeContainer(startOp, endOp, bytecode) {
+        val content = expr.childExpressions
+        templateExpressionToBytecode(content, env, bytecode, constants)
+    }
+}
+
+inline fun generateBytecodeContainer(startOp: Int, endOp: Int, bytecode: MutableList<Int>, content: () -> Unit) {
     val containerStartIndex = bytecode.size
     bytecode.add(MacroBytecode.UNSET.opToInstruction())
     val start = bytecode.size
-    val content = expr.childExpressions
-    templateExpressionToBytecode(content, env, bytecode, constants)
+    content()
     bytecode.add(endOp.opToInstruction())
     val end = bytecode.size
     bytecode[containerStartIndex] = startOp.opToInstruction(end - start)

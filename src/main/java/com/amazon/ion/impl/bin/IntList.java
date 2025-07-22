@@ -91,6 +91,13 @@ public class IntList {
         numberOfValues += 1;
     }
 
+    public void set(int index, int value) {
+        if (index < 0 || index >= numberOfValues) {
+            throw new IndexOutOfBoundsException();
+        }
+        data[index] = value;
+    }
+
     public int[] toArray() {
         int[] copy = new int[numberOfValues];
         System.arraycopy(data, 0, copy, 0, numberOfValues);

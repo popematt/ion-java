@@ -1,7 +1,9 @@
 package com.amazon.ion.v3.impl_1_1.binary
 
+import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 
 internal object FlexSymHelper {
     internal interface FlexSymDestination {
@@ -19,6 +21,39 @@ internal object FlexSymHelper {
             val position = source.position()
             source.position(position + length)
         }
+    }
+
+    @JvmStatic
+    fun skipFlexSymAt(source: ByteBuffer, position: Int): Int {
+        var i = position
+        i = IntHelper.skipFlexUIntAt(source, i)
+        val flexSym = IntHelper.readFlexIntAt(source, position)
+        if (flexSym == 0) {
+            i++
+        } else if (flexSym < 0) {
+            i += -flexSym
+        }
+        return i
+    }
+
+    @JvmStatic
+    fun lengthOfFlexSymAt(source: ByteBuffer, position: Int): Int {
+        var i = position
+        val flexSym = IntHelper.readFlexIntAt(source, position)
+        i = IntHelper.skipFlexUIntAt(source, i)
+        if (flexSym == 0) {
+            i++
+        } else if (flexSym < 0) {
+            i += -flexSym
+        }
+        return i - position
+    }
+
+    @JvmStatic
+    fun readFlexSymSidAt(source: ByteBuffer, position: Int): Int {
+        val flexSym = IntHelper.readFlexIntAt(source, position)
+        if (flexSym <= 0) return -1
+        return flexSym
     }
 
     @JvmStatic
@@ -65,7 +100,14 @@ class FlexSymReader(private val pool: ResourcePool) {
             scratchBuffer.limit(position + length)
             scratchBuffer.position(position)
             source.position(position + length)
-            text = pool.utf8Decoder.decode(scratchBuffer, length)
+            try {
+
+                text = StandardCharsets.UTF_8.decode(scratchBuffer).toString()
+                // text = pool.utf8Decoder.decode(scratchBuffer, length)
+            } catch (e: IonException) {
+                System.err.println("Starting at $position Error: ${e.message}")
+                throw e
+            }
         }
     }
 }
