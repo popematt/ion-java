@@ -139,6 +139,13 @@ open class TemplateReaderImpl internal constructor(
                         iStack[s] = currentI
                         constantPoolStack[s] = constantPool
 
+                        if (firstArgStartIndex == secondArgStartIndex - 2) {
+                            // Empty expression group
+                            i = secondArgStartIndex + 1
+                            instruction = INSTRUCTION_NOT_SET
+                            continue
+                        }
+
                         val firstArg = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool)
 
                         i = if (firstArg.nextToken() != TokenTypeConst.END) {
@@ -149,7 +156,6 @@ open class TemplateReaderImpl internal constructor(
                         firstArg.close()
                         instruction = INSTRUCTION_NOT_SET
                     }
-
                     else -> TODO("System Macro Instruction not supported ${MacroBytecode(instruction)}")
                 }
             }
