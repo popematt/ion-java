@@ -211,52 +211,6 @@ interface ArgumentReader: ValueReader {
     val signature: Array<Macro.Parameter>
 }
 
-class ArgEnvironment(
-    val arguments: ArgumentBytecode,
-    val parent: ArgEnvironment? = null,
-)
-
-interface ArgumentBytecode {
-    fun constantPool(): Array<Any?>
-
-    operator fun iterator(): Iterator<IntArray>
-
-    fun getArgument(parameterIndex: Int): IntArray
-
-    fun getList(start:Int, length:Int): ListReader
-    fun getSexp(start:Int, length:Int): SexpReader
-    fun getStruct(start:Int, length:Int, flexsymMode: Boolean): StructReader
-    fun getMacro(macroAddress: Int): MacroV2
-    fun getSymbol(sid: Int): String?
-    fun readStringRef(position: Int, length: Int): String
-
-    companion object {
-
-        @JvmStatic
-        val EMPTY_ARG = intArrayOf(
-            MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction()
-        )
-
-        @JvmStatic
-        val _NO_ARGS = object : ArgumentBytecode {
-            override fun iterator(): Iterator<IntArray> = object : Iterator<IntArray> {
-                override fun hasNext(): Boolean = false
-                override fun next(): IntArray = throw NoSuchElementException()
-            }
-            override fun constantPool(): Array<Any?> = emptyArray()
-            override fun getArgument(parameterIndex: Int): IntArray = intArrayOf()
-            override fun getList(start:Int, length:Int) = TODO()
-            override fun getSexp(start:Int, length:Int) = TODO()
-            override fun getStruct(start: Int, length: Int, flexsymMode: Boolean) = TODO()
-            override fun getMacro(macroAddress: Int) = TODO()
-            override fun getSymbol(sid: Int) = TODO()
-            override fun readStringRef(position: Int, length: Int): String {
-                TODO("Not yet implemented")
-            }
-        }
-    }
-}
-
 interface StructReader: ValueReader {
     /**
      * If it returns -1, the caller must try again, calling `fieldName()` instead.

@@ -53,13 +53,6 @@ class ApplicationReaderDriver @JvmOverloads constructor(
         internal const val ION_1_1 = 0x0101
     }
 
-    private lateinit var _templateReaderPool: TemplateResourcePool
-    private val templateReaderPool: TemplateResourcePool
-        get() {
-            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool.getInstance()
-            return _templateReaderPool
-        }
-
     private lateinit var ion10Reader: StreamReader_1_0
 
 
@@ -281,24 +274,33 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     // TODO: When there's a system value, decrement i
                     when (macro) {
                         SystemMacro.SetSymbols -> {
-                            val symbolsList = templateReaderPool.getSequence(mi.arguments, mi.arguments.getArgument(0), 0, mi.arguments.constantPool())
+
+                            val argIterator = mi.iterateArguments()
+                            val symbolsList = argIterator.next()
+
                             encodingContextManager.addOrSetSymbols(symbolsList, append = false)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
                         SystemMacro.AddSymbols -> {
-                            val symbolsList = templateReaderPool.getSequence(mi.arguments, mi.arguments.getArgument(0), 0, mi.arguments.constantPool())
+
+                            val argIterator = mi.iterateArguments()
+                            val symbolsList = argIterator.next()
+
                             encodingContextManager.addOrSetSymbols(symbolsList, append = true)
 //                            encodingContextManager.replaceSymbolTableAppend(ion11Reader)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
                         SystemMacro.SetMacros -> {
-                            val macrosList = templateReaderPool.getSequence(mi.arguments, mi.arguments.getArgument(0), 0, mi.arguments.constantPool())
-                            encodingContextManager.addOrSetMacros(macrosList, append = false)
+                            val argIterator = mi.iterateArguments()
+                            val macroList = argIterator.next()
+                            encodingContextManager.addOrSetMacros(macroList, append = false)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
                         SystemMacro.AddMacros -> {
-                            val macrosList = templateReaderPool.getSequence(mi.arguments, mi.arguments.getArgument(0), 0, mi.arguments.constantPool())
-                            encodingContextManager.addOrSetMacros(macrosList, append = true)
+                            val argIterator = mi.iterateArguments()
+                            val macroList = argIterator.next()
+
+                            encodingContextManager.addOrSetMacros(macroList, append = true)
                             encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                         }
                         SystemMacro.Use -> {
@@ -308,19 +310,19 @@ class ApplicationReaderDriver @JvmOverloads constructor(
 
                             val macroVisitor = visitor.onEExpression(macro)
                             if (macroVisitor != null) {
-                                for (a in mi.arguments) {
-                                    templateReaderPool.getSequence(mi.arguments, a, 0, mi.arguments.constantPool()).use {
-                                        readAllValues(it, macroVisitor)
+                                for (arg in mi.iterateArguments()) {
+                                    arg.use {
+                                        readAllValues(arg, macroVisitor)
                                     }
                                 }
                             } else {
                                 // TODO: Since we're at the top level, we need to read as top-level values in case a directive
                                 //       is produced.
                                 // Start a macro evaluation session
-                                mi.evaluate(templateReaderPool).use {
-//                                            println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
-                                        i += readTopLevelValues(it, visitor, max - i)
-                                    }
+                                mi.evaluate().use {
+//                                  println("Starting macro: \n${macro.body!!.joinToString("\n")}\n")
+                                    i += readTopLevelValues(it, visitor, max - i)
+                                }
 
                             }
                         }
@@ -440,13 +442,13 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     val macro = mi.macro
                     val macroVisitor = visitor.onEExpression(macro)
                     if (macroVisitor != null) {
-                        for (a in mi.arguments) {
-                            templateReaderPool.getSequence(mi.arguments, a, 0, mi.arguments.constantPool()).use {
+                        for (a in mi.iterateArguments()) {
+                            a.use {
                                 readAllValues(it, macroVisitor)
                             }
                         }
                     } else {
-                        val invocation = mi.evaluate(templateReaderPool)
+                        val invocation = mi.evaluate()
                         pushReaderToStack()
                         reader = invocation
                     }
@@ -588,13 +590,13 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     val macro = mi.macro
                     val macroVisitor = visitor.onEExpression(macro)
                     if (macroVisitor != null) {
-                        for (a in mi.arguments) {
-                            templateReaderPool.getSequence(mi.arguments, a, 0, mi.arguments.constantPool()).use {
+                        for (a in mi.iterateArguments()) {
+                            a.use {
                                 readAllValues(it, macroVisitor)
                             }
                         }
                     } else {
-                        val invocation = mi.evaluate(templateReaderPool)
+                        val invocation = mi.evaluate()
                         pushReaderToStack()
                         reader = invocation
                     }
@@ -781,13 +783,13 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 val macro = mi.macro
                 val macroVisitor = visitor.onEExpression(macro)
                 if (macroVisitor != null) {
-                    for (a in mi.arguments) {
-                        templateReaderPool.getSequence(mi.arguments, a, 0, mi.arguments.constantPool()).use {
+                    for (a in mi.iterateArguments()) {
+                        a.use {
                             readAllValues(it, macroVisitor)
                         }
                     }
                 } else {
-                    mi.evaluate(templateReaderPool).use { readAllValues(it, visitor) }
+                    mi.evaluate().use { readAllValues(it, visitor) }
                 }
 
             }

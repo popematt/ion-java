@@ -92,6 +92,18 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
         // Entry points to the DSL builders.
         fun templateBody(block: TemplateDsl.() -> Unit) = Template().apply(block).build()
         fun templateBody(signature: List<Macro.Parameter>, block: TemplateDsl.() -> Unit) = Template(signature).apply(block).build()
+        fun macro(vararg parameters: String, block: TemplateDsl.() -> Unit): MacroV2 {
+            val signature = parameters.map {
+                val cardinality = Macro.ParameterCardinality.fromSigil("${it.last()}")
+                if (cardinality == null) {
+                    Macro.Parameter(it, Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne)
+                } else {
+                    Macro.Parameter(it.dropLast(1), Macro.ParameterEncoding.Tagged, cardinality)
+                }
+            }
+            val body = templateBody(signature, block)
+            return MacroV2(signature, body)
+        }
     }
 
     protected val expressions = mutableListOf<TemplateBodyExpressionModel>()
@@ -155,7 +167,6 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
         val end = expressions.size
         val childExpressions = expressions.subList(start, end)
         startExpression.childExpressions = childExpressions.toList().toTypedArray()
-        startExpression.childTokens = childExpressions.toTokenArray()
         childExpressions.clear()
     }
 
@@ -183,7 +194,6 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
             val end = expressions.size
             val childExpressions = expressions.subList(start, end)
             startExpression.childExpressions = childExpressions.toList().toTypedArray()
-            startExpression.childTokens = childExpressions.toTokenArray()
             childExpressions.clear()
         }
         override fun expressionGroup(content: TemplateDsl.() -> Unit) = container(TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP, content)

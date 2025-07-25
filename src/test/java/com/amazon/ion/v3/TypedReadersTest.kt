@@ -33,6 +33,7 @@ import kotlin.NoSuchElementException
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
+import kotlin.math.log2
 import kotlin.text.StringBuilder
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -561,6 +562,69 @@ class TypedReadersTest {
         }
 
         @Test
+        fun nestedInvocationTemplateMacroWithPassedThroughVariable() {
+            val macro2 = MacroV2(
+                signature = listOf(exactlyOneTagged("x")),
+                body = templateBody {
+                    list {
+                        variable("x", 0)
+                    }
+                }
+            )
+            val macro = MacroV2(
+                signature = listOf(exactlyOneTagged("y")),
+                body = templateBody {
+                    list {
+                        int(1)
+                        macro(macro2) { variable("y", 0) }
+                        int(3)
+                    }
+                }
+            )
+            val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    00 61 02
+                    61 04
+                """)
+
+
+            StreamReaderImpl(data).use { reader ->
+                assertEquals(TokenTypeConst.IVM, reader.nextToken())
+                reader.ivm()
+
+                reader.initTables(arrayOf(null), arrayOf(macro))
+
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(0, reader.longValue())
+
+                assertEquals(TokenTypeConst.MACRO_INVOCATION, reader.nextToken())
+                reader.macroInvocation().evaluate().use { m ->
+                    m.assertNextToken(TokenTypeConst.LIST)
+                    m.listValue().use { l ->
+                        l.assertNextToken(TokenTypeConst.INT)
+                        assertEquals(1, l.longValue())
+                        l.assertNextToken(TokenTypeConst.LIST)
+                        l.listValue().use { l2 ->
+                            l2.assertNextToken(TokenTypeConst.INT)
+                            assertEquals(2, l2.longValue())
+                            l2.assertNextToken(TokenTypeConst.END)
+                        }
+                        l.assertNextToken(TokenTypeConst.INT)
+                        assertEquals(3, l.longValue())
+                        l.assertNextToken(TokenTypeConst.END)
+                    }
+
+                    m.assertNextToken(TokenTypeConst.END)
+                }
+
+                assertEquals(TokenTypeConst.INT, reader.nextToken())
+                assertEquals(4, reader.longValue())
+            }
+        }
+
+
+        @Test
         fun templateMacroWithOneVariableAndListArgument() {
             val macro = template("foo") { variable(0) }
 
@@ -572,8 +636,6 @@ class TypedReadersTest {
                     61 03
                 """)
 
-            val pool = TemplateResourcePool.getInstance()
-
             StreamReaderImpl(data).use { reader ->
                 assertEquals(TokenTypeConst.IVM, reader.nextToken())
                 reader.ivm()
@@ -583,13 +645,16 @@ class TypedReadersTest {
                 assertEquals(TokenTypeConst.INT, reader.nextToken())
                 assertEquals(0, reader.longValue())
                 assertEquals(TokenTypeConst.MACRO_INVOCATION, reader.nextToken())
-                reader.macroInvocation().evaluate(pool).use { m ->
+                reader.macroInvocation().evaluate().use { m ->
                     m.assertNextToken(TokenTypeConst.LIST).skip()
                     m.assertNextToken(TokenTypeConst.END)
                 }
                 println(reader.source.position())
-                assertEquals(TokenTypeConst.LIST, reader.nextToken())
-                reader.skip()
+                assertEquals(TokenTypeConst.MACRO_INVOCATION, reader.nextToken())
+                reader.macroInvocation().evaluate().use { m ->
+                    m.assertNextToken(TokenTypeConst.LIST).skip()
+                    m.assertNextToken(TokenTypeConst.END)
+                }
                 assertEquals(TokenTypeConst.INT, reader.nextToken())
                 assertEquals(3, reader.longValue())
             }
@@ -737,21 +802,15 @@ class TypedReadersTest {
                 01 60
             """.trimIndent()
 
-            val pool = TemplateResourcePool.getInstance()
-
             StreamReaderImpl(toByteBuffer(data)).use { stream ->
                 stream.initTables(
                     symbolTable = arrayOf(null),
                     macroTable = arrayOf(identity, foo)
                 )
                 stream.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                stream.startMacroEvaluation(pool).use { m1 ->
-                    m1.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                        .startMacroEvaluation(pool).use { m2 ->
-                            m2.assertNextToken(TokenTypeConst.INT).skip()
-                            m2.assertNextToken(TokenTypeConst.END)
-                        }
-                    m1.assertNextToken(TokenTypeConst.END)
+                stream.startMacroEvaluation().use { m2 ->
+                    m2.assertNextToken(TokenTypeConst.INT).skip()
+                    m2.assertNextToken(TokenTypeConst.END)
                 }
                 stream.assertNextToken(TokenTypeConst.END)
             }
@@ -770,7 +829,6 @@ class TypedReadersTest {
                 00 60
             """
 
-            val pool = TemplateResourcePool.getInstance()
 
             StreamReaderImpl(toByteBuffer(data)).use { stream ->
                 stream.initTables(
@@ -778,7 +836,7 @@ class TypedReadersTest {
                     macroTable = arrayOf(foo)
                 )
                 stream.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                stream.startMacroEvaluation(pool).use { m1 ->
+                stream.startMacroEvaluation().use { m1 ->
                     m1.assertNextToken(TokenTypeConst.INT).skip()
                     m1.assertNextToken(TokenTypeConst.END)
                 }
@@ -807,20 +865,27 @@ class TypedReadersTest {
                     00
                 """)
 
-            val pool = TemplateResourcePool.getInstance()
-
             StreamReaderImpl(data).use {
                 (it as ValueReaderBase).initTables(
                     symbolTable = arrayOf(null),
                     macroTable = arrayOf(macro),
                 )
                 it.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                it.startMacroEvaluation(pool).use { m ->
+                it.startMacroEvaluation().use { m ->
+                    m as TemplateReaderImpl
+                    MacroBytecode.debugString(m.bytecode)
                     m.assertNextToken(TokenTypeConst.LIST)
-                    val list = m.listValue()
+                    val list = m.listValue() as TemplateReaderImpl
                     list.use { l ->
-                        l.assertNextToken(TokenTypeConst.INT).skip()
-                        l.assertNextToken(TokenTypeConst.FLOAT).skip()
+                        println(l.i)
+                        l.assertNextToken(TokenTypeConst.INT)
+                        println(l.i)
+                        l.skip()
+                        println(l.i)
+                        l.assertNextToken(TokenTypeConst.FLOAT)
+                        println(l.i)
+                        l.skip()
+                        println(l.i)
                         l.assertNextToken(TokenTypeConst.END)
                     }
                 }
@@ -1136,8 +1201,6 @@ class TypedReadersTest {
                                         | · · ),
             """.trimIndent()
 
-            val pool = TemplateResourcePool.getInstance()
-
             StreamReaderImpl(toByteBuffer(data)).use {
                 (it as ValueReaderBase).initTables(
                     symbolTable = arrayOf(null, "Time:Warm"),
@@ -1145,7 +1208,7 @@ class TypedReadersTest {
                 )
 
                 it.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                it.startMacroEvaluation(pool).use { m ->
+                it.startMacroEvaluation().use { m ->
                     m.assertNextToken(TokenTypeConst.STRUCT)
                         .structValue()
                         .use { s ->
@@ -1159,6 +1222,33 @@ class TypedReadersTest {
                 }
                 it.assertNextToken(TokenTypeConst.END)
             }
+
+
+
+        }
+
+
+        @Test
+        fun summary0() {
+            // (macro one ( ) '' )
+            val one = template { symbol("") }
+
+            val summary = template("s_name", "s_sum", "s_unit?", "s_count?") {
+                struct {
+                    fieldName("Name"); variable(0)
+                    fieldName("Sum"); variable(1)
+                    fieldName("Unit"); macro(SystemMacro.Default) { variable(2); macro(one) {} }
+                    fieldName("Count"); macro(SystemMacro.Default) { variable(3); int(1) }
+                }
+            }
+            val summary0 = template("name") {
+                macro(summary) {
+                    variable(0)
+                    float(0.0)
+                }
+            }
+
+            summary0.bytecode
 
 
 
@@ -1243,8 +1333,6 @@ class TypedReadersTest {
 
             // { Name: Error, Samples: [ { Value: 0e0, Repeat: 1, }, ], Unit: '' },
 
-            val pool = TemplateResourcePool.getInstance()
-
             StreamReaderImpl(toByteBuffer(data)).use {
                 (it as ValueReaderBase).initTables(
                     symbolTable = arrayOf(null, "Error"),
@@ -1252,7 +1340,7 @@ class TypedReadersTest {
                 )
 
                 it.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                it.startMacroEvaluation(pool).use { m ->
+                it.startMacroEvaluation().use { m ->
                     m.assertNextToken(TokenTypeConst.STRUCT)
                         .structValue()
                         .use { s ->
@@ -1272,7 +1360,7 @@ class TypedReadersTest {
                                 }
                             s.assertFieldNameAndType("Unit", TokenTypeConst.SYMBOL).skip()
                             s.assertFieldName("Dimensions")
-//                            s.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
+                            // s.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
                             s.assertNextToken(TokenTypeConst.END)
                         }
                     m.assertNextToken(TokenTypeConst.END)
@@ -1285,8 +1373,8 @@ class TypedReadersTest {
         }
 
 
-        private fun ValueReader.startMacroEvaluation(pool: TemplateResourcePool): ValueReader {
-            return macroInvocation().evaluate(pool)
+        private fun ValueReader.startMacroEvaluation(): ValueReader {
+            return macroInvocation().evaluate()
         }
 
         private fun StructReader.assertFieldNameAndType(name: String, token: Int) = apply {
@@ -2666,9 +2754,11 @@ class TypedReadersTest {
                     60
                     18
                     61 03
+                    61 04
                 """)
 
-                StreamReaderAsIonReader(data, additionalMacros = listOf(macro)).expect {
+                val r = StreamReaderAsIonReader(data, additionalMacros = listOf(macro))
+                r.expect {
                     value("0")
                     value("1")
                     value("3")
@@ -2807,8 +2897,6 @@ class TypedReadersTest {
                 }
             }
 
-
-
             @Test
             fun nestedInvocationTemplateMacroWithOneVariable() {
                 val macro2 = MacroV2(
@@ -2833,6 +2921,74 @@ class TypedReadersTest {
                     E0 01 01 EA
                     60
                     18
+                    61 04
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro, macro2)).expect {
+                    value("0")
+                    value("[1, [2], 3]")
+                    value("4")
+                }
+            }
+
+            @Test
+            fun nestedInvocationTemplateMacroWithPassedThroughVariable() {
+                val macro2 = MacroV2(
+                    signature = listOf(exactlyOneTagged("x")),
+                    body = templateBody {
+                        list {
+                            variable("x", 0)
+                        }
+                    }
+                )
+                val macro = MacroV2(
+                    signature = listOf(exactlyOneTagged("y")),
+                    body = templateBody {
+                        list {
+                            int(1)
+                            macro(macro2) { variable("y", 0) }
+                            int(3)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 61 02
+                    61 04
+                """)
+
+                StreamReaderAsIonReader(data, additionalMacros = listOf(macro, macro2)).expect {
+                    value("0")
+                    value("[1, [2], 3]")
+                    value("4")
+                }
+            }
+
+            @Test
+            fun invocationWithArgThatIsAnEExp() {
+                val macro2 = MacroV2(
+                    signature = listOf(exactlyOneTagged("x")),
+                    body = templateBody {
+                        list {
+                            variable("x", 0)
+                        }
+                    }
+                )
+                val macro = MacroV2(
+                    signature = listOf(exactlyOneTagged("y")),
+                    body = templateBody {
+                        list {
+                            int(1)
+                            variable("y", 0)
+                            int(3)
+                        }
+                    }
+                )
+                val data = toByteBuffer("""
+                    E0 01 01 EA
+                    60
+                    18 19 61 02
                     61 04
                 """)
 

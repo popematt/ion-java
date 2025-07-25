@@ -2,12 +2,13 @@ package com.amazon.ion.v3.impl_1_1.template
 
 import com.amazon.ion.v3.AnnotationIterator
 import com.amazon.ion.v3.PrivateAnnotationIterator
+import com.amazon.ion.v3.impl_1_1.binary.*
 
 internal class TemplateAnnotationIteratorImpl(
     @JvmField
     var annotations: Array<String?>,
     @JvmField
-    val pool: TemplateResourcePool,
+    val pool: ResourcePool,
 ): AnnotationIterator, PrivateAnnotationIterator {
     @JvmField
     var i: Int = 0

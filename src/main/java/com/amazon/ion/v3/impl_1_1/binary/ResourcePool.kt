@@ -49,7 +49,15 @@ class ResourcePool(
     @JvmField
     val annotations = ArrayList<AnnotationIterator>(8)
 
-    private fun newSlice(start: Int): ByteBuffer {
+
+    @JvmField
+    val templateReaders = ArrayList<TemplateReaderImpl>(8)
+    @JvmField
+    val templateStructReaders = ArrayList<TemplateStructReader>(8)
+    @JvmField
+    internal val annotationIterators = ArrayList<AnnotationIterator>(8)
+
+    internal fun newSlice(start: Int): ByteBuffer {
         val slice: ByteBuffer = source.asReadOnlyBuffer()
         slice.position(start)
         slice.order(ByteOrder.LITTLE_ENDIAN)
@@ -156,6 +164,51 @@ class ResourcePool(
             return DelimitedStructReaderImpl(newSlice(start), this, parent, symbolTable, macroTable)
         }
     }
+
+
+    fun getSequence(args: ArgumentBytecode, bytecode: IntArray, start: Int, constantPool: Array<Any?>, symbolTable: Array<String?>, macroTable: Array<MacroV2>): TemplateReaderImpl {
+        val reader = templateReaders.removeLastOrNull() ?: TemplateReaderImpl(this)
+        // TODO: move source argument into the constructor.
+        reader.init(newSlice(0), bytecode, constantPool, args)
+        reader.initTables(symbolTable, macroTable)
+        reader.isStruct = false
+        reader.i = start
+        return reader
+    }
+
+    fun getStruct(args: ArgumentBytecode, bytecode: IntArray, start: Int, constantPool: Array<Any?>, symbolTable: Array<String?>, macroTable: Array<MacroV2>): TemplateStructReader {
+        val reader = templateStructReaders.removeLastOrNull()
+            ?: TemplateStructReader(this)
+        // TODO: move source argument into the constructor.
+        reader.init(newSlice(0), bytecode, constantPool, args)
+        reader.initTables(symbolTable, macroTable)
+        reader.isStruct = true
+        reader.i = start
+        return reader
+    }
+
+    fun getAnnotations(annotationSymbols: Array<String?>): AnnotationIterator {
+        val reader = annotationIterators.removeLastOrNull() as TemplateAnnotationIteratorImpl?
+        if (reader != null) {
+            reader.init(annotationSymbols)
+            return reader
+        } else {
+            return TemplateAnnotationIteratorImpl(annotationSymbols, this)
+        }
+    }
+
+    fun returnAnnotations(annotations: AnnotationIterator) {
+        annotationIterators.add(annotations)
+    }
+
+    fun returnSequence(sequence: TemplateReaderImpl) {
+        templateReaders.add(sequence)
+    }
+    fun returnStruct(struct: TemplateStructReader) {
+        templateStructReaders.add(struct)
+    }
+
+
 
     override fun close() {
         annotations.clear()

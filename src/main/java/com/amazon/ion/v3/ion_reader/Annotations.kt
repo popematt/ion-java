@@ -36,7 +36,11 @@ internal class Annotations : Iterator<String?> {
             annotationsIterator.next()
             val sid = annotationsIterator.getSid()
             annotationsSids[annotationCount] = sid
-            annotations[annotationCount] = annotationsIterator.getText()
+            annotations[annotationCount] = annotationsIterator.getText().also {
+                if (it == null) {
+                    TODO()
+                }
+            }
             annotationCount++
         }
         annotationsSize = annotationCount

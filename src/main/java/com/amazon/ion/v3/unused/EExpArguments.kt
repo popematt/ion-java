@@ -1,10 +1,12 @@
-package com.amazon.ion.v3.impl_1_1.binary
+package com.amazon.ion.v3.unused
 
-import com.amazon.ion.impl.macro.*
-import com.amazon.ion.v3.*
-import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.template.*
-import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
+import com.amazon.ion.impl.macro.Macro
+import com.amazon.ion.v3.ListReader
+import com.amazon.ion.v3.SexpReader
+import com.amazon.ion.v3.StructReader
+import com.amazon.ion.v3.impl_1_1.MacroV2
+import com.amazon.ion.v3.impl_1_1.binary.ResourcePool
+import com.amazon.ion.v3.impl_1_1.binary.StructReaderImpl
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
@@ -23,49 +25,49 @@ class EExpArguments(
     val macroTable: Array<MacroV2>,
     @JvmField
     val pool: ResourcePool,
-): ArgumentBytecode {
+) {
 
+    fun getSource(): ByteBuffer = source
 
-
-    override fun constantPool(): Array<Any?> {
+    fun constantPool(): Array<Any?> {
         return constants
     }
 
-    override fun iterator(): Iterator<IntArray> = object : Iterator<IntArray> {
+    fun iterator(): Iterator<IntArray> = object : Iterator<IntArray> {
         private var i = 0
         override fun hasNext(): Boolean = i < arguments.size
         override fun next(): IntArray = arguments[i++]
     }
 
-    override fun getArgument(parameterIndex: Int): IntArray {
+    fun getArgument(parameterIndex: Int): IntArray {
         return arguments[parameterIndex]
     }
 
-    override fun getList(start:Int, length:Int): ListReader {
+    fun getList(start:Int, length:Int): ListReader {
         return pool.getList(start, length, symbolTable, macroTable)
     }
 
-    override fun getSexp(start:Int, length:Int): SexpReader {
+    fun getSexp(start:Int, length:Int): SexpReader {
         return pool.getPrefixedSexp(start, length, symbolTable, macroTable)
     }
 
-    override fun getStruct(start: Int, length: Int, flexsymMode: Boolean): StructReader {
+    fun getStruct(start: Int, length: Int, flexsymMode: Boolean): StructReader {
         val struct = pool.getStruct(start, length, symbolTable, macroTable)
         struct as StructReaderImpl
         struct.flexSymMode = flexsymMode
         return struct
     }
 
-    override fun getMacro(macroAddress: Int): MacroV2 {
+    fun getMacro(macroAddress: Int): MacroV2 {
         return macroTable[macroAddress]
     }
 
-    override fun getSymbol(sid: Int): String? {
+    fun getSymbol(sid: Int): String? {
         if (sid == 0) throw Exception("SID = 0")
         return symbolTable[sid]
     }
 
-    override fun readStringRef(position: Int, length: Int): String {
+    fun readStringRef(position: Int, length: Int): String {
         val scratchBuffer = pool.scratchBuffer
         scratchBuffer.limit(position + length)
         scratchBuffer.position(position)

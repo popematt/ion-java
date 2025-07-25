@@ -91,6 +91,33 @@ public class IntList {
         numberOfValues += 1;
     }
 
+    public void addAll(int[] values) {
+        int newNumberOfValues = values.length + this.numberOfValues;
+        if (newNumberOfValues >= data.length) {
+            grow(newNumberOfValues);
+        }
+        System.arraycopy(values, 0, data, numberOfValues, values.length);
+        this.numberOfValues = newNumberOfValues;
+    }
+
+    public void addAll(IntList values) {
+        int newNumberOfValues = values.numberOfValues + this.numberOfValues;
+        if (newNumberOfValues >= data.length) {
+            grow(newNumberOfValues);
+        }
+        System.arraycopy(values.data, 0, this.data, numberOfValues, values.numberOfValues);
+        this.numberOfValues = newNumberOfValues;
+    }
+
+    public void addSlice(IntList values, int startInclusive, int length) {
+        int newNumberOfValues = this.numberOfValues + length;
+        if (newNumberOfValues >= data.length) {
+            grow(newNumberOfValues);
+        }
+        System.arraycopy(values.data, startInclusive, this.data, numberOfValues, length);
+        this.numberOfValues = newNumberOfValues;
+    }
+
     public void set(int index, int value) {
         if (index < 0 || index >= numberOfValues) {
             throw new IndexOutOfBoundsException();
@@ -108,7 +135,15 @@ public class IntList {
      * Reallocates the backing array to accommodate storing more ints.
      */
     private void grow() {
-        int[] newData = new int[data.length * GROWTH_MULTIPLIER];
+        grow(0);
+    }
+
+    /**
+     * Reallocates the backing array to accommodate storing more ints.
+     */
+    private void grow(int minCapacity) {
+        int newCapacity = Math.max(data.length, minCapacity) * GROWTH_MULTIPLIER;
+        int[] newData = new int[newCapacity];
         System.arraycopy(data, 0, newData, 0, data.length);
         data = newData;
     }

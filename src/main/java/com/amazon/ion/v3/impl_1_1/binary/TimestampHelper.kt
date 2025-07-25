@@ -25,6 +25,38 @@ import java.nio.ByteBuffer
  */
 object TimestampHelper {
 
+    private val TIMESTAMP_LENGTH = intArrayOf(1, 2, 2, 4, 5, 6, 7, 8, 5, 5, 7, 8, 9)
+
+    @JvmStatic
+    fun readTimestampAt(opcode: Int, source: ByteBuffer, position: Int): Timestamp {
+        // Often, the data for an application will use a lot of timestamps with similar precisions. For example, logging
+        // might use mostly millisecond-precision timestamps with UTC offsets, or a calendar application might use
+        // minute precision with an offset for representing calendar events.
+        // Because of this, each case is handled in a separate method so that the JVM can inline the cases that are most
+        // commonly used in any given application.
+        return when (opcode) {
+            0x80 -> readTimestamp0x80At(source, position)
+            0x81 -> readTimestamp0x81At(source, position)
+            0x82 -> readTimestamp0x82At(source, position)
+            0x83 -> TODO()
+            0x84 -> readTimestamp0x84At(source, position)
+            0x85 -> readTimestamp0x85At(source, position)
+            0x86 -> TODO()
+            0x87 -> TODO()
+            0x88 -> TODO()
+            0x89 -> TODO()
+            0x8A -> TODO()
+            0x8B -> TODO()
+            0x8C -> TODO()
+            else -> if (opcode == 0xF8) {
+                TODO()
+            } else {
+                throw IonException("Reader not positioned on a timestamp value")
+            }
+        }
+    }
+
+
     @JvmStatic
     fun readTimestamp(opcode: Int, source: ByteBuffer): Timestamp {
         // Often, the data for an application will use a lot of timestamps with similar precisions. For example, logging
@@ -32,12 +64,16 @@ object TimestampHelper {
         // minute precision with an offset for representing calendar events.
         // Because of this, each case is handled in a separate method so that the JVM can inline the cases that are most
         // commonly used in any given application.
+        val position = source.position()
         return when (opcode) {
             0x80 -> readTimestamp0x80(source)
             0x81 -> readTimestamp0x81(source)
             0x82 -> readTimestamp0x82(source)
             0x83 -> readTimestamp0x83(source)
-            0x84 -> readTimestamp0x84(source)
+            0x84 -> {
+                source.position(position + 5)
+                readTimestamp0x84At(source, position)
+            }
             0x85 -> readTimestamp0x85(source)
             0x86 -> readTimestamp0x86(source)
             0x87 -> readTimestamp0x87(source)
@@ -63,6 +99,13 @@ object TimestampHelper {
     }
 
     @JvmStatic
+    private fun readTimestamp0x80At(source: ByteBuffer, position: Int): Timestamp {
+        val data = source.get(position).toInt()
+        val year = (data and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
+        return Timestamp.forYear(year)
+    }
+
+    @JvmStatic
     private fun readTimestamp0x81(source: ByteBuffer): Timestamp {
         val data = source.getShort().toInt()
         val year = (data and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
@@ -71,8 +114,25 @@ object TimestampHelper {
     }
 
     @JvmStatic
+    private fun readTimestamp0x81At(source: ByteBuffer, position: Int): Timestamp {
+        val data = source.getShort(position).toInt()
+        val year = (data and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
+        val month = (data and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
+        return Timestamp.forMonth(year, month)
+    }
+
+    @JvmStatic
     private fun readTimestamp0x82(source: ByteBuffer): Timestamp {
         val data = source.getShort().toInt()
+        val year = (data and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
+        val month = (data and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
+        val day = (data and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
+        return Timestamp.forDay(year, month, day)
+    }
+
+    @JvmStatic
+    private fun readTimestamp0x82At(source: ByteBuffer, position: Int): Timestamp {
+        val data = source.getShort(position).toInt()
         val year = (data and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
         val day = (data and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
@@ -93,9 +153,8 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x84(source: ByteBuffer): Timestamp {
-        val data = readBytes(5, source)
-
+    private fun readTimestamp0x84At(source: ByteBuffer, position: Int): Timestamp {
+        val data = readBytesAt(5, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
         val day = (data.toInt() and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
@@ -109,7 +168,17 @@ object TimestampHelper {
     @JvmStatic
     private fun readTimestamp0x85(source: ByteBuffer): Timestamp {
         val data = readBytes(6, source)
+        return interpret0x85rawData(data)
+    }
 
+    @JvmStatic
+    private fun readTimestamp0x85At(source: ByteBuffer, position: Int): Timestamp {
+        val data = readBytesAt(6, source, position)
+        return interpret0x85rawData(data)
+    }
+
+    @JvmStatic
+    private fun interpret0x85rawData(data: Long): Timestamp {
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
         val day = (data.toInt() and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
@@ -268,6 +337,14 @@ object TimestampHelper {
         return source.getLong(position - 8 + n) ushr (64 - n * 8)
     }
 
+    /**
+     * Reads `n` bytes as the least significant bytes of a Long.
+     */
+    @JvmStatic
+    private fun readBytesAt(n: Int, source: ByteBuffer, position: Int): Long {
+        return source.getLong(position - 8 + n) ushr (64 - n * 8)
+    }
+
     @JvmStatic
     private fun readLongTimestamp(source: ByteBuffer): Timestamp {
         val length = IdMappings.length(0xF8, source)
@@ -324,6 +401,7 @@ object TimestampHelper {
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
     }
 
+    @JvmStatic
     private fun readLongOffset(data: Long): Int? {
         val offset = ((data and L_TIMESTAMP_OFFSET_MASK) ushr L_TIMESTAMP_OFFSET_BIT_OFFSET).toInt()
         if (offset == L_TIMESTAMP_UNKNOWN_OFFSET_VALUE) {

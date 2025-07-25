@@ -40,12 +40,12 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
     @JvmField
     internal val ion11Reader: ValueReaderBase = StreamReaderImpl(source.asReadOnlyBuffer())
 
-    private lateinit var _templateReaderPool: TemplateResourcePool
-    private val templateReaderPool: TemplateResourcePool
-        get() {
-            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool.getInstance()
-            return _templateReaderPool
-        }
+//    private lateinit var _templateReaderPool: TemplateResourcePool
+//    private val templateReaderPool: TemplateResourcePool
+//        get() {
+//            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool.getInstance()
+//            return _templateReaderPool
+//        }
 
     private val encodingContextManager = EncodingContextManager(StreamWrappingIonReader())
 //
@@ -200,30 +200,33 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
     private fun handleMacro() {
         val macroInvocation = reader.macroInvocation()
         val macro = macroInvocation.macro
-//        println("Evaluating macro $macro")
 
         val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro.systemAddress) {
             SystemMacro.ADD_SYMBOLS_ADDRESS -> {
-                val symbolsList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
+                val argIterator = macroInvocation.iterateArguments()
+                val symbolsList = argIterator.next()
                 encodingContextManager.addOrSetSymbols(symbolsList, append = true)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
 //                        println("Add symbols: ${ion11Reader.symbolTable.contentToString()}")
                 true
             }
             SystemMacro.SET_SYMBOLS_ADDRESS -> {
-                val symbolsList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
+                val argIterator = macroInvocation.iterateArguments()
+                val symbolsList = argIterator.next()
                 encodingContextManager.addOrSetSymbols(symbolsList, append = false)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
             }
             SystemMacro.ADD_MACROS_ADDRESS -> {
-                val macroList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
+                val argIterator = macroInvocation.iterateArguments()
+                val macroList = argIterator.next()
                 encodingContextManager.addOrSetMacros(macroList, append = true)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
             }
             SystemMacro.SET_MACROS_ADDRESS -> {
-                val macroList = templateReaderPool.getSequence(macroInvocation.arguments, macroInvocation.arguments.getArgument(0), 0, macroInvocation.arguments.constantPool())
+                val argIterator = macroInvocation.iterateArguments()
+                val macroList = argIterator.next()
                 encodingContextManager.addOrSetMacros(macroList, append = false)
                 encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
                 true
@@ -233,7 +236,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         }
 
         if (!isShortCircuitEvaluation) {
-            val eexp = macroInvocation.evaluate(templateReaderPool)
+            val eexp = macroInvocation.evaluate()
             readerManager.pushReader(eexp)
             reader = eexp
             type = null

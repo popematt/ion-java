@@ -232,6 +232,60 @@ object IntHelper {
     }
 
     @JvmStatic
+    fun readFlexUIntWithLengthAt(source: ByteBuffer, position: Int, length: Int): Int {
+        when (length) {
+            1 -> {
+                return (source.get(position).toInt() ushr 1)
+            }
+            2 -> {
+                return (source.getShort(position).toInt() ushr 2)
+            }
+            3 -> {
+                return (source.getInt(position - 1) ushr 3) and 0xFFFFFF
+            }
+            4 -> {
+                val data = source.getInt(position)
+                return data ushr 4
+            }
+            5 -> {
+                val firstByte = source.get(position)
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 3) shr 3
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                return (data shl 3) + (firstByte.toInt() ushr 5)
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+    }
+
+    @JvmStatic
+    fun readFlexIntWithLengthAt(source: ByteBuffer, position: Int, length: Int): Int {
+        when (length) {
+            1 -> {
+                return (source.get(position).toInt() shr 1)
+            }
+            2 -> {
+                return (source.getShort(position).toInt() shr 2)
+            }
+            3 -> {
+                return (source.getInt(position - 1) shr 3) and 0xFFFFFF
+            }
+            4 -> {
+                val data = source.getInt(position)
+                return data shr 4
+            }
+            5 -> {
+                val firstByte = source.get(position)
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 3) shr 3
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                return (data shl 3) + (firstByte.toInt() shr 5)
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+    }
+
+    @JvmStatic
     private tailrec fun skipFlexUIntPrivateHelper(source: ByteBuffer, bufferPosition: Int, continuationBitsPosition: Int) {
         val firstByte = source.get(continuationBitsPosition)
         val numBytes = firstByte.countTrailingZeroBits() + 1

@@ -24,11 +24,9 @@ import java.lang.StringBuilder
  *  - VARIABLE:
  *  - LITERAL: (tentative) value is SequenceReader
  */
-class TemplateBodyExpressionModel(
+data class TemplateBodyExpressionModel(
     @JvmField
     var expressionKind: Int,
-    // TODO: Delete me.
-    length: Int = 0,
     // TODO: Consider consolidating the FieldName and Annotation expressions.
     //       For now, all TemplateBodyExpressions have exactly one of the following field set.
     @JvmField
@@ -40,10 +38,11 @@ class TemplateBodyExpressionModel(
     @JvmField
     var childExpressions: Array<TemplateBodyExpressionModel> = EMPTY_EXPRESSION_ARRAY,
     @JvmField
-    var childTokens: IntArray = SCALAR_TOKEN_ARRAY,
-    @JvmField
     var primitiveValue: Long = 0,
 ) {
+    @Deprecated(message = "Has obsolete property", level = DeprecationLevel.WARNING)
+    constructor(expressionKind: Int, length: Int, fieldName: String? = null, annotations: Array<String?> = EMPTY_ANNOTATIONS_ARRAY, valueObject: Any? = null, childExpressions: Array<TemplateBodyExpressionModel> = EMPTY_EXPRESSION_ARRAY, childTokens: IntArray = SCALAR_TOKEN_ARRAY, primitiveValue: Long = 0) : this(expressionKind, fieldName, annotations, valueObject, childExpressions, primitiveValue)
+
     companion object {
 
         @JvmStatic
@@ -77,7 +76,7 @@ class TemplateBodyExpressionModel(
         if (!that.annotations.contentDeepEquals(that.annotations)) return false
         if (primitiveValue != that.primitiveValue) return false
         if (valueObject != that.valueObject) return false
-        if (childExpressions.contentDeepEquals(that.childExpressions)) return false
+        if (!childExpressions.contentDeepEquals(that.childExpressions)) return false
         return true
     }
 
@@ -109,7 +108,7 @@ class TemplateBodyExpressionModel(
         if (valueObject != null || expressionKind == Kind.SYMBOL) {
             sb.append(", valueObject=$valueObject")
         }
-        if (childTokens.isNotEmpty()) {
+        if (childExpressions.isNotEmpty()) {
             sb.append(", childExpressions=")
             childExpressions.mapIndexed { i, value -> "$indent    $i. ${value.toPrettyString("$indent    ")}" }
                 .joinToString("\n", prefix = "[\n", postfix = "\n$indent]")
@@ -119,7 +118,7 @@ class TemplateBodyExpressionModel(
         return sb.toString()
     }
 
-    fun copy() = TemplateBodyExpressionModel(expressionKind, 0, fieldName, annotations, valueObject, childExpressions, childTokens, primitiveValue)
+    // fun copy() = TemplateBodyExpressionModel(expressionKind, fieldName, annotations, valueObject, childExpressions, childTokens, primitiveValue)
 
 
     object Kind {

@@ -7,6 +7,7 @@ import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
+import com.amazon.ion.v3.unused.*
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.nio.ByteBuffer
@@ -398,6 +399,10 @@ abstract class ValueReaderBase(
     private fun macroValue(opcode: Int): MacroV2 {
         when (opcode shr 4) {
             0x0, 0x1, 0x2, 0x3 -> {
+                if (opcode >= macroTable.size) {
+                    println(source)
+                    println("Macro Table size: " + macroTable.size)
+                }
                 return macroTable[opcode]
             }
             0x4 -> {
@@ -405,6 +410,10 @@ abstract class ValueReaderBase(
                 val bias = (opcode and 0xF) * 256 + 64
                 val unbiasedId = source.get().toInt() and 0xFF
                 val id: Int = unbiasedId + bias
+                if (id >= macroTable.size) {
+                    println(source)
+                    println("Macro Table size: " + macroTable.size)
+                }
                 return macroTable[id]
             }
             0x5 -> {
@@ -445,20 +454,49 @@ abstract class ValueReaderBase(
         val macro = macroValue(opcode)
         this.opcode = TID_UNSET
         // We read the length in case it is there, but we don't actually need to use it.
+        // Until we implement lazy reading of the args.
         IdMappings.length(opcode, source)
-        val args = parseArgs(macro)
-        return MacroInvocation(macro, args) { it.startEvaluation(macro, args) }
+
+        // TODO: Make this lazy.
+        val argumentBytecode = IntList()
+        val currentPosition = source.position()
+        val constants = mutableListOf<Any?>()
+        val argLength = readEExpArgsAsByteCode(source, source.position(), argumentBytecode, constants, macro, macroTable)
+        source.position(currentPosition + argLength)
+        val args = ArgumentBytecode(
+            argumentBytecode.toArray(),
+            constantPool = constants.toTypedArray(),
+            source = pool.newSlice(0),
+            signature = macro.signature,
+        )
+
+        return MacroInvocation(
+            macro,
+            { args },
+            { startMacroEvaluation(macro, args, pool, symbolTable, macroTable) },
+            {
+                object : Iterator<ValueReader> {
+                    private var i = 0
+                    private val n = args.signature.size
+                    private val theseArgs = args
+
+                    override fun hasNext(): Boolean = i < n
+
+                    override fun next(): ValueReader {
+                        val bytecode = theseArgs.getArgument(i++)
+                        // TODO: Make this read a slice of the args rather than needing to perform an array copy.
+                        return pool.getSequence(ArgumentBytecode.NO_ARGS, bytecode, 0, theseArgs.constantPool(), symbolTable, macroTable)
+                    }
+                }
+            }
+        )
     }
 
     private val scratch = IntList(32)
 
-    private fun parseArgs(macro: MacroV2): EExpArguments {
-//        println(macro.signature.contentToString())
-//        println(macro.numPresenceBytesRequired)
+    private fun parseArgs(macro: MacroV2): ArgumentBytecode {
         val signature = macro.signature
-        // TODO: Consider moving this to a different class so that the ownership of `source` is more clear.
         var presenceBitsPosition = source.position()
-        // TODO: Precompute this and store it in the macro definition
         val firstArgPosition = presenceBitsPosition + macro.numPresenceBytesRequired
         source.position(firstArgPosition)
 
@@ -471,9 +509,6 @@ abstract class ValueReaderBase(
         bytecode.clear()
 
         val arguments = Array<IntArray>(signature.size) { ArgumentBytecode.EMPTY_ARG }
-
-        // TODO: replace this with an array.
-        val constants = mutableListOf<Any?>()
 
         while (i < signature.size) {
             var presence = -1
@@ -499,7 +534,7 @@ abstract class ValueReaderBase(
                 1 -> {
                     // TODO: Support for tagless types.
                     val tokenType = this.nextToken()
-                    readArgumentValue(tokenType, bytecode, constants)
+                    readArgumentValue(tokenType, bytecode)
                     bytecode.add(MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction())
                     arguments[i] = bytecode.toArray()
                     bytecode.clear()
@@ -520,7 +555,7 @@ abstract class ValueReaderBase(
                         pool.getDelimitedSequence(start, this, symbolTable, macroTable).use { group ->
                             var tokenType = group.nextToken()
                             while (tokenType != TokenTypeConst.END) {
-                                group.readArgumentValue(tokenType, bytecode, constants)
+                                group.readArgumentValue(tokenType, bytecode)
                                 tokenType = group.nextToken()
                             }
                             bytecode.add(MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction())
@@ -532,7 +567,7 @@ abstract class ValueReaderBase(
                         pool.getList(position, length, symbolTable, macroTable).use {
                             var tokenType = nextToken()
                             while (tokenType != TokenTypeConst.END) {
-                                readArgumentValue(tokenType, bytecode, constants)
+                                readArgumentValue(tokenType, bytecode)
                                 tokenType = nextToken()
                             }
                             bytecode.add(MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction())
@@ -547,18 +582,15 @@ abstract class ValueReaderBase(
             i++
         }
 
-        return EExpArguments(
+        return ArgumentBytecode(
+            bytecode = bytecode.toArray(),
             source = source,
-            arguments = arguments,
-            constants = constants.toTypedArray(),
+            constantPool = emptyArray(),
             signature = signature,
-            symbolTable = symbolTable,
-            macroTable = macroTable,
-            pool = pool,
         )
     }
 
-    internal fun readArgumentValue(tokenType: Int, bytecode: IntList, constants: MutableList<Any?>) {
+    internal fun readArgumentValue(tokenType: Int, bytecode: IntList) {
 //        println(source.position())
         // TODO: Lazy parsing of values.
 //        println("Reading ${TokenTypeConst(tokenType)} argument at position ${source.position() - 1}")
@@ -589,20 +621,24 @@ abstract class ValueReaderBase(
                 bytecode.add((doubleBits shr 32).toInt())
             }
             TokenTypeConst.DECIMAL -> {
-                // bytecode.add(MacroBytecode.OP_REF_DECIMAL.opToInstruction(length))
-                // bytecode.add(position)
-                TODO()
+                val start = source.position()
+                skip()
+                val end = source.position()
+                bytecode.add(MacroBytecode.OP_REF_DECIMAL.opToInstruction(end - start))
+                bytecode.add(start)
             }
             TokenTypeConst.TIMESTAMP -> {
-                val ts = this.timestampValue()
-                val cpIndex = constants.size
-                constants.add(ts)
-                bytecode.add(MacroBytecode.OP_CP_TIMESTAMP.opToInstruction(cpIndex))
-
-//                val position = source.position()
-//                bytecode.add(MacroBytecode.OP_REF_TIMESTAMP_SHORT.opToInstruction(opcode.toInt()))
-//                bytecode.add(position)
-//                skip()
+                val opcode = this.opcode.toInt()
+                // this.opcode = TID_UNSET
+                val start = source.position()
+                skip()
+                if (opcode == 0xF8) {
+                    val end = source.position()
+                    bytecode.add(MacroBytecode.OP_REF_TIMESTAMP_LONG.opToInstruction(end - start))
+                } else {
+                    bytecode.add(MacroBytecode.OP_REF_TIMESTAMP_SHORT.opToInstruction(opcode))
+                }
+                bytecode.add(start)
             }
             TokenTypeConst.STRING -> {
                 val opcode = opcode.toInt()
@@ -617,19 +653,34 @@ abstract class ValueReaderBase(
                 bytecode.add(position)
             }
             TokenTypeConst.SYMBOL -> {
-                val sid = symbolValueSid()
-                val text = if (sid < 0) {
-                    symbolValue()
-                } else {
-                    lookupSid(sid)
-                }
-
-                if (text != null) {
-                    val cpIndex = constants.size
-                    constants.add(text)
-                    bytecode.add(MacroBytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
-                } else {
-                    bytecode.add(MacroBytecode.OP_UNKNOWN_SYMBOL.opToInstruction())
+                val opcode = opcode.toInt()
+                when (opcode) {
+                    Opcode.SYSTEM_SYMBOL -> {
+                        bytecode.add(MacroBytecode.OP_SYSTEM_SYMBOL_SID.opToInstruction(source.get().toInt()))
+                    }
+                    Opcode.SYMBOL_VALUE_SID_U8 -> {
+                        bytecode.add(MacroBytecode.OP_SYMBOL_SID.opToInstruction(source.get().toInt()))
+                    }
+                    Opcode.SYMBOL_VALUE_SID_U16 -> {
+                        bytecode.add(MacroBytecode.OP_SYMBOL_SID.opToInstruction(256 + source.getShort().toInt()))
+                    }
+                    Opcode.SYMBOL_VALUE_SID_FLEXUINT -> {
+                        bytecode.add(MacroBytecode.OP_SYMBOL_SID.opToInstruction(65792 + IntHelper.readFlexUInt(source)))
+                    }
+                    Opcode.VARIABLE_LENGTH_INLINE_SYMBOL -> {
+                        val length = IntHelper.readFlexUInt(source)
+                        val start = source.position()
+                        source.position(start + length)
+                        bytecode.add(MacroBytecode.OP_REF_SYMBOL_TEXT.opToInstruction(length))
+                        bytecode.add(start)
+                    }
+                    else -> {
+                        val length = opcode and 0xF
+                        val start = source.position()
+                        source.position(start + length)
+                        bytecode.add(MacroBytecode.OP_REF_SYMBOL_TEXT.opToInstruction(length))
+                        bytecode.add(start)
+                    }
                 }
             }
             TokenTypeConst.BLOB -> TODO()
@@ -645,7 +696,7 @@ abstract class ValueReaderBase(
                         while (true) {
                             val nextToken = list.nextToken()
                             if (nextToken == TokenTypeConst.END) break
-                            list.readArgumentValue(nextToken, bytecode, constants)
+                            list.readArgumentValue(nextToken, bytecode)
                         }
                     }
                     bytecode.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
@@ -671,7 +722,7 @@ abstract class ValueReaderBase(
                         while (true) {
                             val nextToken = list.nextToken()
                             if (nextToken == TokenTypeConst.END) break
-                            list.readArgumentValue(nextToken, bytecode, constants)
+                            list.readArgumentValue(nextToken, bytecode)
                         }
                     }
                     bytecode.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
@@ -698,7 +749,7 @@ abstract class ValueReaderBase(
                         while (true) {
                             val nextToken = list.nextToken()
                             if (nextToken == TokenTypeConst.END) break
-                            list.readArgumentValue(nextToken, bytecode, constants)
+                            list.readArgumentValue(nextToken, bytecode)
                         }
                     }
                     bytecode.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
@@ -723,54 +774,68 @@ abstract class ValueReaderBase(
             TokenTypeConst.EXPRESSION_GROUP -> TODO("Should be unreachable")
             TokenTypeConst.MACRO_INVOCATION -> {
                 // TODO: Consider flattening this macro inline?
-                val macroInvocation = macroInvocation()
-                val macro = macroInvocation.macro
-                // TODO
-//                if (macro.body != null) {
-//
-//                } else {
-//                    macroInvocation.arguments.iterator().forEachRemaining { argument ->
-//
-//
-//                    }
-//                }
+                val macro = macroValue(opcode.toInt())
 
-                val macroCpIndex = constants.size
-                constants.add(macroInvocation)
-                bytecode.add(MacroBytecode.OP_CP_MACRO_INVOCATION.opToInstruction(macroCpIndex))
-            }
-            TokenTypeConst.ANNOTATIONS -> {
+                val args = parseArgs(macro)
+                // val macroInvocation = macroInvocation()
 
-                val anns = annotations().toStringArray()
-                if (anns.size == 1) {
-                    val ann = anns[0]
-                    val cpIndex = constants.size
-                    constants.add(ann)
-                    bytecode.add(MacroBytecode.OP_CP_ONE_ANNOTATION.opToInstruction(cpIndex))
-
+                if (macro.body != null) {
+                    // Inline the template body into the macro argument.
+                    templateExpressionToBytecode(macro.body, bytecode, mutableListOf()) { parameterIndex, destination ->
+                        val bytes = args.getArgument(parameterIndex)
+                        destination.addAll(bytes)
+                    }
                 } else {
-                    bytecode.add(MacroBytecode.OP_CP_N_ANNOTATIONS.opToInstruction(anns.size))
-                    for (ann in anns) {
-                        val cpIndex = constants.size
-                        constants.add(ann)
-                        bytecode.add(cpIndex)
+                    macro.signature.forEachIndexed { index, parameter ->
+                        val arg = args.getArgument(index)
+                        generateBytecodeContainer(
+                            MacroBytecode.OP_START_ARGUMENT_VALUE,
+                            MacroBytecode.OP_END_ARGUMENT_VALUE,
+                            bytecode
+                        ) {
+                            bytecode.addAll(arg)
+                        }
+                    }
+                    if (macro.systemAddress != SystemMacro.DEFAULT_ADDRESS) {
+//                        val cpIndex = constants.size
+//                        constants.add(macro)
+//                        bytecode.add(MacroBytecode.OP_INVOKE_MACRO.opToInstruction(cpIndex))
+                        TODO()
+                    } else {
+                        bytecode.add(MacroBytecode.OP_INVOKE_SYS_MACRO.opToInstruction(macro.systemAddress))
                     }
                 }
-
-//                TODO("Read the annotations, and then go back to read the value")
+            }
+            TokenTypeConst.ANNOTATIONS -> {
+                val anns = annotations().toStringArray()
+//                if (anns.size == 1) {
+//                    val ann = anns[0]
+//                    val cpIndex = constants.size
+//                    constants.add(ann)
+//                    bytecode.add(MacroBytecode.OP_CP_ONE_ANNOTATION.opToInstruction(cpIndex))
+//
+//                } else {
+//                    bytecode.add(MacroBytecode.OP_CP_N_ANNOTATIONS.opToInstruction(anns.size))
+//                    for (ann in anns) {
+//                        val cpIndex = constants.size
+//                        constants.add(ann)
+//                        bytecode.add(cpIndex)
+//                    }
+//                }
+                TODO()
             }
             TokenTypeConst.FIELD_NAME -> {
                 this as StructReader
                 val fieldNameSid = fieldNameSid()
-                val text = if (fieldNameSid < 0) {
-                    fieldName()
+                if (fieldNameSid < 0) {
+                    val start = source.position()
+                    FlexSymHelper.skipFlexSym(source)
+                    val end = source.position()
+                    bytecode.add(MacroBytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(end - start))
+                    bytecode.add(start)
                 } else {
-                    symbolTable[fieldNameSid]
+                    bytecode.add(MacroBytecode.OP_FIELD_NAME_SID.opToInstruction(fieldNameSid))
                 }
-                val cpIndex = constants.size
-                constants.add(text)
-                bytecode.add(MacroBytecode.OP_CP_FIELD_NAME.opToInstruction(cpIndex))
-//                TODO("Should be unreachable, unless we eagerly read delimited structs")
             }
             else -> TODO("${TokenTypeConst(tokenType)} at ~${source.position()}")
         }

@@ -513,12 +513,12 @@ class FlatMacroCompilerTest {
         LogMacro.SAMPLE_DEF shouldCompileTo LogMacro.Sample,
         LogMacro.ONE_DEF shouldCompileTo LogMacro.One,
         LogMacro.ENTRY_DEF shouldCompileTo LogMacro.Entry,
-        LogMacro.METRIC_SINGLE_DEF shouldCompileTo LogMacro.FlattenedMetricSingle,
-        LogMacro.METRIC_DEF shouldCompileTo LogMacro.FlattenedMetric,
-        LogMacro.SUMMARY_0_DEF shouldCompileTo LogMacro.FlattenedSummary0,
-        LogMacro.SUMMARY_1_DEF shouldCompileTo LogMacro.FlattenedSummary1,
-        LogMacro.SUMMARY_MS_DEF shouldCompileTo LogMacro.FlattenedSummaryMs,
-        LogMacro.SUMMARY_DEF shouldCompileTo LogMacro.FlattenedSummary,
+        LogMacro.METRIC_SINGLE_DEF shouldCompileTo LogMacro.MetricSingle,
+        LogMacro.METRIC_DEF shouldCompileTo LogMacro.Metric,
+        LogMacro.SUMMARY_0_DEF shouldCompileTo LogMacro.Summary0,
+        LogMacro.SUMMARY_1_DEF shouldCompileTo LogMacro.Summary1,
+        LogMacro.SUMMARY_MS_DEF shouldCompileTo LogMacro.SummaryMs,
+        LogMacro.SUMMARY_DEF shouldCompileTo LogMacro.Summary,
 
         "(macro foo (x y z) [100, [200, a::b::300], (%x), {y: [true, false, (%z)]}])" shouldCompileTo MacroV2(
             signature = listOf(

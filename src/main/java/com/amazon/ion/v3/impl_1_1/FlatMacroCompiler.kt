@@ -9,6 +9,7 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.Expression.*
 import com.amazon.ion.util.*
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.ion_reader.*
 import java.nio.ByteBuffer
 
@@ -58,7 +59,12 @@ internal class FlatMacroCompiler(
             reader.compileTemplateBodyExpression(expressions, readLiterally = false, ParentType.TopLevel)
             confirm(reader.next() == null) { "Unexpected ${reader.type} after template body expression." }
         }
-        return MacroV2(signature, expressions.toTypedArray())
+        val m = MacroV2(signature, expressions.toTypedArray())
+//        println("Compiled macro $macroName.")
+//        println(m.body?.mapIndexed { i, value -> "$i. $value"}?.joinToString("\n", prefix = "[\n", postfix = "\n]"))
+//        println("Starting bytecode generation...")
+//        m.bytecode
+        return m
     }
 
     /**
@@ -190,7 +196,6 @@ internal class FlatMacroCompiler(
             compileTemplateBodyExpression(content, readLiterally, ParentType.Struct)
         }
         startExpression.childExpressions = content.toTypedArray()
-        startExpression.childTokens = content.toTokenArray()
     }
 
     private fun List<TemplateBodyExpressionModel>.toTokenArray(): IntArray {
@@ -216,7 +221,6 @@ internal class FlatMacroCompiler(
             compileTemplateBodyExpression(content, readLiterally, ParentType.List)
         }
         startExpression.childExpressions = content.toTypedArray()
-        startExpression.childTokens = content.toTokenArray()
     }
 
     enum class ParentType {
@@ -239,28 +243,30 @@ internal class FlatMacroCompiler(
         destination.add(unclassifiedExpression)
         stepIn()
 
-        // An empty sexp is always just that.
-        if (next() == null) {
-            stepOut()
-            unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
-            unclassifiedExpression.childExpressions = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
-            unclassifiedExpression.childTokens = TemplateBodyExpressionModel.EMPTY_CONTENT_TOKEN_ARRAY
-            return
-        }
-
         val sexpContent = mutableListOf<TemplateBodyExpressionModel>()
 
         // Read literally as a sexp.
         if (readLiterally) {
+            println("Reading literal sexp.")
             forEachRemaining {
                 compileTemplateBodyExpression(sexpContent, true, ParentType.SExp)
             }
             stepOut()
             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
             unclassifiedExpression.childExpressions = sexpContent.toTypedArray()
-            unclassifiedExpression.childTokens = sexpContent.toTokenArray()
             return
         }
+
+        // An empty sexp is always just that.
+        if (next() == null) {
+            stepOut()
+            unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
+            unclassifiedExpression.childExpressions = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
+            return
+        }
+
+
+
 
 
         // If it doesn't start with a symbol, then compile it normally
@@ -270,7 +276,6 @@ internal class FlatMacroCompiler(
             compileExpressionTail(sexpContent, false, ParentType.SExp)
             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.SEXP
             unclassifiedExpression.childExpressions = sexpContent.toTypedArray()
-            unclassifiedExpression.childTokens = sexpContent.toTokenArray()
             return
         }
 
@@ -291,7 +296,6 @@ internal class FlatMacroCompiler(
                     compileExpressionTail(content, false, ParentType.ExprGroup)
                     unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
                     unclassifiedExpression.childExpressions = content.toTypedArray()
-                    unclassifiedExpression.childTokens = content.toTokenArray()
                     return
                 }
 
@@ -338,7 +342,6 @@ internal class FlatMacroCompiler(
                     // Replace with empty expression group.
                     unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
                     unclassifiedExpression.childExpressions = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
-                    unclassifiedExpression.childTokens = TemplateBodyExpressionModel.EMPTY_CONTENT_TOKEN_ARRAY
                 } else {
                     // Just remove it entirely
                     destination.removeLast()
@@ -350,7 +353,6 @@ internal class FlatMacroCompiler(
                     // Replace with empty expression group.
                     unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
                     unclassifiedExpression.childExpressions = TemplateBodyExpressionModel.EMPTY_EXPRESSION_ARRAY
-                    unclassifiedExpression.childTokens = TemplateBodyExpressionModel.EMPTY_CONTENT_TOKEN_ARRAY
                 } else {
                     // Just remove it entirely
                     destination.removeLast()
@@ -362,7 +364,6 @@ internal class FlatMacroCompiler(
                     // Convert to an expression group
                     unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP
                     unclassifiedExpression.childExpressions = args.toTypedArray()
-                    unclassifiedExpression.childTokens = args.toTokenArray()
                 } else {
                     // TODO: Possibly copy over a field name
                     destination.removeLast()
@@ -387,7 +388,6 @@ internal class FlatMacroCompiler(
                             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
                             unclassifiedExpression.valueObject = macro
                             unclassifiedExpression.childExpressions = args.toTypedArray()
-                            unclassifiedExpression.childTokens = args.toTokenArray()
                         } else {
                             // Use this expression... TODO: Copy field name if necessary
                             destination.removeLast()
@@ -400,7 +400,6 @@ internal class FlatMacroCompiler(
                         unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
                         unclassifiedExpression.valueObject = macro
                         unclassifiedExpression.childExpressions = args.toTypedArray()
-                        unclassifiedExpression.childTokens = args.toTokenArray()
                     }
                     TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP -> {
                         if (arg0.childExpressions.isEmpty()) {
@@ -415,7 +414,6 @@ internal class FlatMacroCompiler(
                             unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
                             unclassifiedExpression.valueObject = macro
                             unclassifiedExpression.childExpressions = args.toTypedArray()
-                            unclassifiedExpression.childTokens = args.toTokenArray()
                         }
                     }
 
@@ -424,7 +422,6 @@ internal class FlatMacroCompiler(
                         unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
                         unclassifiedExpression.valueObject = macro
                         unclassifiedExpression.childExpressions = args.toTypedArray()
-                        unclassifiedExpression.childTokens = args.toTokenArray()
                     }
                 }
             }
@@ -436,44 +433,43 @@ internal class FlatMacroCompiler(
                 unclassifiedExpression.expressionKind = TemplateBodyExpressionModel.Kind.INVOCATION
                 unclassifiedExpression.valueObject = macro
                 unclassifiedExpression.childExpressions = args.toTypedArray()
-                unclassifiedExpression.childTokens = args.toTokenArray()
             }
         }
     }
 
     // Visible for testing
-    internal fun copyInlinedContent(
-        start: Int,
-        endExclusive: Int,
-        source: Array<TemplateBodyExpressionModel>,
-        destination: MutableList<TemplateBodyExpressionModel>,
-        args: List<TemplateBodyExpressionModel>,
-        indent: String = "",
-    ) {
-        var i = start
-        while (i < endExclusive) {
-            val next = source[i++]
-            if (next.expressionKind == TemplateBodyExpressionModel.Kind.VARIABLE) {
-                copyArgValueInline(next.primitiveValue.toInt(), destination, args, indent)
-            } else if (next.expressionKind != TemplateBodyExpressionModel.Kind.INVOCATION) {
-                // TODO: Recursive substitution.
-                destination.add(next)
-
-            } else {
-                // Macro invocations are handled here, same as any container. Since a macro can only depend on macros
-                // that were compiled earlier, the nested invocation that we're currently inlining has no more nestable
-                // invocations.
-                val startExpression = next.copy()
-//                println("${indent}Copying container value: $next")
-                destination.add(startExpression)
-                val destinationContainerStart = destination.size
-//                copyInlinedContent(i, i + startExpression.length, source, destination, args, "$indent  ")
-                val destinationContainerEnd = destination.size
-//                startExpression.length = destinationContainerEnd - destinationContainerStart
-            }
-//            i += next.length
-        }
-    }
+//    internal fun copyInlinedContent(
+//        start: Int,
+//        endExclusive: Int,
+//        source: Array<TemplateBodyExpressionModel>,
+//        destination: MutableList<TemplateBodyExpressionModel>,
+//        args: List<TemplateBodyExpressionModel>,
+//        indent: String = "",
+//    ) {
+//        var i = start
+//        while (i < endExclusive) {
+//            val next = source[i++]
+//            if (next.expressionKind == TemplateBodyExpressionModel.Kind.VARIABLE) {
+//                copyArgValueInline(next.primitiveValue.toInt(), destination, args, indent)
+//            } else if (next.expressionKind != TemplateBodyExpressionModel.Kind.INVOCATION) {
+//                // TODO: Recursive substitution.
+//                destination.add(next)
+//
+//            } else {
+//                // Macro invocations are handled here, same as any container. Since a macro can only depend on macros
+//                // that were compiled earlier, the nested invocation that we're currently inlining has no more nestable
+//                // invocations.
+//                val startExpression = next.copy()
+////                println("${indent}Copying container value: $next")
+//                destination.add(startExpression)
+//                val destinationContainerStart = destination.size
+////                copyInlinedContent(i, i + startExpression.length, source, destination, args, "$indent  ")
+//                val destinationContainerEnd = destination.size
+////                startExpression.length = destinationContainerEnd - destinationContainerStart
+//            }
+////            i += next.length
+//        }
+//    }
 
     fun copyArgValueInline(
         signatureIndex: Int,
@@ -508,7 +504,14 @@ internal class FlatMacroCompiler(
                 if (id < 0) throw IonException("Macro ID must be non-negative: $id")
                 MacroRef.byId(moduleName, id)
             }
-            else -> throw IonException("macro invocation must start with an id (int) or identifier (symbol); found ${type ?: "nothing"}\"")
+            else -> {
+                (this as? StreamWrappingIonReader)?.let {
+                    val r = this.reader as TemplateReaderImpl
+                    println(r.i)
+                    MacroBytecode.debugString(r.bytecode)
+                }
+                throw IonException("macro invocation must start with an id (int) or identifier (symbol); found ${type ?: "nothing"}\"")
+            }
         }
     }
 

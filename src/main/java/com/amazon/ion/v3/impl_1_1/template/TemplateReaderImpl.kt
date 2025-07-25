@@ -1,34 +1,43 @@
 package com.amazon.ion.v3.impl_1_1.template
 
 import com.amazon.ion.*
+import com.amazon.ion.impl.*
+import com.amazon.ion.impl.bin.IntList
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.OPERATION_SHIFT_AMOUNT
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.TOKEN_TYPE_SHIFT_AMOUNT
-import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.bytecodeToString
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.instructionToOp
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 
 open class TemplateReaderImpl internal constructor(
-    val pool: TemplateResourcePool,
+    val pool: ResourcePool,
     // Available modules? No. That's already resolved in the compiler.
-    // Macro table? No. That's already resolved in the compiler.
+    // Macro table? Yes. That's already resolved in the compiler, but we might encounter
+    // an e-expression that needs to lazily read in one of the arguments.
 ): ValueReader, SexpReader, ListReader, SequenceReader, TemplateReader {
-
-    // TODO:
-    //   Switch this to use the bytecode from the macro definition. See if we get a perf improvement.
-    //   Try to convert E-Exp args to bytecode as well.
-    //   Also try inlining macro invocations as well.
 
     @JvmField
     var isStruct: Boolean = false
 
     @JvmField
     var bytecode: IntArray = IntArray(0)
-    @JvmField
+     @JvmField
     var i = 0
+//        set(value) {
+//            if (value == 19) {
+//                val e = Exception()
+//                e.fillInStackTrace()
+//                val x = e.stackTraceToString().lines()
+//                println(x)
+//            }
+//            field = value
+//        }
     @JvmField
     var constantPool: Array<Any?> = arrayOf()
 
@@ -42,10 +51,17 @@ open class TemplateReaderImpl internal constructor(
     private var constantPoolStack: Array<Array<Any?>?> = arrayOfNulls(INITIAL_STACK_SIZE)
 
     @JvmField
-    var arguments: ArgumentBytecode = ArgumentBytecode._NO_ARGS
+    var arguments: ArgumentBytecode = ArgumentBytecode.NO_ARGS
 
     @JvmField
     var instruction: Int = INSTRUCTION_NOT_SET
+
+    @JvmField
+    internal var source: ByteBuffer = ByteBuffer.allocate(0)
+    @JvmField
+    internal var symbolTable: Array<String?> = arrayOf(null)
+    @JvmField
+    internal var macroTable: Array<MacroV2> = arrayOf()
 
     companion object {
         const val INSTRUCTION_NOT_SET = MacroBytecode.UNSET shl 24
@@ -56,22 +72,27 @@ open class TemplateReaderImpl internal constructor(
     }
 
     fun init(
+        source: ByteBuffer,
         bytecode: IntArray,
         constantPool: Array<Any?>,
         arguments: ArgumentBytecode,
-        isArgumentOwner: Boolean,
      ) {
+        this.source = source
         this.bytecode = bytecode
         this.constantPool = constantPool
         this.arguments = arguments
         instruction = INSTRUCTION_NOT_SET
         i = 0
 
-        // 60 .. .. 04
-        // 1A .. .. ..
-        //
+//        println("Starting at $i")
+//        MacroBytecode.debugString(bytecode)
 //        println(bytecode.bytecodeToString())
 //        arguments.iterator().forEach { println(it.bytecodeToString()) }
+    }
+
+    fun initTables(symbolTable: Array<String?>, macroTable: Array<MacroV2>) {
+        this.symbolTable = symbolTable
+        this.macroTable = macroTable
     }
 
     internal fun rewind() {
@@ -80,15 +101,16 @@ open class TemplateReaderImpl internal constructor(
     }
 
     override fun nextToken(): Int {
-//        print(javaClass.simpleName + "@" + Integer.toHexString(System.identityHashCode(this)) + " -> ")
+//        println(javaClass.simpleName + "@" + Integer.toHexString(System.identityHashCode(this)) + " -> ")
         if (instruction == INSTRUCTION_END) {
             return TokenTypeConst.END
         }
         var instruction = INSTRUCTION_NOT_SET
         var i = this.i
         while (instruction == INSTRUCTION_NOT_SET) {
-
+//            print("Reading @ $i...")
             instruction = bytecode[i++]
+//            println(" ${MacroBytecode(instruction)}")
             val op = instruction ushr 24
             when (op) {
                 MacroBytecode.OP_START_ARGUMENT_VALUE -> {
@@ -99,7 +121,8 @@ open class TemplateReaderImpl internal constructor(
                     continue
                 }
 
-                MacroBytecode.OP_ARGUMENT_REF_TYPE -> {
+                MacroBytecode.OP_PARAMETER -> {
+//                    println("Stepping in to parameter value: ${MacroBytecode(instruction)}")
                     if (stackHeight.toInt() == iStack.size) {
                         TODO("Grow the stacks")
                     }
@@ -114,10 +137,11 @@ open class TemplateReaderImpl internal constructor(
                 }
 
                 MacroBytecode.OP_END_ARGUMENT_VALUE,
-                MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION -> {
+                MacroBytecode.OP_RETURN -> {
                     if (stackHeight.toInt() == 0) {
                         instruction = MacroBytecode.EOF.opToInstruction()
                     } else {
+//                        println("Stepping out of parameter value: ${MacroBytecode(instruction)}")
                         val s = (--stackHeight).toInt()
                         bytecode = bytecodeStack[s]!!
                         constantPool = constantPoolStack[s]!!
@@ -146,7 +170,7 @@ open class TemplateReaderImpl internal constructor(
                             continue
                         }
 
-                        val firstArg = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool)
+                        val firstArg = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool, symbolTable, macroTable)
 
                         i = if (firstArg.nextToken() != TokenTypeConst.END) {
                             firstArgStartIndex + 1
@@ -164,9 +188,15 @@ open class TemplateReaderImpl internal constructor(
         this.i = i
         return (instruction ushr (OPERATION_SHIFT_AMOUNT + TOKEN_TYPE_SHIFT_AMOUNT))
             .also {
-//            println(MacroBytecode(instruction))
+//                println("Returning ${TokenTypeConst(it)} (${MacroBytecode(instruction)}), i=${this.i}")
             if (it == TokenTypeConst.UNSET) {
-                throw Exception("TokenTypeConst == UNSET; ${MacroBytecode(instruction)} instruction: ${instruction.toString(16)}; i=$i")
+                MacroBytecode.debugString(bytecode)
+                (0 until stackHeight).reversed().forEach {
+                    println("---- Stack Entry $it ----")
+                    MacroBytecode.debugString(bytecodeStack[i]!!)
+                }
+
+                throw Exception("TokenTypeConst == UNSET; ${MacroBytecode(instruction)} instruction: ${instruction.toString(16)}; i=$i; \nMaybe the instruction should have been ${MacroBytecode(instruction.opToInstruction())}")
             }
         }
     }
@@ -233,10 +263,8 @@ open class TemplateReaderImpl internal constructor(
     }
 
     override fun skip() {
-        when (instruction.instructionToOp()) {
-            MacroBytecode.OP_INLINE_INT -> i++
-            MacroBytecode.OP_INLINE_DOUBLE,
-            MacroBytecode.OP_INLINE_LONG -> i += 2
+        val op = instruction.instructionToOp()
+        when (op) {
             MacroBytecode.OP_LIST_START,
             MacroBytecode.OP_SEXP_START,
             MacroBytecode.OP_STRUCT_START -> {
@@ -246,6 +274,9 @@ open class TemplateReaderImpl internal constructor(
             MacroBytecode.EOF,
             MacroBytecode.OP_CONTAINER_END -> {
                 throw UnsupportedOperationException("Cannot skip past end.")
+            }
+            else -> {
+                i += MacroBytecode.Operations[op]!!.numberOfOperands
             }
         }
         instruction = INSTRUCTION_NOT_SET
@@ -363,7 +394,7 @@ open class TemplateReaderImpl internal constructor(
                 TODO("OP_INVOKE_MACRO")
             }
             MacroBytecode.OP_CP_MACRO_INVOCATION -> {
-                 val invocation = (constantPool[cpIndex] as MacroInvocation)
+                val invocation = (constantPool[cpIndex] as MacroInvocation)
                 return invocation
             }
             else -> throw IllegalStateException("Not positioned on macro: ${MacroBytecode(instruction)}")
@@ -371,30 +402,58 @@ open class TemplateReaderImpl internal constructor(
     }
 
     override fun expressionGroup(): SequenceReader {
-        return pool.getSequence(arguments, bytecode, i, constantPool)
+        return pool.getSequence(arguments, bytecode, i, constantPool, symbolTable, macroTable)
     }
 
     override fun annotations(): AnnotationIterator {
-        val annotations = when (instruction.instructionToOp()) {
-            MacroBytecode.OP_CP_ONE_ANNOTATION -> {
-                val constantPoolIndex = (instruction and MacroBytecode.DATA_MASK)
-                val annotations = arrayOfNulls<String?>(1)
-                annotations[0] = constantPool[constantPoolIndex] as String?
-                annotations
+        val annotations = mutableListOf<String?>()
+        val sids = IntList()
+        val bytecode = bytecode
+        var instruction = instruction
+        var i = i
+        while(true) {
+            when (instruction.instructionToOp()) {
+                MacroBytecode.OP_CP_ONE_ANNOTATION -> {
+                    val constantPoolIndex = (instruction and MacroBytecode.DATA_MASK)
+                    annotations += constantPool[constantPoolIndex] as String?
+                    sids.add(-1)
+                }
+                MacroBytecode.OP_ANN_SYSTEM_SID -> {
+                    val sid = instruction and MacroBytecode.DATA_MASK
+                    if (sid == 0) {
+                        annotations += null
+                        sids.add(0)
+                    } else {
+                        annotations += SystemSymbols_1_1[sid]!!.text
+                        sids.add(-1)
+                    }
+                }
+                MacroBytecode.OP_ONE_ANNOTATION_SID -> {
+                    val sid = (instruction and MacroBytecode.DATA_MASK)
+                    annotations += symbolTable[sid]
+                    sids.add(sid)
+                }
+                MacroBytecode.OP_REF_ONE_FLEXSYM_ANNOTATION -> {
+                    val length = instruction and MacroBytecode.DATA_MASK
+                    val position = bytecode[i++]
+                    annotations += readTextRef(position, length)
+                }
+                else -> {
+                    if (annotations.isNotEmpty()) break
+                    throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+                }
             }
-            MacroBytecode.OP_CP_N_ANNOTATIONS -> {
-                val nAnnotations = (instruction and MacroBytecode.DATA_MASK)
-                val constantPool = constantPool
-                val bytecode = bytecode
-                var localI = i
-                val annotations = Array(nAnnotations) { constantPool[bytecode[localI++]] as String? }
-                i = localI
-                annotations
-            }
-            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+            instruction = bytecode[i++]
         }
-        instruction = INSTRUCTION_NOT_SET
-        return pool.getAnnotations(annotations)
+
+        annotations.forEachIndexed { index, s ->
+            if (sids[index] == -1 && s == null) TODO()
+        }
+
+
+        this.i = i - 1
+        this.instruction = INSTRUCTION_NOT_SET
+        return pool.getAnnotations(annotations.toTypedArray())
     }
 
     override fun nullValue(): IonType {
@@ -415,10 +474,11 @@ open class TemplateReaderImpl internal constructor(
     }
 
     override fun longValue(): Long {
+        val instruction = this.instruction
         val op = instruction.instructionToOp()
         val long = when (op) {
             MacroBytecode.OP_SMALL_INT -> {
-                instruction.toShort().toLong()
+                (instruction and MacroBytecode.DATA_MASK).toShort().toLong()
             }
             MacroBytecode.OP_INLINE_INT -> {
                 bytecode[i++].toLong()
@@ -428,19 +488,28 @@ open class TemplateReaderImpl internal constructor(
                 val lsb = bytecode[i++].toLong()
                 (msb shl 32) or lsb
             }
+            MacroBytecode.OP_CP_BIG_INT -> {
+                val cpIndex = (instruction and MacroBytecode.DATA_MASK)
+                val bi = constantPool[cpIndex] as BigInteger
+                bi.longValueExact()
+            }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
-        instruction = INSTRUCTION_NOT_SET
+        this.instruction = INSTRUCTION_NOT_SET
         return long
     }
 
     override fun doubleValue(): Double {
         val op = instruction.instructionToOp()
+        val bytecode = bytecode
         val double = when (op) {
             MacroBytecode.OP_INLINE_DOUBLE -> {
                 val lsb = bytecode[i++].toLong() and 0xFFFFFFFF
                 val msb = bytecode[i++].toLong() and 0xFFFFFFFF
                 Double.fromBits((msb shl 32) or lsb)
+            }
+            MacroBytecode.OP_INLINE_FLOAT -> {
+                Float.fromBits(bytecode[i++]).toDouble()
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
@@ -470,47 +539,88 @@ open class TemplateReaderImpl internal constructor(
             MacroBytecode.OP_REF_STRING -> {
                 val length = instruction and MacroBytecode.DATA_MASK
                 val position = bytecode[i++]
-                return arguments.readStringRef(position, length)
+                return readTextRef(position, length)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
     override fun symbolValue(): String? {
+        val instruction = this.instruction
+//        println("Reading symbol text from ${MacroBytecode(instruction)}; i=$i")
         when (instruction.instructionToOp()) {
             MacroBytecode.OP_CP_SYMBOL_TEXT -> {
                 val constantPoolIndex = (instruction and MacroBytecode.DATA_MASK)
-                instruction = INSTRUCTION_NOT_SET
+                this.instruction = INSTRUCTION_NOT_SET
+                if (constantPoolIndex >= constantPool.size) {
+                    println("Hello")
+                }
                 return constantPool[constantPoolIndex] as String?
             }
-            MacroBytecode.OP_UNKNOWN_SYMBOL -> {
-                instruction = INSTRUCTION_NOT_SET
-                return null
+            MacroBytecode.OP_SYMBOL_SID -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                return lookupSid(instruction and MacroBytecode.DATA_MASK)
+            }
+            MacroBytecode.OP_REF_SYMBOL_TEXT -> {
+                val length = instruction and MacroBytecode.DATA_MASK
+                this.instruction = INSTRUCTION_NOT_SET
+                val position = bytecode[i++]
+                return readTextRef(position, length)
+                // .also { println("... \"$it\"\n; i=$i") }
+            }
+            MacroBytecode.OP_SYSTEM_SYMBOL_SID -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                return SystemSymbols_1_1[instruction and MacroBytecode.DATA_MASK]!!.text
+            }
+            MacroBytecode.OP_SYMBOL_CHAR -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                val char = (instruction and MacroBytecode.DATA_MASK).toChar()
+                return "$char"
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
     override fun symbolValueSid(): Int {
+        val instruction = this.instruction
+//        println("Reading symbol sid from ${MacroBytecode(instruction)}")
         when (instruction.instructionToOp()) {
+            MacroBytecode.OP_SYSTEM_SYMBOL_SID -> {
+                val systemSid = (instruction and MacroBytecode.DATA_MASK)
+                if (systemSid == 0) {
+                    this.instruction = INSTRUCTION_NOT_SET
+                    return 0
+                } else {
+                    return -1
+                }
+            }
+            MacroBytecode.OP_SYMBOL_CHAR,
+            MacroBytecode.OP_REF_SYMBOL_TEXT,
             MacroBytecode.OP_CP_SYMBOL_TEXT -> return -1
-            MacroBytecode.OP_UNKNOWN_SYMBOL -> {
-                instruction = INSTRUCTION_NOT_SET
-                return 0
+            MacroBytecode.OP_SYMBOL_SID -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                return instruction and MacroBytecode.DATA_MASK
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
-    override fun lookupSid(sid: Int): String? = arguments.getSymbol(sid)
+    override fun lookupSid(sid: Int): String? = symbolTable[sid]
 
     override fun timestampValue(): Timestamp {
+        val instruction = this.instruction
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_CP_TIMESTAMP -> {
                 val constantPoolIndex = (instruction and MacroBytecode.DATA_MASK)
-                instruction = INSTRUCTION_NOT_SET
+                this.instruction = INSTRUCTION_NOT_SET
                 return constantPool[constantPoolIndex] as Timestamp
+            }
+            MacroBytecode.OP_REF_TIMESTAMP_SHORT -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                val opcode = instruction and MacroBytecode.DATA_MASK
+                val position = bytecode[i++]
+                return TimestampHelper.readTimestampAt(opcode, source, position)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
@@ -542,20 +652,21 @@ open class TemplateReaderImpl internal constructor(
     }
 
     override fun listValue(): ListReader {
+        val instruction = this.instruction
         val op = instruction.instructionToOp()
         when (op) {
             MacroBytecode.OP_LIST_START -> {
                 val length = (instruction and MacroBytecode.DATA_MASK)
                 val start = i
                 i += length
-                instruction = INSTRUCTION_NOT_SET
-                return pool.getSequence(arguments, bytecode, start, constantPool)
+                this.instruction = INSTRUCTION_NOT_SET
+                return pool.getSequence(arguments, bytecode, start, constantPool, symbolTable, macroTable)
             }
             MacroBytecode.OP_REF_LIST -> {
                 val length = (instruction and MacroBytecode.DATA_MASK)
-                instruction = INSTRUCTION_NOT_SET
+                this.instruction = INSTRUCTION_NOT_SET
                 val start = bytecode[i++]
-                return arguments.getList(start, length)
+                return pool.getList(start, length, symbolTable, macroTable)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
@@ -569,13 +680,13 @@ open class TemplateReaderImpl internal constructor(
                 val start = i
                 i += length
                 instruction = INSTRUCTION_NOT_SET
-                return pool.getSequence(arguments, bytecode, start, constantPool)
+                return pool.getSequence(arguments, bytecode, start, constantPool, symbolTable, macroTable)
             }
             MacroBytecode.OP_REF_SEXP -> {
                 val length = (instruction and MacroBytecode.DATA_MASK)
                 instruction = INSTRUCTION_NOT_SET
                 val start = bytecode[i++]
-                return arguments.getSexp(start, length)
+                return pool.getPrefixedSexp(start, length, symbolTable, macroTable)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
@@ -589,38 +700,56 @@ open class TemplateReaderImpl internal constructor(
                 val start = i
                 i += length
                 instruction = INSTRUCTION_NOT_SET
-                return pool.getStruct(arguments, bytecode, start, constantPool)
-            }
-            MacroBytecode.OP_REF_FLEXSYM_STRUCT -> {
-                val length = (instruction and MacroBytecode.DATA_MASK)
-                instruction = INSTRUCTION_NOT_SET
-                val start = bytecode[i++]
-                return arguments.getStruct(start, length, flexsymMode = true)
+                return pool.getStruct(arguments, bytecode, start, constantPool, symbolTable, macroTable)
             }
             MacroBytecode.OP_REF_SID_STRUCT -> {
                 val length = (instruction and MacroBytecode.DATA_MASK)
                 instruction = INSTRUCTION_NOT_SET
                 val start = bytecode[i++]
-                return arguments.getStruct(start, length, flexsymMode = false)
+                return pool.getStruct(start, length, symbolTable, macroTable)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
     protected fun _fieldName(): String? {
+        val instruction = instruction
         when (instruction.instructionToOp()) {
+            MacroBytecode.OP_FIELD_NAME_SID -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                val sid = instruction and MacroBytecode.DATA_MASK
+                return symbolTable[sid]
+            }
             MacroBytecode.OP_CP_FIELD_NAME -> {
                 val constantPoolIndex = instruction and MacroBytecode.DATA_MASK
-                instruction = INSTRUCTION_NOT_SET
+                this.instruction = INSTRUCTION_NOT_SET
                 val fieldName = constantPool[constantPoolIndex] as String?
                 return fieldName
+            }
+            MacroBytecode.OP_FIELD_NAME_SYSTEM_SID -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                val sid = instruction and MacroBytecode.DATA_MASK
+                return SystemSymbols_1_1[sid]?.text
+            }
+            MacroBytecode.OP_REF_FIELD_NAME_TEXT -> {
+                val length = instruction and MacroBytecode.DATA_MASK
+                val position = bytecode[i++]
+                this.instruction = INSTRUCTION_NOT_SET
+                return readTextRef(position, length)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
     }
 
     protected fun _fieldNameSid(): Int {
+        val instruction = instruction
         when (instruction.instructionToOp()) {
+            MacroBytecode.OP_FIELD_NAME_SID -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                return instruction and MacroBytecode.DATA_MASK
+            }
+            MacroBytecode.OP_FIELD_NAME_SYSTEM_SID,
+            MacroBytecode.OP_REF_FIELD_NAME_TEXT,
             MacroBytecode.OP_CP_FIELD_NAME -> return -1
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
@@ -631,4 +760,11 @@ open class TemplateReaderImpl internal constructor(
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")
     override fun seekTo(position: Int) = throw UnsupportedOperationException("This method only applies to readers that support IVMs.")
     override fun position(): Int  = throw UnsupportedOperationException("This method only applies to readers that support IVMs.")
+
+    private fun readTextRef(position: Int, length: Int): String {
+        val scratchBuffer = pool.scratchBuffer
+        scratchBuffer.limit(position + length)
+        scratchBuffer.position(position)
+        return StandardCharsets.UTF_8.decode(scratchBuffer).toString()
+    }
 }

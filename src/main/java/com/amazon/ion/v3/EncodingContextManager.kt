@@ -86,8 +86,17 @@ internal class EncodingContextManager(
     fun addOrSetSymbols(argReader: ValueReader, append: Boolean) {
         val newSymbols = mutableListOf<String?>()
         // IonReaderShim will take care of closing the expression group instance.
-        ionReaderShim.init(argReader)
-        moduleReader.readSymbolsList(newSymbols)
+        // ionReaderShim.init(argReader)
+//        moduleReader.readSymbolsList(newSymbols)
+
+        while (true) {
+            when (val valueType = argReader.nextToken()) {
+                TokenTypeConst.SYMBOL -> newSymbols.add(argReader.symbolValue())
+                TokenTypeConst.STRING -> newSymbols.add(argReader.stringValue())
+                TokenTypeConst.END -> break
+                else -> throw IonException("Symbols list may only contain non-null, un-annotated text values; found $valueType")
+            }
+        }
 
 
         val newSymbolTableSize = newSymbols.size + if (append) defaultModule.symbols.size else 0

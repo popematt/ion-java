@@ -21,8 +21,7 @@ import java.util.Date
  */
 class StreamWrappingIonReader: IonReader {
 
-    private lateinit var templateReaderPool: TemplateResourcePool
-    private lateinit var reader: ValueReader
+    lateinit var reader: ValueReader
 
     private var type: IonType? = null
     private var fieldName: String? = null
@@ -31,14 +30,6 @@ class StreamWrappingIonReader: IonReader {
     private val annotationState = Annotations()
 
     private val readerManager = ReaderManager()
-
-
-    fun init(reader: ValueReader, templateReaderPool: TemplateResourcePool) {
-        readerManager.pushReader(reader)
-        this.reader = reader
-        this.templateReaderPool = templateReaderPool
-        reset()
-    }
 
     fun init(reader: ValueReader) {
         readerManager.pushReader(reader)
@@ -117,7 +108,7 @@ class StreamWrappingIonReader: IonReader {
             }
             TokenTypeConst.MACRO_INVOCATION -> {
                 val macro = reader.macroInvocation()
-                val eexp = macro.evaluate(templateReaderPool)
+                val eexp = macro.evaluate()
                 readerManager.pushReader(eexp)
                 reader = eexp
                 type = null

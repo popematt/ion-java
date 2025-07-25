@@ -4,6 +4,7 @@ package com.amazon.ion.v3.impl_1_1
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
+import com.amazon.ion.impl.bin.IntList
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.ExpressionBuilderDsl.Companion.templateBody
@@ -34,20 +35,39 @@ data class MacroV2 internal constructor(
         (numPresenceBitsRequired / 8) + 1
     }
 
-    val bytecode: IntArray
-    val constants: Array<Any?>
-
-    init {
+    val bytecode: IntArray by lazy {
         val constants = mutableListOf<Any?>()
-        val bytecode = mutableListOf<Int>()
+        val bytecode = IntList()
+        if (body != null) {
+            templateExpressionToBytecode(body, null, bytecode, constants)
+            bytecode.add(MacroBytecode.EOF.opToInstruction())
+        }
+        bytecode.toArray()
+    }
+    val constants: Array<Any?> by lazy {
+
+        val constants = mutableListOf<Any?>()
+        val bytecode = IntList()
 
         if (body != null) {
             templateExpressionToBytecode(body, null, bytecode, constants)
             bytecode.add(MacroBytecode.EOF.opToInstruction())
         }
 
-        this.constants = constants.toTypedArray()
-        this.bytecode = bytecode.toIntArray()
+        constants.toTypedArray()
+    }
+
+    init {
+//        val constants = mutableListOf<Any?>()
+//        val bytecode = IntList()
+//
+//        if (body != null) {
+//            templateExpressionToBytecode(body, null, bytecode, constants)
+//            bytecode.add(MacroBytecode.EOF.opToInstruction())
+//        }
+//
+//        this.constants = constants.toTypedArray()
+//        this.bytecode = bytecode.toArray()
     }
 
     companion object {
