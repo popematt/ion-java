@@ -4,6 +4,8 @@ import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.IntList
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.AnnotationIterator
+import com.amazon.ion.v3.design.*
 import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.OPERATION_SHIFT_AMOUNT
@@ -16,6 +18,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 open class TemplateReaderImpl internal constructor(
+    @JvmField
     val pool: ResourcePool,
     // Available modules? No. That's already resolved in the compiler.
     // Macro table? Yes. That's already resolved in the compiler, but we might encounter
@@ -27,28 +30,27 @@ open class TemplateReaderImpl internal constructor(
 
     @JvmField
     var bytecode: IntArray = IntArray(0)
-     @JvmField
+
+    @JvmField
     var i = 0
-//        set(value) {
-//            if (value == 19) {
-//                val e = Exception()
-//                e.fillInStackTrace()
-//                val x = e.stackTraceToString().lines()
-//                println(x)
-//            }
-//            field = value
-//        }
+
     @JvmField
     var constantPool: Array<Any?> = arrayOf()
 
     private var argStackSize: Byte = 0
     private var argumentValueIndicesStack = IntArray(INITIAL_STACK_SIZE)
 
-    // TODO: See if we can get rid of these stacks.
-    private var stackHeight: Byte = 0
-    private var bytecodeStack: Array<IntArray?> = arrayOfNulls(INITIAL_STACK_SIZE)
-    private var iStack = IntArray(INITIAL_STACK_SIZE) { -1 }
-    private var constantPoolStack: Array<Array<Any?>?> = arrayOfNulls(INITIAL_STACK_SIZE)
+//    // TODO: See if we can get rid of these stacks.
+//    private var stackHeight: Byte = 0
+//    private var bytecodeStack: Array<IntArray?> = arrayOfNulls(INITIAL_STACK_SIZE)
+//    private var iStack = IntArray(INITIAL_STACK_SIZE) { -1 }
+//    private var constantPoolStack: Array<Array<Any?>?> = arrayOfNulls(INITIAL_STACK_SIZE)
+
+//    private var i0 = -1
+//    private var bytecode0: IntArray? = null
+//    private var constantPool0: Array<Any?>? = null
+
+    private var evaluationStack: EvaluationStackFrame? = null
 
     @JvmField
     var arguments: ArgumentBytecode = ArgumentBytecode.NO_ARGS
@@ -71,6 +73,18 @@ open class TemplateReaderImpl internal constructor(
         private const val INITIAL_STACK_SIZE = 32
     }
 
+    private open class EvaluationStackFrame {
+        @JvmField var i: Int = -1
+        @JvmField var bytecode: IntArray = EMPTY_ARRAY
+        @JvmField var constantPool: Array<Any?> = emptyArray()
+        @JvmField var next: EvaluationStackFrame? = null
+
+        companion object {
+            @JvmStatic
+            private val EMPTY_ARRAY = IntArray(0)
+        }
+    }
+
     fun init(
         source: ByteBuffer,
         bytecode: IntArray,
@@ -83,6 +97,11 @@ open class TemplateReaderImpl internal constructor(
         this.arguments = arguments
         instruction = INSTRUCTION_NOT_SET
         i = 0
+        evaluationStack = null
+
+//        i0 = -1
+//        bytecode0 = null
+//        constantPool0 = null
 
 //        println("Starting at $i")
 //        MacroBytecode.debugString(bytecode)
@@ -98,6 +117,7 @@ open class TemplateReaderImpl internal constructor(
     internal fun rewind() {
         instruction = INSTRUCTION_NOT_SET
         i = 0
+        evaluationStack = null
     }
 
     override fun nextToken(): Int {
@@ -113,93 +133,113 @@ open class TemplateReaderImpl internal constructor(
 //            println(" ${MacroBytecode(instruction)}")
             val op = instruction ushr 24
             when (op) {
-                MacroBytecode.OP_START_ARGUMENT_VALUE -> {
-                    // Put args positions on stack for template macro invocations to use in evaluation
-                    argumentValueIndicesStack[(argStackSize++).toInt()] = i - 1
-                    i += instruction and MacroBytecode.DATA_MASK
-                    instruction = INSTRUCTION_NOT_SET
-                    continue
-                }
-
-                MacroBytecode.OP_PARAMETER -> {
-//                    println("Stepping in to parameter value: ${MacroBytecode(instruction)}")
-                    if (stackHeight.toInt() == iStack.size) {
-                        TODO("Grow the stacks")
-                    }
-                    val s = (stackHeight++).toInt()
-                    bytecodeStack[s] = bytecode
-                    iStack[s] = i
-                    constantPoolStack[s] = constantPool
-                    bytecode = arguments.getArgument(instruction and MacroBytecode.DATA_MASK)
-                    i = 0
-                    constantPool = arguments.constantPool()
-                    instruction = INSTRUCTION_NOT_SET
-                }
-
+                MacroBytecode.OP_START_ARGUMENT_VALUE -> i = collectAllArgs(instruction, i)
+                MacroBytecode.OP_PARAMETER -> i = switchToReadingArguments(instruction, i)
                 MacroBytecode.OP_END_ARGUMENT_VALUE,
                 MacroBytecode.OP_RETURN -> {
-                    if (stackHeight.toInt() == 0) {
+                    if (evaluationStack == null) {
                         instruction = MacroBytecode.EOF.opToInstruction()
+                        // TODO: See if we can remove this by putting a `values` invocation around all arguments in the argument iterator.
+                        break
                     } else {
-//                        println("Stepping out of parameter value: ${MacroBytecode(instruction)}")
-                        val s = (--stackHeight).toInt()
-                        bytecode = bytecodeStack[s]!!
-                        constantPool = constantPoolStack[s]!!
-                        i = iStack[s]
-                        instruction = INSTRUCTION_NOT_SET
+                        i = switchBackToReadingBody()
                     }
                 }
 
-                MacroBytecode.OP_INVOKE_SYS_MACRO -> when (instruction and 0xFF) {
-                    SystemMacro.DEFAULT_ADDRESS -> {
-                        val secondArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
-                        val firstArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
-                        val currentI = i
-                        if (stackHeight.toInt() == iStack.size) {
-                            TODO("Grow the stacks")
-                        }
-                        val s = (stackHeight++).toInt()
-                        bytecodeStack[s] = bytecode
-                        iStack[s] = currentI
-                        constantPoolStack[s] = constantPool
-
-                        if (firstArgStartIndex == secondArgStartIndex - 2) {
-                            // Empty expression group
-                            i = secondArgStartIndex + 1
-                            instruction = INSTRUCTION_NOT_SET
-                            continue
-                        }
-
-                        val firstArg = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool, symbolTable, macroTable)
-
-                        i = if (firstArg.nextToken() != TokenTypeConst.END) {
-                            firstArgStartIndex + 1
-                        } else {
-                            secondArgStartIndex + 1
-                        }
-                        firstArg.close()
-                        instruction = INSTRUCTION_NOT_SET
+                MacroBytecode.OP_INVOKE_SYS_MACRO -> {
+                    when (instruction and 0xFF) {
+                        SystemMacro.DEFAULT_ADDRESS -> i = handleDefaultSystemMacro(i)
+                        // Anything else passes through.
+                        else -> continue
                     }
-                    else -> TODO("System Macro Instruction not supported ${MacroBytecode(instruction)}")
                 }
+                else -> continue
             }
+            instruction = INSTRUCTION_NOT_SET
         }
         this.instruction = instruction
         this.i = i
         return (instruction ushr (OPERATION_SHIFT_AMOUNT + TOKEN_TYPE_SHIFT_AMOUNT))
-            .also {
-//                println("Returning ${TokenTypeConst(it)} (${MacroBytecode(instruction)}), i=${this.i}")
-            if (it == TokenTypeConst.UNSET) {
-                MacroBytecode.debugString(bytecode)
-                (0 until stackHeight).reversed().forEach {
-                    println("---- Stack Entry $it ----")
-                    MacroBytecode.debugString(bytecodeStack[i]!!)
-                }
-
-                throw Exception("TokenTypeConst == UNSET; ${MacroBytecode(instruction)} instruction: ${instruction.toString(16)}; i=$i; \nMaybe the instruction should have been ${MacroBytecode(instruction.opToInstruction())}")
-            }
-        }
     }
+
+    private fun collectAllArgs(instruction: Int, i: Int): Int {
+        var instruction = instruction
+        var i = i
+        val argStack = argumentValueIndicesStack
+        var argStackSize = argStackSize
+        val bytecode = bytecode
+        do {
+            argStack[(argStackSize++).toInt()] = i - 1
+            i += (instruction and MacroBytecode.DATA_MASK)
+            instruction = bytecode[i++]
+        } while (instruction.instructionToOp() == MacroBytecode.OP_START_ARGUMENT_VALUE)
+        this.argStackSize = argStackSize
+        i--
+        return i
+    }
+
+    private fun addArgumentToStack(instruction: Int, i: Int): Int {
+        // Put args positions on stack for template macro invocations to use in evaluation
+        argumentValueIndicesStack[(argStackSize++).toInt()] = i - 1
+        return i + (instruction and MacroBytecode.DATA_MASK)
+    }
+
+    private fun switchToReadingArguments(instruction: Int, i: Int): Int {
+        if (bytecode[i].instructionToOp() == MacroBytecode.OP_END_ARGUMENT_VALUE) {
+            // Don't push anything. Just replace the current top of the stack.
+        } else {
+            pushEvaluationFrame(i)
+        }
+        val arguments = arguments
+        constantPool = arguments.constantPool()
+        val argSlice = arguments.getArgumentSlice(instruction and MacroBytecode.DATA_MASK)
+        bytecode = argSlice.bytecode
+        return argSlice.startIndex
+    }
+
+    /**
+     * `i` is the program counter pointing to the next instruction for the current stack frame.
+     */
+    private fun pushEvaluationFrame(i: Int) {
+        val frame = EvaluationStackFrame()
+        frame.i = i
+        frame.bytecode = bytecode
+        frame.constantPool = constantPool
+        frame.next = evaluationStack
+        evaluationStack = frame
+    }
+
+    private fun switchBackToReadingBody(): Int {
+        val frame = evaluationStack!!
+        evaluationStack = frame.next
+        bytecode = frame.bytecode
+        constantPool = frame.constantPool
+        val i = frame.i
+        return i
+    }
+
+    private fun handleDefaultSystemMacro(i: Int): Int {
+//        println("Evaluating `default` at $i for ${System.identityHashCode(this)}")
+        val secondArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
+        val firstArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
+
+        pushEvaluationFrame(i)
+
+        if (firstArgStartIndex == secondArgStartIndex - 2) {
+            // Empty expression group
+            return secondArgStartIndex + 1
+        }
+
+        val sequence = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool, symbolTable, macroTable)
+        val programCounterPosition = if (sequence.nextToken() != TokenTypeConst.END) {
+            firstArgStartIndex + 1
+        } else {
+            secondArgStartIndex + 1
+        }
+        sequence.close()
+        return programCounterPosition
+    }
+
 
     override fun close() {
         pool.returnSequence(this)
@@ -387,7 +427,7 @@ open class TemplateReaderImpl internal constructor(
                     val argJLength = argJInstruction and MacroBytecode.DATA_MASK
                     val argJ = IntArray(argJLength)
                     System.arraycopy(bytecode, argJIndex + 1, argJ, 0, argJLength)
-                    argJ[argJLength - 1] = MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction()
+                    argJ[argJLength - 1] = MacroBytecode.OP_END_ARGUMENT_VALUE.opToInstruction()
                     args[j] = argJ
                 }
 
@@ -396,6 +436,32 @@ open class TemplateReaderImpl internal constructor(
             MacroBytecode.OP_CP_MACRO_INVOCATION -> {
                 val invocation = (constantPool[cpIndex] as MacroInvocation)
                 return invocation
+            }
+            MacroBytecode.OP_INVOKE_SYS_MACRO -> {
+                val macro = SystemMacro[instruction and 0xFF]
+                val signature = macro.signature
+                val args = ArgumentBytecode(
+                    bytecode,
+                    constantPool,
+                    source,
+                    signature,
+                    indices = argumentValueIndicesStack.copyOfRange(argStackSize.toInt() - signature.size, argStackSize.toInt())
+                )
+                argStackSize = (argStackSize - (signature.size).toByte()).toByte()
+                return MacroInvocation(macro, args, pool, symbolTable, macroTable)
+            }
+            MacroBytecode.OP_INVOKE_MACRO_ID -> {
+                val macro = macroTable[instruction and 0xFF]
+                val signature = macro.signature
+                val args = ArgumentBytecode(
+                    bytecode,
+                    constantPool,
+                    source,
+                    signature,
+                    indices = argumentValueIndicesStack.copyOfRange(argStackSize.toInt() - signature.size, argStackSize.toInt())
+                )
+                argStackSize = (argStackSize - (signature.size).toByte()).toByte()
+                return MacroInvocation(macro, args, pool, symbolTable, macroTable)
             }
             else -> throw IllegalStateException("Not positioned on macro: ${MacroBytecode(instruction)}")
         }
@@ -552,9 +618,7 @@ open class TemplateReaderImpl internal constructor(
             MacroBytecode.OP_CP_SYMBOL_TEXT -> {
                 val constantPoolIndex = (instruction and MacroBytecode.DATA_MASK)
                 this.instruction = INSTRUCTION_NOT_SET
-                if (constantPoolIndex >= constantPool.size) {
-                    println("Hello")
-                }
+
                 return constantPool[constantPoolIndex] as String?
             }
             MacroBytecode.OP_SYMBOL_SID -> {
@@ -620,7 +684,13 @@ open class TemplateReaderImpl internal constructor(
                 this.instruction = INSTRUCTION_NOT_SET
                 val opcode = instruction and MacroBytecode.DATA_MASK
                 val position = bytecode[i++]
-                return TimestampHelper.readTimestampAt(opcode, source, position)
+                return TimestampHelper.readShortTimestampAt(opcode, source, position)
+            }
+            MacroBytecode.OP_REF_TIMESTAMP_LONG -> {
+                this.instruction = INSTRUCTION_NOT_SET
+                val length = instruction and MacroBytecode.DATA_MASK
+                val position = bytecode[i++]
+                return TimestampHelper.readLongTimestampAt(source, position, length)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }

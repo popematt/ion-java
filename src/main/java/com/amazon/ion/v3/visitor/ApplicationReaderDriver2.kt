@@ -310,11 +310,12 @@ class ApplicationReaderDriver @JvmOverloads constructor(
 
                             val macroVisitor = visitor.onEExpression(macro)
                             if (macroVisitor != null) {
-                                for (arg in mi.iterateArguments()) {
-                                    arg.use {
-                                        readAllValues(arg, macroVisitor)
+                                for (a in mi.iterateArguments()) {
+                                    a.use {
+                                        readAllArguments(it, macroVisitor)
                                     }
                                 }
+                                visitor.onEExpressionEnd()
                             } else {
                                 // TODO: Since we're at the top level, we need to read as top-level values in case a directive
                                 //       is produced.
@@ -444,9 +445,10 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     if (macroVisitor != null) {
                         for (a in mi.iterateArguments()) {
                             a.use {
-                                readAllValues(it, macroVisitor)
+                                readAllArguments(it, macroVisitor)
                             }
                         }
+                        visitor.onEExpressionEnd()
                     } else {
                         val invocation = mi.evaluate()
                         pushReaderToStack()
@@ -466,6 +468,113 @@ class ApplicationReaderDriver @JvmOverloads constructor(
             }
         }
     }
+
+    private fun readAllArguments(initialReader: ValueReader, visitor: VisitingReaderCallback) {
+        var annotatedValueVisitor: VisitingReaderCallback? = null
+        var stack = Array<ValueReader?>(0) { null }
+        var stackSize = 0
+        var reader: ValueReader = initialReader
+
+        fun pushReaderToStack() {
+            if (stack.size == stackSize) {
+                val oldStack = stack
+                stack = arrayOfNulls(stackSize + 10)
+                System.arraycopy(oldStack, 0, stack, 0, stackSize)
+            }
+            stack[stackSize] = reader
+            stackSize++
+        }
+
+        while(true) {
+
+            val visitor = annotatedValueVisitor ?: visitor
+            val token = reader.nextToken()
+
+            when (token) {
+                TokenTypeConst.NULL -> visitor.onValue(TokenType.NULL)?.onNull(reader.nullValue()) ?: reader.skip()
+                TokenTypeConst.BOOL -> visitor.onValue(TokenType.BOOL)?.onBoolean(reader.booleanValue()) ?: reader.skip()
+                TokenTypeConst.INT -> visitor.onValue(TokenType.INT)?.onLongInt(reader.longValue()) ?: reader.skip()
+                TokenTypeConst.FLOAT -> visitor.onValue(TokenType.FLOAT)?.onFloat(reader.doubleValue()) ?: reader.skip()
+                TokenTypeConst.DECIMAL -> visitor.onValue(TokenType.DECIMAL)?.onDecimal(reader.decimalValue()) ?: reader.skip()
+                TokenTypeConst.TIMESTAMP -> visitor.onValue(TokenType.TIMESTAMP)?.onTimestamp(reader.timestampValue()) ?: reader.skip()
+                TokenTypeConst.STRING -> {
+                    val v = visitor.onValue(TokenType.STRING)
+                    if (v != null) {
+                        v.onString(reader.stringValue())
+                    } else {
+                        reader.skip()
+                    }
+                }
+                TokenTypeConst.SYMBOL -> visitor.onValue(TokenType.SYMBOL)?.let {
+                    val sid = reader.symbolValueSid()
+                    val text = if (sid < 0) {
+                        reader.symbolValue()
+                    } else {
+                        reader.lookupSid(sid)
+                    }
+                    it.onSymbol(text, sid)
+                } ?: reader.skip()
+                TokenTypeConst.CLOB -> visitor.onValue(TokenType.CLOB)?.onClob(reader.clobValue()) ?: reader.skip()
+                TokenTypeConst.BLOB -> visitor.onValue(TokenType.BLOB)?.onBlob(reader.blobValue()) ?: reader.skip()
+                // IMPLEMENTATION NOTE:
+                //     For containers, we're going to step in, and then immediately step out if we need to skip.
+                //     This might be slightly less efficient, but it works for both delimited and prefixed containers.
+                TokenTypeConst.LIST -> maybeVisitList(reader, visitor)
+                TokenTypeConst.SEXP -> maybeVisitSexp(reader, visitor)
+                TokenTypeConst.STRUCT -> maybeVisitStruct(reader, visitor)
+
+                TokenTypeConst.ANNOTATIONS -> {
+                    val a = reader.annotations()
+                    val v = visitor.onAnnotation(a)
+                    a.close()
+                    if (v != null) {
+                        annotatedValueVisitor = v
+                        continue
+                    } else {
+                        reader.nextToken()
+                        reader.skip()
+                    }
+                }
+
+                TokenTypeConst.ABSENT_ARGUMENT,
+                TokenTypeConst.EXPRESSION_GROUP -> {
+                    visitor.onExpressionGroupStart()
+                    reader.expressionGroup().use { eGroupReader ->
+                        readAllValues(eGroupReader, visitor)
+                    }
+                    visitor.onExpressionGroupEnd()
+                }
+                TokenTypeConst.MACRO_INVOCATION -> {
+                    val mi = reader.macroInvocation()
+                    val macro = mi.macro
+                    val macroVisitor = visitor.onEExpression(macro)
+                    if (macroVisitor != null) {
+                        for (a in mi.iterateArguments()) {
+                            a.use {
+                                readAllArguments(it, macroVisitor)
+                            }
+                        }
+                        visitor.onEExpressionEnd()
+                    } else {
+                        val invocation = mi.evaluate()
+                        pushReaderToStack()
+                        reader = invocation
+                    }
+                }
+
+                TokenTypeConst.END -> {
+                    if (stackSize > 0) {
+                        reader.close()
+                        reader = stack[--stackSize]!!
+                    } else {
+                        break
+                    }
+                }
+                else -> TODO("Unreachable: ${TokenTypeConst(token)}")
+            }
+        }
+    }
+
 
     private fun readAllTheFields(initialReader: ValueReader, initialVisitor: VisitingReaderCallback) {
         var fieldName: String? = null
@@ -592,9 +701,10 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                     if (macroVisitor != null) {
                         for (a in mi.iterateArguments()) {
                             a.use {
-                                readAllValues(it, macroVisitor)
+                                readAllArguments(it, macroVisitor)
                             }
                         }
+                        visitor.onEExpressionEnd()
                     } else {
                         val invocation = mi.evaluate()
                         pushReaderToStack()
@@ -785,9 +895,10 @@ class ApplicationReaderDriver @JvmOverloads constructor(
                 if (macroVisitor != null) {
                     for (a in mi.iterateArguments()) {
                         a.use {
-                            readAllValues(it, macroVisitor)
+                            readAllArguments(it, macroVisitor)
                         }
                     }
+                    visitor.onEExpressionEnd()
                 } else {
                     mi.evaluate().use { readAllValues(it, visitor) }
                 }

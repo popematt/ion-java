@@ -74,12 +74,14 @@ internal class ModuleReader2(
                 localAvailableBindings[module.name] = module
                 return 2
             }
+            "macro_table",
             "macros" -> {
                 if (state >= 3) throw IonException("'macros' clause must appear before 'symbols' clause and may only occur once")
                 // Read macro table
                 populateMacros(localAvailableBindings, moduleMacros)
                 return 3
             }
+            "symbol_table",
             "symbols" -> {
                 if (state >= 4) throw IonException("'symbols' clause may only occur once")
                 populateSymbols(localAvailableBindings, moduleSymbols)

@@ -5,22 +5,37 @@ import com.amazon.ion.impl.bin.IntList
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.impl_1_1.TemplateBodyExpressionModel.*
 import com.amazon.ion.v3.impl_1_1.template.*
+import com.amazon.ion.v3.impl_1_1.template.ArgumentBytecode.Companion.EMPTY_ARG
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
 
 class Environment private constructor(
+    @JvmField
     val parent: Environment?,
+    @JvmField
     val args: Array<TemplateBodyExpressionModel>?,
+    @JvmField
     val signature: Array<Macro.Parameter>,
-    compiledArgs: IntList?,
+    @JvmField
+    var compiledArgs: IntList? = null,
+    @JvmField
+    val argIndices: IntArray = IntArray(signature.size) { -1 }
 ) {
-    var compiledArgs = compiledArgs
-        private set
-
     constructor(args: Array<TemplateBodyExpressionModel>, parent: Environment?, signature: Array<Macro.Parameter>) : this(parent, args, signature, null)
-    constructor(compiledArgs: IntList, signature: Array<Macro.Parameter>) : this(null, null, signature, compiledArgs)
+    constructor(compiledArgs: IntList, signature: Array<Macro.Parameter>) : this(null, null, signature, compiledArgs, argIndices = IntArray(signature.size).also {
+        var start = 0
+        for (ii in 0 until signature.size) {
+            val length = compiledArgs[start++] and MacroBytecode.DATA_MASK
+            if (length > 1) {
+                it[ii] = start - 1
+            } else {
+                it[ii] = -1
+            }
+            start += length
+        }
+    })
 
     init {
 //        if (args != null) {
@@ -53,23 +68,33 @@ class Environment private constructor(
         for (p in 0 until signature.size) {
             // TODO: Make sure we appropriately handle rest-args.
             val arg = args.getOrElse(p) { TemplateBodyExpressionModel.ABSENT_ARG_EXPRESSION }
-            generateBytecodeContainer(MacroBytecode.OP_START_ARGUMENT_VALUE, MacroBytecode.OP_END_ARGUMENT_VALUE, argBytecode) {
-                templateExpressionToBytecode(arg, parent, argBytecode, constants)
+            if (arg == TemplateBodyExpressionModel.ABSENT_ARG_EXPRESSION) {
+                // Don't add it, and do nothing.
+                argIndices[p] = -1
+            } else {
+                argIndices[p] = argBytecode.size()
+                generateBytecodeContainer(
+                    MacroBytecode.OP_START_ARGUMENT_VALUE,
+                    MacroBytecode.OP_END_ARGUMENT_VALUE,
+                    argBytecode
+                ) {
+                    templateExpressionToBytecode(arg, parent, argBytecode, constants)
+                }
             }
         }
 
         return argBytecode
     }
 
+    /**
+     * [Environment.copyArgInto]
+     */
     fun copyArgInto(parameterIndex: Int, destination: IntList, constants: MutableList<Any?>) {
         val compiledArgs = compiledArgs ?: doCompileArgs(constants)
         try {
-            var start = 0
-            var length = compiledArgs[start++] and MacroBytecode.DATA_MASK
-            for (ii in 0 until parameterIndex) {
-                start += length
-                length = compiledArgs[start++] and MacroBytecode.DATA_MASK
-            }
+            var start = argIndices[parameterIndex]
+            if (start == -1) return
+            val length = compiledArgs[start++] and MacroBytecode.DATA_MASK
             // This copies the arg value without the arg wrapper. This might break for structs.
             destination.addSlice(compiledArgs, start, length - 1)
         } catch (e: Exception) {
@@ -226,10 +251,12 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
     }
 }
 
+/* UNUSED
+
 fun templateExpressionToBytecode(expressions: Array<TemplateBodyExpressionModel>, bytecode: IntList, constants: MutableList<Any?>, appendArgument: (Int, IntList) -> Unit) {
     // TODO: Deduplicate the constant pool
     for (expr in expressions) {
-        templateExpressionToBytecode(expr, bytecode, constants, appendArgument)
+//        templateExpressionToBytecode(expr, bytecode, constants, appendArgument)
     }
 }
 
@@ -372,7 +399,7 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, bytecode: In
         else -> throw IllegalStateException("Invalid Expression: $expr")
     }
 }
-
+*/
 
 private fun handleContainerLikeThingWithArgs(startOp: Int, endOp: Int, expr: TemplateBodyExpressionModel, env: Environment?, bytecode: IntList, constants: MutableList<Any?>) {
     generateBytecodeContainer(startOp, endOp, bytecode) {

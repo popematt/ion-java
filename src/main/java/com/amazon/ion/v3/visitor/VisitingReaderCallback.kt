@@ -165,9 +165,12 @@ interface VisitingReaderCallback {
     fun onBlob(value: ByteBuffer)
 
     /**
-     * Only implement this method if you want to bypass the macro evaluation
+     * Only implement these methods if you want to bypass the macro evaluation
      */
     fun onEExpression(macro: MacroV2): VisitingReaderCallback? = null
+    fun onEExpressionEnd(): Unit = TODO()
+    fun onExpressionGroupStart(): Unit = TODO()
+    fun onExpressionGroupEnd(): Unit = TODO()
 
     // TODO: For bypassing macro evaluation?
     //  fun onEExpressionArgument(name: String): VisitingReaderCallback? = null

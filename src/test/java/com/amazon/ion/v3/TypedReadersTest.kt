@@ -2,6 +2,7 @@ package com.amazon.ion.v3
 
 import com.amazon.ion.*
 import com.amazon.ion.TestUtils.*
+import com.amazon.ion.impl._Private_Utils
 import com.amazon.ion.impl.bin.*
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.ExpressionBuilderDsl
@@ -25,6 +26,7 @@ import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import java.nio.file.Files
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.time.Instant
@@ -4484,6 +4486,397 @@ class TypedReadersTest {
                 ))
             )
         }
+    }
+
+
+    class TranscodingReaderVisitor(val writer: MacroAwareIonWriter): VisitingReaderCallback {
+
+        override fun onNull(value: IonType) = writer.writeNull(value)
+        override fun onBoolean(value: Boolean) = writer.writeBool(value)
+        override fun onLongInt(value: Long) = writer.writeInt(value)
+        override fun onBigInt(value: BigInteger) = writer.writeInt(value)
+        override fun onFloat(value: Double) = writer.writeFloat(value)
+        override fun onDecimal(value: Decimal) = writer.writeDecimal(value)
+        override fun onTimestamp(value: Timestamp) = writer.writeTimestamp(value)
+        override fun onString(value: String) = writer.writeString(value)
+        override fun onSymbol(value: String?, sid: Int) = if (value == null) writer.writeSymbolToken(_Private_Utils.newSymbolToken(0)) else writer.writeSymbol(value)
+
+        override fun onClob(value: ByteBuffer) {
+            TODO("Not yet implemented")
+        }
+
+        override fun onBlob(value: ByteBuffer) {
+            TODO("Not yet implemented")
+        }
+
+        override fun onListStart() = writer.stepIn(IonType.LIST)
+        override fun onSexpStart() = writer.stepIn(IonType.SEXP)
+        override fun onStructStart() = writer.stepIn(IonType.STRUCT)
+        override fun onListEnd() = writer.stepOut()
+        override fun onSexpEnd() = writer.stepOut()
+        override fun onStructEnd() = writer.stepOut()
+
+        override fun onAnnotation(annotations: AnnotationIterator): VisitingReaderCallback? {
+            writer.setTypeAnnotations(*annotations.toStringArray())
+            return this
+        }
+
+        override fun onField(fieldName: String?, fieldSid: Int): VisitingReaderCallback? {
+            writer.setFieldName(fieldName!!)
+            return this
+        }
+
+        override fun onEExpression(macro: MacroV2): VisitingReaderCallback? {
+            writer.startMacro(Converter.convertMacro(macro, mutableMapOf()))
+            return this
+        }
+
+        override fun onEExpressionEnd() = writer.endMacro()
+        override fun onExpressionGroupStart() = writer.startExpressionGroup()
+        override fun onExpressionGroupEnd() = writer.endExpressionGroup()
+
+    }
+
+
+    @Disabled
+    @Test
+    fun `transcode a small log Ion 1 1 with macros`() {
+
+        val sourcePath = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small.11.10n")
+        val destPath = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_small-prefixed.11.10n")
+
+        Files.newOutputStream(destPath).use { fileOutputStream ->
+
+            val rawWriter = IonRawBinaryWriter_1_1(
+                out = fileOutputStream,
+                buffer = WriteBuffer(BlockAllocatorProviders.basicProvider().vendAllocator(32768)) {},
+                lengthPrefixPreallocation = 1
+            )
+
+            FileChannel.open(sourcePath, StandardOpenOption.READ).use { fileChannel ->
+                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+
+                val reader = StreamReaderImpl(mappedByteBuffer)
+                rawTranscode(reader, rawWriter)
+                reader.close()
+            }
+            rawWriter.close()
+        }
+
+    }
+
+    @Disabled
+    @Test
+    fun `transcode a medium one log Ion 1 1 with macros`() {
+
+        val cache = mutableMapOf<MacroV2, Macro>()
+        val m_one = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.One, cache)
+        val m_entry = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.Entry, cache)
+        val m_metric = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.Metric, cache)
+        val m_metric_single = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.MetricSingle, cache)
+        val m_sample = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.Sample, cache)
+        val m_summary = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.Summary, cache)
+        val m_summary1 = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.Summary0, cache)
+        val m_summary0 = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.Summary1, cache)
+        val m_summary_ms = Converter.convertMacro(FlatMacroCompilerTest.LogMacro.SummaryMs, cache)
+
+
+        val sourcePath = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_medium.11.10n")
+        val destPath = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_medium-prefixed-interned.11.10n")
+
+        Files.newOutputStream(destPath).use { fileOutputStream ->
+
+            val writer = IonEncodingVersion.ION_1_1.binaryWriterBuilder()
+                .withLengthPrefixStrategy(LengthPrefixStrategy.ALWAYS_PREFIXED)
+                .withSymbolInliningStrategy(SymbolInliningStrategy.NEVER_INLINE)
+                .build(fileOutputStream) as IonManagedWriter_1_1
+
+            val transcodingVisitor = TranscodingReaderVisitor(writer)
+
+            FileChannel.open(sourcePath, StandardOpenOption.READ).use { fileChannel ->
+                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                val driver = ApplicationReaderDriver(mappedByteBuffer)
+                driver.readAll(transcodingVisitor)
+            }
+
+            writer.close()
+        }
+
+    }
+
+
+    object Converter {
+        @JvmStatic
+        fun convertTemplateBodyModel(
+            expressions: Array<TemplateBodyExpressionModel>,
+            dest: MutableList<Expression.TemplateBodyExpression>,
+            cache: MutableMap<MacroV2, Macro>
+        ) {
+            var annotations = emptyList<SymbolToken>()
+            for (expression in expressions) {
+                when (expression.expressionKind) {
+                    // TODO: This cannot handle $0
+                    TemplateBodyExpressionModel.Kind.FIELD_NAME -> dest.add(
+                        Expression.FieldName(
+                            _Private_Utils.newSymbolToken(
+                                expression.fieldName
+                            )
+                        )
+                    )
+
+                    TemplateBodyExpressionModel.Kind.ANNOTATIONS -> {
+                        annotations = expression.annotations.map { _Private_Utils.newSymbolToken(it) }
+                        continue
+                    }
+
+                    TemplateBodyExpressionModel.Kind.NULL -> dest.add(
+                        Expression.NullValue(
+                            annotations,
+                            expression.valueObject as IonType
+                        )
+                    )
+                    // TODO: This does not handle BigInteger values
+                    TemplateBodyExpressionModel.Kind.INT -> dest.add(
+                        Expression.LongIntValue(
+                            annotations,
+                            expression.primitiveValue
+                        )
+                    )
+
+                    TemplateBodyExpressionModel.Kind.FLOAT -> dest.add(
+                        Expression.FloatValue(
+                            annotations,
+                            Double.fromBits(expression.primitiveValue)
+                        )
+                    )
+
+                    TemplateBodyExpressionModel.Kind.DECIMAL -> dest.add(
+                        Expression.DecimalValue(
+                            annotations,
+                            expression.valueObject as BigDecimal
+                        )
+                    )
+
+                    TemplateBodyExpressionModel.Kind.TIMESTAMP -> dest.add(
+                        Expression.TimestampValue(
+                            annotations,
+                            expression.valueObject as Timestamp
+                        )
+                    )
+
+                    TemplateBodyExpressionModel.Kind.STRING -> dest.add(
+                        Expression.StringValue(
+                            annotations,
+                            expression.valueObject as String
+                        )
+                    )
+
+                    TemplateBodyExpressionModel.Kind.SYMBOL -> dest.add(
+                        Expression.SymbolValue(
+                            annotations,
+                            _Private_Utils.newSymbolToken(expression.valueObject as String)
+                        )
+                    )
+                    // Blob
+                    // Clob
+                    TemplateBodyExpressionModel.Kind.LIST -> {
+                        val startInclusive = dest.size
+                        dest.add(Expression.Placeholder)
+                        convertTemplateBodyModel(expression.childExpressions, dest, cache)
+                        val endExclusive = dest.size
+                        dest[startInclusive] = Expression.ListValue(annotations, startInclusive, endExclusive)
+                    }
+
+                    TemplateBodyExpressionModel.Kind.SEXP -> {
+                        val startInclusive = dest.size
+                        dest.add(Expression.Placeholder)
+                        convertTemplateBodyModel(expression.childExpressions, dest, cache)
+                        val endExclusive = dest.size
+                        dest[startInclusive] = Expression.SExpValue(annotations, startInclusive, endExclusive)
+                    }
+
+                    TemplateBodyExpressionModel.Kind.STRUCT -> {
+                        val startInclusive = dest.size
+                        dest.add(Expression.Placeholder)
+                        convertTemplateBodyModel(expression.childExpressions, dest, cache)
+                        val endExclusive = dest.size
+                        dest[startInclusive] =
+                            Expression.StructValue(annotations, startInclusive, endExclusive, emptyMap())
+                    }
+
+                    TemplateBodyExpressionModel.Kind.EXPRESSION_GROUP -> {
+                        val startInclusive = dest.size
+                        dest.add(Expression.Placeholder)
+                        convertTemplateBodyModel(expression.childExpressions, dest, cache)
+                        val endExclusive = dest.size
+                        dest[startInclusive] = Expression.ExpressionGroup(startInclusive, endExclusive)
+                    }
+
+                    TemplateBodyExpressionModel.Kind.INVOCATION -> {
+                        val startInclusive = dest.size
+                        dest.add(Expression.Placeholder)
+                        convertTemplateBodyModel(expression.childExpressions, dest, cache)
+                        val endExclusive = dest.size
+                        val macroV2 = expression.valueObject as MacroV2
+                        val macro = cache.getOrPut(macroV2) { convertMacro(macroV2, cache) }
+                        dest[startInclusive] = Expression.MacroInvocation(macro, startInclusive, endExclusive)
+                    }
+
+                    TemplateBodyExpressionModel.Kind.VARIABLE -> dest.add(Expression.VariableRef(expression.primitiveValue.toInt()))
+
+                }
+                annotations = emptyList()
+            }
+        }
+
+        @JvmStatic
+        fun convertMacro(macro: MacroV2, cache: MutableMap<MacroV2, Macro>): Macro {
+            return cache.getOrPut(macro) {
+                when (macro.systemName) {
+                    null -> {
+                        TemplateMacro(
+                            macro.signature.toList(),
+                            mutableListOf<Expression.TemplateBodyExpression>().also {
+                                convertTemplateBodyModel(
+                                    macro.body!!,
+                                    it,
+                                    cache
+                                )
+                            },
+                        )
+                    }
+
+                    else -> {
+                        com.amazon.ion.impl.macro.SystemMacro[macro.systemName!!.text]!!
+                    }
+                }
+            }
+        }
+    }
+
+    /** Doesn't quite work */
+    fun rawTranscode(reader: ValueReader, writer: IonRawBinaryWriter_1_1) {
+    /*
+        val encodingContextManager = EncodingContextManager(StreamWrappingIonReader())
+        val cache = mutableMapOf<MacroV2, Macro>()
+        var hasPendingFieldName = false
+        while (true) when (val t = reader.nextToken().also { if (reader is StructReader) println(TokenTypeConst(it)) }) {
+            TokenTypeConst.END -> {
+                if (hasPendingFieldName) {
+                    writer.stepInEExp(com.amazon.ion.impl.macro.SystemMacro.None)
+                    writer.stepOut()
+                }
+                return
+            }
+            TokenTypeConst.NULL -> writer.writeNull(reader.nullValue())
+            TokenTypeConst.INT -> writer.writeInt(reader.longValue())
+            TokenTypeConst.FLOAT -> writer.writeFloat(reader.doubleValue())
+            TokenTypeConst.DECIMAL -> writer.writeDecimal(reader.decimalValue())
+            TokenTypeConst.TIMESTAMP -> writer.writeTimestamp(reader.timestampValue())
+            TokenTypeConst.STRING -> writer.writeString(reader.stringValue())
+            TokenTypeConst.SYMBOL -> {
+                val sid = reader.symbolValueSid()
+                if (sid < 0) {
+                    writer.writeSymbol(reader.symbolValue()!!)
+                } else {
+                    writer.writeSymbol(sid)
+                }
+            }
+            // Blob, clob
+            TokenTypeConst.LIST -> {
+                writer.stepInList(usingLengthPrefix = true)
+                reader.listValue().use {
+                    rawTranscode(it, writer)
+                }
+                writer.stepOut()
+            }
+            TokenTypeConst.SEXP -> {
+                writer.stepInSExp(usingLengthPrefix = true)
+                reader.sexpValue().use {
+                    rawTranscode(it, writer)
+                }
+                writer.stepOut()
+            }
+            TokenTypeConst.STRUCT -> {
+                writer.stepInStruct(usingLengthPrefix = true)
+                println("Stepping in Struct")
+                reader.structValue().use {
+                    rawTranscode(it, writer)
+                }
+                println("Stepping out Struct")
+                writer.stepOut()
+            }
+            TokenTypeConst.EXPRESSION_GROUP -> {
+                writer.stepInExpressionGroup(usingLengthPrefix = true)
+                reader.expressionGroup().use {
+                    rawTranscode(it, writer)
+                }
+                writer.stepOut()
+            }
+            TokenTypeConst.ANNOTATIONS -> {
+                writer.writeAnnotations(reader.annotations().toStringArray() as Array<CharSequence>)
+            }
+            TokenTypeConst.FIELD_NAME -> {
+                reader as StructReader
+                hasPendingFieldName = true
+                val sid = reader.fieldNameSid()
+                if (sid < 0) {
+                    writer.writeFieldName(reader.fieldName()!!)
+                } else {
+                    writer.writeFieldName(sid)
+                }
+            }
+            TokenTypeConst.MACRO_INVOCATION -> {
+                val mi = reader.macroInvocation()
+                val ref = mi.macroRef
+                if (ref.isSystemMacro()) {
+                    writer.stepInEExp(com.amazon.ion.impl.macro.SystemMacro[ref.id])
+                } else {
+                    val macro = Converter.convertMacro(mi.macro, cache)
+                    writer.stepInEExp(ref.id, usingLengthPrefix = false, macro = macro)
+                }
+                for (a in mi.iterateArguments()) {
+                    // Doesn't properly flatten because
+                    writer.stepInExpressionGroup(true)
+                    rawTranscode(a, writer)
+                    writer.stepOut()
+                }
+                writer.stepOut()
+
+                if (reader is StreamReaderImpl) when (mi.macro.systemAddress) {
+                    SystemMacro.ADD_SYMBOLS_ADDRESS -> {
+                        val argIterator = mi.iterateArguments()
+                        val symbolsList = argIterator.next()
+                        encodingContextManager.addOrSetSymbols(symbolsList, append = true)
+                        encodingContextManager.updateFlattenedTables(reader)
+                    }
+                    SystemMacro.SET_SYMBOLS_ADDRESS -> {
+                        val argIterator = mi.iterateArguments()
+                        val symbolsList = argIterator.next()
+                        encodingContextManager.addOrSetSymbols(symbolsList, append = false)
+                        encodingContextManager.updateFlattenedTables(reader)
+                    }
+                    SystemMacro.ADD_MACROS_ADDRESS -> {
+                        val argIterator = mi.iterateArguments()
+                        val macroList = argIterator.next()
+                        encodingContextManager.addOrSetMacros(macroList, append = true)
+                        encodingContextManager.updateFlattenedTables(reader)
+                    }
+                    SystemMacro.SET_MACROS_ADDRESS -> {
+                        val argIterator = mi.iterateArguments()
+                        val macroList = argIterator.next()
+                        encodingContextManager.addOrSetMacros(macroList, append = false)
+                        encodingContextManager.updateFlattenedTables(reader)
+                    }
+                    SystemMacro.USE_ADDRESS -> TODO("Use")
+                }
+
+
+            }
+            TokenTypeConst.IVM -> writer.writeIVM()
+            else -> TODO(TokenTypeConst(t))
+        }
+    */
     }
 
     fun transfer(reader: IonReader, writer: IonWriter, max: Int = -1) {

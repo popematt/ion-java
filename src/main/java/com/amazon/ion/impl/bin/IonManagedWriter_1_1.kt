@@ -330,7 +330,7 @@ internal class IonManagedWriter_1_1(
 
     /** Helper function for writing encoding directives */
     private inline fun writeSystemSexp(content: PrivateIonRawWriter_1_1.() -> Unit) {
-        systemData.stepInSExp(usingLengthPrefix = false)
+        systemData.stepInSExp(usingLengthPrefix = true)
         systemData.content()
         systemData.stepOut()
     }
@@ -397,7 +397,7 @@ internal class IonManagedWriter_1_1(
 
         // Add new symbols
         writeSystemMacro(macro) {
-            stepInExpressionGroup(usingLengthPrefix = false)
+            stepInExpressionGroup(usingLengthPrefix = true)
             if (newSymbols.size <= MAX_SYMBOLS_IN_SINGLE_LINE_SYMBOL_TABLE) forceNoNewlines(true)
             newSymbols.forEach { (text, _) -> writeString(text) }
             stepOut()
@@ -428,7 +428,7 @@ internal class IonManagedWriter_1_1(
 
             // Add new symbols
             if (hasSymbolsToAdd) {
-                stepInList(usingLengthPrefix = false)
+                stepInList(usingLengthPrefix = true)
                 if (newSymbols.size <= MAX_SYMBOLS_IN_SINGLE_LINE_SYMBOL_TABLE) forceNoNewlines(true)
                 newSymbols.forEach { (text, _) -> writeString(text) }
                 stepOut()
@@ -453,7 +453,7 @@ internal class IonManagedWriter_1_1(
 
         writeSystemMacro(macro) {
             forceNoNewlines(false)
-            stepInExpressionGroup(usingLengthPrefix = false)
+            stepInExpressionGroup(usingLengthPrefix = true)
             newMacros.forEach { (macro, address) ->
                 val name = macroNames[address]
                 when (macro) {
@@ -597,17 +597,17 @@ internal class IonManagedWriter_1_1(
                             IonType.BLOB -> writeBlob((expression as Expression.BlobValue).value)
                             IonType.LIST -> {
                                 expression as Expression.HasStartAndEnd
-                                stepInList(usingLengthPrefix = false)
+                                stepInList(usingLengthPrefix = true)
                                 numberOfTimesToStepOut[expression.endExclusive]++
                             }
                             IonType.SEXP -> {
                                 expression as Expression.HasStartAndEnd
-                                stepInSExp(usingLengthPrefix = false)
+                                stepInSExp(usingLengthPrefix = true)
                                 numberOfTimesToStepOut[expression.endExclusive]++
                             }
                             IonType.STRUCT -> {
                                 expression as Expression.HasStartAndEnd
-                                stepInStruct(usingLengthPrefix = false)
+                                stepInStruct(usingLengthPrefix = true)
                                 numberOfTimesToStepOut[expression.endExclusive]++
                             }
                             IonType.DATAGRAM -> error("Unreachable")
@@ -1011,7 +1011,7 @@ internal class IonManagedWriter_1_1(
         if (useNames && name != null) {
             userData.stepInEExp(name)
         } else {
-            val includeLengthPrefix = options.writeLengthPrefix(ContainerType.EEXP, depth + 1)
+            val includeLengthPrefix = false // options.writeLengthPrefix(ContainerType.EEXP, depth + 1)
             userData.stepInEExp(address, includeLengthPrefix, definition)
         }
     }

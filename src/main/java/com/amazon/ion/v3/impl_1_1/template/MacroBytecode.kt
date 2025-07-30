@@ -45,11 +45,11 @@ object MacroBytecode {
     }
 
     @JvmStatic
-    fun debugString(bytecode: IntArray, write: (String) -> Unit = ::print, useIndent: Boolean = true, useNumbers: Boolean = true) {
+    fun debugString(bytecode: IntArray, write: (String) -> Unit = ::print, useIndent: Boolean = true, useNumbers: Boolean = true, constantPool: Array<Any?>? = null) {
         var indent = ""
         var i = 0
         while (i < bytecode.size) {
-            write(line(i))
+            if (useNumbers) write(line(i))
             val instruction = bytecode[i++]
             val operationInt = instruction ushr OPERATION_SHIFT_AMOUNT
             if (operationInt == 0) {
@@ -71,8 +71,20 @@ object MacroBytecode {
             write(" ")
             write(operation.dataFormatter(instruction and DATA_MASK))
 
+            if (constantPool != null && operation.dataFormatter == DataFormatters.CP_INDEX) {
+                val cpIndex = instruction and DATA_MASK
+                if (cpIndex >= constantPool.size) {
+                    write("        ERROR: missing constant $cpIndex")
+                } else {
+                    write("        <${constantPool[cpIndex].toString().take(20)}>")
+                }
+            }
+
+
             repeat(operation.numberOfOperands) {
-                write("\n${line(i)}$indent  ")
+                write("\n")
+                if (useNumbers) write(line(i))
+                write("$indent  ")
                 write(operation.operandFormatter(bytecode[i++]))
             }
 
@@ -163,6 +175,8 @@ object MacroBytecode {
         MAC_CNST(OP_INVOKE_MACRO, CP_INDEX),
         // TODO? An instruction denoting that an inline macro invocation is about to start.
         MAC_START(999, LENGTH),
+        // TODO? An instruction referencing the current macro table?
+        MAC_INVOKE(OP_INVOKE_MACRO_ID, AS_INT),
         MAC_SYS(OP_INVOKE_SYS_MACRO, AS_HEX_BYTE),
         CP_MACRO_INVOCATION(OP_CP_MACRO_INVOCATION, CP_INDEX),
         EOF(MacroBytecode.EOF, NO_DATA),
@@ -349,6 +363,8 @@ object MacroBytecode {
     /** DATA is constant pool index to MacroInvocation instance */
     const val OP_CP_MACRO_INVOCATION = (TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
+    const val OP_INVOKE_MACRO_ID = (TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
+
     // TODO: See if we can coalesce the different "End" and "EOF" instructions.
     const val EOF = TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT
 
@@ -360,7 +376,6 @@ object MacroBytecode {
     // This is a "soft" end. It doesn't signal the end of a container or macro, but rather that the template reader
     // should switch back to the original source.
     const val OP_END_ARGUMENT_VALUE = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
-    const val END_OF_ARGUMENT_SUBSTITUTION = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
     const val OP_RETURN = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
 

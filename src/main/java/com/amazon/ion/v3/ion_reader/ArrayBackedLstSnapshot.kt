@@ -58,8 +58,8 @@ internal class ArrayBackedLstSnapshot(private val symbolText: Array<String?>): _
         TODO("Not yet implemented")
     }
 
-    override fun findKnownSymbol(id: Int): String {
-        TODO("Not yet implemented")
+    override fun findKnownSymbol(id: Int): String? {
+        return symbolText[id]
     }
 
     override fun iterateDeclaredSymbolNames(): MutableIterator<String> {

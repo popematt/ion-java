@@ -15,6 +15,7 @@ import com.amazon.ion.impl.macro.ParameterFactory.zeroOrOneTagged
 import com.amazon.ion.system.IonReaderBuilder
 import com.amazon.ion.system.IonSystemBuilder
 import com.amazon.ion.v3.impl_1_1.ExpressionBuilderDsl.Companion.templateBody
+import com.amazon.ion.v3.impl_1_1.template.*
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.charset.StandardCharsets
@@ -248,11 +249,13 @@ class FlatMacroCompilerTest {
             "entry" -> LogMacro.Entry
 
             "shmalues" -> MacroV2(
-                listOf(exactlyOneTagged("x"), exactlyOneTagged("y")),
+                listOf(exactlyOneTagged("a"), exactlyOneTagged("b"), exactlyOneTagged(("c")), exactlyOneTagged(("d"))),
                 templateBody {
                     list {
-                        variable("x", 0)
-                        variable("y", 1)
+                        variable("b", 1)
+                        variable("a", 0)
+                        variable("d", 3)
+                        variable("c", 2)
                     }
                 }
             )
@@ -461,7 +464,7 @@ class FlatMacroCompilerTest {
         ),
 
 
-        "(macro nested_invocation (z) [(.shmalues (%z) 1)] )" shouldCompileTo MacroV2(
+        "(macro nested_invocation (x y z) [(.shmalues 1 2 (%z) 3)] )" shouldCompileTo MacroV2(
             signature = listOf(exactlyOneTagged("z")),
             templateBody {
                 list {
@@ -513,8 +516,8 @@ class FlatMacroCompilerTest {
         LogMacro.SAMPLE_DEF shouldCompileTo LogMacro.Sample,
         LogMacro.ONE_DEF shouldCompileTo LogMacro.One,
         LogMacro.ENTRY_DEF shouldCompileTo LogMacro.Entry,
-        LogMacro.METRIC_SINGLE_DEF shouldCompileTo LogMacro.MetricSingle,
-        LogMacro.METRIC_DEF shouldCompileTo LogMacro.Metric,
+        LogMacro.METRIC_SINGLE_DEF shouldCompileTo LogMacro.FlattenedMetricSingle,
+        LogMacro.METRIC_DEF shouldCompileTo LogMacro.FlattenedMetric,
         LogMacro.SUMMARY_0_DEF shouldCompileTo LogMacro.Summary0,
         LogMacro.SUMMARY_1_DEF shouldCompileTo LogMacro.Summary1,
         LogMacro.SUMMARY_MS_DEF shouldCompileTo LogMacro.SummaryMs,
@@ -558,6 +561,8 @@ class FlatMacroCompilerTest {
         reader.next()
         val macroDef = compiler.compileMacro()
         val expectedDef = MacroV2(signature, body)
+
+        MacroBytecode.debugString(macroDef.bytecode)
 
         val bodyString = macroDef.body?.mapIndexed { i, value -> "$i. $value"}?.joinToString("\n", prefix = "[\n", postfix = "\n]")
         assertEquals(

@@ -247,7 +247,6 @@ internal class FlatMacroCompiler(
 
         // Read literally as a sexp.
         if (readLiterally) {
-            println("Reading literal sexp.")
             forEachRemaining {
                 compileTemplateBodyExpression(sexpContent, true, ParentType.SExp)
             }
@@ -505,11 +504,11 @@ internal class FlatMacroCompiler(
                 MacroRef.byId(moduleName, id)
             }
             else -> {
-                (this as? StreamWrappingIonReader)?.let {
-                    val r = this.reader as TemplateReaderImpl
-                    println(r.i)
-                    MacroBytecode.debugString(r.bytecode)
-                }
+//                (this as? StreamWrappingIonReader)?.let {
+//                    val r = this.reader as TemplateReaderImpl
+//                    println(r.i)
+//                    MacroBytecode.debugString(r.bytecode)
+//                }
                 throw IonException("macro invocation must start with an id (int) or identifier (symbol); found ${type ?: "nothing"}\"")
             }
         }

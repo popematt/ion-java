@@ -1,12 +1,6 @@
 package com.amazon.ion.v3.impl_1_1.template
 
-import com.amazon.ion.impl.bin.*
 import com.amazon.ion.impl.macro.*
-import com.amazon.ion.v3.*
-import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.binary.*
-import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.OPERATION_SHIFT_AMOUNT
-import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.Operations
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.nio.ByteBuffer
 
@@ -18,6 +12,8 @@ import java.nio.ByteBuffer
  *   3. Have a "IonTextTemplateReaderImpl" and "IonTextTemplateReaderImpl" that extend "TemplateReaderBase".
  *
  * For now, I think that 3 is probably the simplest option.
+ *
+ * Can we consolidate this class with [Environment][com.amazon.ion.v3.impl_1_1.Environment]?
  */
 class ArgumentBytecode(
     private val bytecode: IntArray,
@@ -26,12 +22,15 @@ class ArgumentBytecode(
     val source: ByteBuffer,
     @JvmField
     var signature: Array<Macro.Parameter>,
+    firstArgIndex: Int = 0,
+    /** These indices should point to the ArgStart instruction */
+    indices: IntArray? = null,
 ) {
 
     companion object {
 
         @JvmStatic
-        val EMPTY_ARG = intArrayOf(MacroBytecode.END_OF_ARGUMENT_SUBSTITUTION.opToInstruction())
+        val EMPTY_ARG = intArrayOf(MacroBytecode.OP_END_ARGUMENT_VALUE.opToInstruction())
 
         @JvmStatic
         val NO_ARGS = ArgumentBytecode(
@@ -39,56 +38,61 @@ class ArgumentBytecode(
             constantPool = arrayOfNulls(0),
             source = ByteBuffer.allocate(0),
             signature = emptyArray(),
+            indices = IntArray(0)
         )
     }
 
-    // TODO: Cache start and end indices?
+    private val indices: IntArray = indices ?: let {
 
-    init {
-        var i = 0
-        while (i < bytecode.size) {
-            val instruction = bytecode[i++]
-            val operationInt = instruction ushr OPERATION_SHIFT_AMOUNT
-            if (operationInt == 0) {
-                continue
+
+        val signature = this.signature
+        val signatureSize = signature.size
+        val argIndices = IntArray(signatureSize)
+
+        var start = firstArgIndex
+
+        for (p in 0 until signatureSize) {
+            val length = bytecode[start++] and MacroBytecode.DATA_MASK
+            if (length == 1) {
+                argIndices[p] = -1
+            } else {
+                argIndices[p] = start - 1
             }
-
-            val operation = Operations.entries.singleOrNull() { it.operation == operationInt }
-
-            operation ?: throw IllegalStateException("Unknown operation $operationInt at position ${i-1}.")
-
-
-            if (operation.dataFormatter == MacroBytecode.DataFormatters.CP_INDEX) {
-                val cpIndex = instruction and MacroBytecode.DATA_MASK
-                if (cpIndex >= constantPool.size) {
-                    throw IllegalArgumentException("Missing cp index $cpIndex.")
-                }
-            }
-            i += operation.numberOfOperands
+            start += length
         }
+        argIndices
     }
-
 
     fun constantPool(): Array<Any?> {
         return constantPool
     }
 
-    fun getArgument(parameterIndex: Int): IntArray {
+//    fun getArgument(parameterIndex: Int): IntArray {
+//        // TODO: See if there's something we can do that is more efficient than allocating a copy of part of the array.
+//        var start = indices[parameterIndex]
+//        val length = bytecode[start++] and MacroBytecode.DATA_MASK
+//        if (start == -1) {
+//            return EMPTY_ARG
+//        }
+//        // This copies the arg value with the arg terminator, but not the arg start delimiter.
+//        val destination = bytecode.copyOfRange(start, start + length)
+//        destination[length - 1] = MacroBytecode.OP_RETURN.opToInstruction()
+//        return destination
+//    }
+
+    class ArgSlice(val bytecode: IntArray, val startIndex: Int) {
+        companion object {
+            @JvmStatic
+            val EMPTY = ArgSlice(bytecode = EMPTY_ARG, startIndex = 0)
+        }
+    }
+
+    fun getArgumentSlice(parameterIndex: Int): ArgSlice {
         // TODO: See if there's something we can do that is more efficient than allocating a copy of part of the array.
-        var start = 0
-        var length = bytecode[start++] and MacroBytecode.DATA_MASK
-        for (ii in 0 until parameterIndex) {
-            start += length
-            length = bytecode[start++] and MacroBytecode.DATA_MASK
+        val start = indices[parameterIndex]
+        if (start == -1) {
+            return ArgSlice.EMPTY
         }
-        if (length == 1) {
-            return EMPTY_ARG
-        }
-        // This copies the arg value with the arg terminator, but not the arg start delimiter.
-        val destination = bytecode.copyOfRange(start, start + length)
-//        println("getArgument($parameterIndex)")
-        destination[length - 1] = MacroBytecode.OP_RETURN.opToInstruction()
-//        MacroBytecode.debugString(destination)
-        return destination
+        return ArgSlice(bytecode, start + 1)
     }
 }

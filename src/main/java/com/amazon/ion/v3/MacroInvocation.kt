@@ -14,7 +14,23 @@ import com.amazon.ion.v3.impl_1_1.template.*
  */
 class MacroInvocation(
     val macro: MacroV2,
-    val arguments: () -> ArgumentBytecode,
-    val evaluate: () -> ValueReader,
-    val iterateArguments: () -> Iterator<ValueReader>
-)
+    private val arguments: ArgumentBytecode,
+    private val pool: ResourcePool,
+    private val symbolTable: Array<String?>,
+    private val macroTable: Array<MacroV2>,
+) {
+    fun evaluate(): ValueReader { return startMacroEvaluation(macro, arguments, pool, symbolTable, macroTable) }
+    fun iterateArguments(): Iterator<ValueReader> = object : Iterator<ValueReader> {
+            private var i = 0
+            private val n = arguments.signature.size
+
+            override fun hasNext(): Boolean = i < n
+
+            override fun next(): ValueReader {
+                val arguments = arguments
+                val argSlice = arguments.getArgumentSlice(i++)
+                // TODO: Make this read a slice of the args rather than needing to perform an array copy.
+                return pool.getSequence(ArgumentBytecode.NO_ARGS, argSlice.bytecode, argSlice.startIndex, arguments.constantPool(), symbolTable, macroTable)
+            }
+        }
+}

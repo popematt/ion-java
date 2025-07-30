@@ -11,6 +11,7 @@ public class IntList {
     private static final int GROWTH_MULTIPLIER = 2;
     private int[] data;
     private int numberOfValues;
+//    private int capacity;
 
     /**
      * Constructs a new IntList with a capacity of {@link IntList#DEFAULT_INITIAL_CAPACITY}.
@@ -26,6 +27,7 @@ public class IntList {
      */
     public IntList(final int initialCapacity) {
         data = new int[initialCapacity];
+//        capacity = initialCapacity;
         numberOfValues = 0;
     }
 
@@ -36,6 +38,7 @@ public class IntList {
     public IntList(final IntList other) {
         this.numberOfValues = other.numberOfValues;
         this.data = new int[other.data.length];
+//        capacity = data.length;
         System.arraycopy(other.data, 0, this.data, 0, numberOfValues);
     }
 
@@ -84,37 +87,39 @@ public class IntList {
      * @param value     The int to add to the end of the list.
      */
     public void add(int value) {
-        if (numberOfValues == data.length) {
-            grow();
-        }
-        data[numberOfValues] = value;
-        numberOfValues += 1;
+        int n = numberOfValues;
+        int newNumberOfValues = n + 1;
+//        if (n == capacity) {
+//            grow();
+//        }
+        int[] data = ensureCapacity(newNumberOfValues);
+        data[n] = value;
+        numberOfValues = newNumberOfValues;
     }
 
     public void addAll(int[] values) {
-        int newNumberOfValues = values.length + this.numberOfValues;
-        if (newNumberOfValues >= data.length) {
-            grow(newNumberOfValues);
-        }
-        System.arraycopy(values, 0, data, numberOfValues, values.length);
+        int valuesLength = values.length;
+        int thisNumberOfValues = numberOfValues;
+        int newNumberOfValues = valuesLength + thisNumberOfValues;
+        int[] data = ensureCapacity(newNumberOfValues);
+        System.arraycopy(values, 0, data, thisNumberOfValues, valuesLength);
         this.numberOfValues = newNumberOfValues;
     }
 
     public void addAll(IntList values) {
-        int newNumberOfValues = values.numberOfValues + this.numberOfValues;
-        if (newNumberOfValues >= data.length) {
-            grow(newNumberOfValues);
-        }
-        System.arraycopy(values.data, 0, this.data, numberOfValues, values.numberOfValues);
+        int thisNumberOfValues = this.numberOfValues;
+        int otherNumberOfValues = values.numberOfValues;
+        int newNumberOfValues =  thisNumberOfValues + otherNumberOfValues;
+        int[] data = ensureCapacity(newNumberOfValues);
+        System.arraycopy(values.data, 0, data, thisNumberOfValues, otherNumberOfValues);
         this.numberOfValues = newNumberOfValues;
     }
 
     public void addSlice(IntList values, int startInclusive, int length) {
-        int newNumberOfValues = this.numberOfValues + length;
-        if (newNumberOfValues >= data.length) {
-            grow(newNumberOfValues);
-        }
-        System.arraycopy(values.data, startInclusive, this.data, numberOfValues, length);
+        int thisNumberOfValues = this.numberOfValues;
+        int newNumberOfValues = thisNumberOfValues + length;
+        int[] data = ensureCapacity(newNumberOfValues);
+        System.arraycopy(values.data, startInclusive, data, thisNumberOfValues, length);
         this.numberOfValues = newNumberOfValues;
     }
 
@@ -126,27 +131,42 @@ public class IntList {
     }
 
     public int[] toArray() {
-        int[] copy = new int[numberOfValues];
-        System.arraycopy(data, 0, copy, 0, numberOfValues);
+        int thisNumberOfValues = this.numberOfValues;
+        int[] copy = new int[thisNumberOfValues];
+        System.arraycopy(data, 0, copy, 0, thisNumberOfValues);
         return copy;
     }
 
-    /**
-     * Reallocates the backing array to accommodate storing more ints.
-     */
-    private void grow() {
-        grow(0);
+    private int[] ensureCapacity(int minCapacity) {
+        int[] data = this.data;
+        int capacity = data.length;
+        if (minCapacity > capacity) {
+            int newCapacity = minCapacity * GROWTH_MULTIPLIER;
+            int[] newData = new int[newCapacity];
+            System.arraycopy(data, 0, newData, 0, capacity);
+            this.data = newData;
+            return newData;
+        }
+        return data;
     }
 
-    /**
-     * Reallocates the backing array to accommodate storing more ints.
-     */
-    private void grow(int minCapacity) {
-        int newCapacity = Math.max(data.length, minCapacity) * GROWTH_MULTIPLIER;
-        int[] newData = new int[newCapacity];
-        System.arraycopy(data, 0, newData, 0, data.length);
-        data = newData;
-    }
+//    /**
+//     * Reallocates the backing array to accommodate storing more ints.
+//     */
+//    private void grow() {
+//        // grow(0);
+//    }
+//
+//    /**
+//     * Reallocates the backing array to accommodate storing more ints.
+//     */
+//    private void grow(int minCapacity) {
+//        int newCapacity = Math.max(capacity, minCapacity) * GROWTH_MULTIPLIER;
+//        int[] newData = new int[newCapacity];
+//        capacity = newCapacity;
+//        System.arraycopy(data, 0, newData, 0, data.length);
+//        data = newData;
+//    }
 
     @Override
     public String toString() {

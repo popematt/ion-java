@@ -124,7 +124,17 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
             TokenTypeConst.CLOB -> IonType.CLOB
             TokenTypeConst.BLOB -> IonType.BLOB
             TokenTypeConst.LIST -> IonType.LIST
-            TokenTypeConst.SEXP -> IonType.SEXP
+            TokenTypeConst.SEXP -> {
+                if (readerManager.containerDepth == 0 && annotationState.annotationsSize != 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion") {
+                    val directive = reader.sexpValue()
+                    encodingContextManager.readDirective(directive)
+                    encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
+                    reset()
+                    null
+                } else {
+                    IonType.SEXP
+                }
+            }
             TokenTypeConst.STRUCT -> {
                 if (readerManager.containerDepth == 0 && annotationState.annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion_symbol_table") {
                     reader.structValue().use {

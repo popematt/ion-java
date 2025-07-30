@@ -100,6 +100,10 @@ public final class _Private_RecyclingStack<T> implements Iterable<T> {
         return popped;
     }
 
+    public void clear() {
+        elements.clear();
+    }
+
     /**
      * @return true if the stack is empty; otherwise, false.
      */

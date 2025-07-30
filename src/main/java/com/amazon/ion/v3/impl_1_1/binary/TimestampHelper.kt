@@ -25,10 +25,8 @@ import java.nio.ByteBuffer
  */
 object TimestampHelper {
 
-    private val TIMESTAMP_LENGTH = intArrayOf(1, 2, 2, 4, 5, 6, 7, 8, 5, 5, 7, 8, 9)
-
     @JvmStatic
-    fun readTimestampAt(opcode: Int, source: ByteBuffer, position: Int): Timestamp {
+    fun readShortTimestampAt(opcode: Int, source: ByteBuffer, position: Int): Timestamp {
         // Often, the data for an application will use a lot of timestamps with similar precisions. For example, logging
         // might use mostly millisecond-precision timestamps with UTC offsets, or a calendar application might use
         // minute precision with an offset for representing calendar events.
@@ -48,11 +46,7 @@ object TimestampHelper {
             0x8A -> TODO()
             0x8B -> TODO()
             0x8C -> TODO()
-            else -> if (opcode == 0xF8) {
-                TODO()
-            } else {
-                throw IonException("Reader not positioned on a timestamp value")
-            }
+            else -> throw IonException("Reader not positioned on a short timestamp value")
         }
     }
 
@@ -83,7 +77,10 @@ object TimestampHelper {
             0x8B -> readTimestamp0x8B(source)
             0x8C -> readTimestamp0x8C(source)
             else -> if (opcode == 0xF8) {
-                readLongTimestamp(source)
+                val length = IntHelper.readFlexUInt(source)
+                val start = source.position()
+                source.position(start + length)
+                readLongTimestampAt(source, start, length)
             } else {
                 throw IonException("Reader not positioned on a timestamp value")
             }
@@ -346,41 +343,39 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readLongTimestamp(source: ByteBuffer): Timestamp {
-        val length = IdMappings.length(0xF8, source)
+    fun readLongTimestampAt(source: ByteBuffer, start: Int, length: Int): Timestamp {
         return when (length) {
             0, 1 -> throw IonException("Invalid Timestamp length")
-            2 -> readLongTimestampL2(source)
-            3 -> readLongTimestampL3(source)
+            2 -> readLongTimestampL2(source, start)
+            3 -> readLongTimestampL3(source, start)
             4, 5, -> throw IonException("Invalid Timestamp length")
-            6 -> readLongTimestampL6(source)
-            7 -> readLongTimestampL7(source)
-            else -> readLongTimestampL8(length, source)
+            6 -> readLongTimestampL6(source, start)
+            7 -> readLongTimestampL7(source, start)
+            else -> readLongTimestampL8(source, start, length)
         }
     }
 
     @JvmStatic
-    private fun readLongTimestampL2(source: ByteBuffer): Timestamp {
+    private fun readLongTimestampL2(source: ByteBuffer, start: Int): Timestamp {
         TODO()
     }
     @JvmStatic
-    private fun readLongTimestampL3(source: ByteBuffer): Timestamp {
+    private fun readLongTimestampL3(source: ByteBuffer, start: Int): Timestamp {
         TODO()
     }
     @JvmStatic
-    private fun readLongTimestampL6(source: ByteBuffer): Timestamp {
+    private fun readLongTimestampL6(source: ByteBuffer, start: Int): Timestamp {
         TODO()
     }
 
     /** Seconds precision */
     @JvmStatic
-    private fun readLongTimestampL7(source: ByteBuffer): Timestamp {
+    private fun readLongTimestampL7(source: ByteBuffer, start: Int): Timestamp {
         TODO()
     }
 
     @JvmStatic
-    private fun readLongTimestampL8(length: Int, source: ByteBuffer): Timestamp {
-        val start = source.position()
+    private fun readLongTimestampL8(source: ByteBuffer, start: Int, length: Int): Timestamp {
         val data = source.getLong(start) // and 0xFF_FF_FF_FF_FF_FF_FFL
 
         val year = (data.toInt() and L_TIMESTAMP_YEAR_MASK)
@@ -391,11 +386,11 @@ object TimestampHelper {
         val offset = readLongOffset(data)
         val second = ((data and L_TIMESTAMP_SECOND_MASK) ushr L_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
 
-        source.position(start + 7)
-
-        val fractionalSecondScale = IntHelper.readFlexInt(source)
-        val coefficientLength = start + length - source.position()
-        val fractionalSecondCoefficient = IntHelper.readFixedUInt(source, coefficientLength)
+        val lengthOfScale = IntHelper.lengthOfFlexUIntAt(source, start + 7)
+        val fractionalSecondScale = IntHelper.readFlexIntAt(source, start + 7)
+        // TODO: Simplify the arithmetic
+        val coefficientLength = length - 7 - lengthOfScale
+        val fractionalSecondCoefficient = IntHelper.readFixedUIntAt(source, start + 7 + lengthOfScale, coefficientLength)
         val fractionalSecond = BigDecimal.valueOf(fractionalSecondCoefficient.toLong(), fractionalSecondScale)
 
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)

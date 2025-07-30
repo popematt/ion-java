@@ -157,7 +157,7 @@ object SkipHelper {
     @OptIn(ExperimentalStdlibApi::class)
     @JvmStatic
     fun skipMacro(source: ByteBuffer, macroTable: Array<MacroV2>, opcode: Int, nextBytePosition: Int): Int {
-        println("Skip Macro $opcode at ${nextBytePosition - 1}")
+//        println("Skip Macro $opcode at ${nextBytePosition - 1}")
         if (opcode == 0) TODO()
         var i = nextBytePosition
         val macro = when (opcode shr 4) {

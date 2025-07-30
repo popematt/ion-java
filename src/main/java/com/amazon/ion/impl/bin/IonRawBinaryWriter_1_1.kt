@@ -949,33 +949,33 @@ class IonRawBinaryWriter_1_1 internal constructor(
     }
 
     override fun stepInTdlMacroInvocation(macroRef: Int) {
-        stepInSExp(usingLengthPrefix = false)
+        stepInSExp(usingLengthPrefix = true)
         writeSymbol(".")
         writeInt(macroRef.toLong())
     }
 
     override fun stepInTdlMacroInvocation(macroRef: String) {
-        stepInSExp(usingLengthPrefix = false)
+        stepInSExp(usingLengthPrefix = true)
         writeSymbol(".")
         writeSymbol(macroRef)
     }
 
     override fun stepInTdlSystemMacroInvocation(systemSymbol: SystemSymbols_1_1) {
-        stepInSExp(usingLengthPrefix = false)
+        stepInSExp(usingLengthPrefix = true)
         writeSymbol(".")
         writeAnnotations(SystemSymbols_1_1.ION)
         writeSymbol(systemSymbol)
     }
 
     override fun writeTdlVariableExpansion(variableName: String) {
-        stepInSExp(usingLengthPrefix = false)
+        stepInSExp(usingLengthPrefix = true)
         writeSymbol("%")
         writeSymbol(variableName)
         stepOut()
     }
 
     override fun stepInTdlExpressionGroup() {
-        stepInSExp(usingLengthPrefix = false)
+        stepInSExp(usingLengthPrefix = true)
         // TODO: Write as a system symbol
         writeSymbol("..")
     }

@@ -1257,7 +1257,11 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
             String name = getSymbolText();
             if (SystemSymbols_1_1.SYMBOLS.getText().equals(name)) {
                 state = State.IN_SYMBOL_TABLE_SEXP;
+            } else if ("symbol_table".equals(name)) {
+                state = State.IN_SYMBOL_TABLE_SEXP;
             } else if (SystemSymbols_1_1.MACROS.getText().equals(name)) {
+                state = State.IN_MACRO_TABLE_SEXP;
+            } else if ("macro_table".equals(name)) {
                 state = State.IN_MACRO_TABLE_SEXP;
             } else {
                 // TODO: add support for 'module' and 'import' clauses

@@ -13,17 +13,20 @@ import java.nio.ByteBuffer
 
 
 fun writeMacroBodyAsByteCode(macro: MacroV2, eexpArgs: IntList, bytecode: IntList, constantPool: MutableList<Any?>) {
-    fun appendArg(parameterIndex: Int, bc: IntList) {
-        var start = 0
-        var length = eexpArgs[start++] and MacroBytecode.DATA_MASK
-        for (ii in 0 until parameterIndex) {
-            start += length
-            length = eexpArgs[start++] and MacroBytecode.DATA_MASK
-        }
-        // This copies the arg value without the arg wrapper. This might break for structs.
-        bc.addSlice(eexpArgs, start, length - 1)
-    }
-    templateExpressionToBytecode(macro.body!!, bytecode, constantPool, ::appendArg)
+//    fun appendArg(parameterIndex: Int, bc: IntList) {
+//        var start = 0
+//        var length = eexpArgs[start++] and MacroBytecode.DATA_MASK
+//        for (ii in 0 until parameterIndex) {
+//            start += length
+//            length = eexpArgs[start++] and MacroBytecode.DATA_MASK
+//        }
+//        // This copies the arg value without the arg wrapper. This might break for structs.
+//        bc.addSlice(eexpArgs, start, length - 1)
+//    }
+
+    val env = Environment(eexpArgs, macro.signature)
+
+    templateExpressionToBytecode(macro.body!!, env, bytecode, constantPool)
 }
 
 /**
@@ -102,6 +105,7 @@ private fun readTaggedDelimitedExpressionGroupContent(src: ByteBuffer, position:
     var p = position
     var opcode = src.get(p++).toInt() and 0xFF
     while (opcode != Opcode.DELIMITED_CONTAINER_END) {
+//        println("Read opcode ${opcode.toUByte().toHexString()} at position ${p - 1}")
         val consumedBytes = VALUE_TRANSFORMERS[opcode].toBytecode(dest, constantPool, src, p, macTab)
         if (consumedBytes > 10000 || consumedBytes < 0) {
             throw Exception("consumedBytes=$consumedBytes; opcode=${opcode.toHexString()}, position=$position, $p=p")
@@ -342,9 +346,8 @@ private val TX_SYSTEM_SYMBOL = ToBytecodeTransformer { dest,  _, src, pos, macTa
 
 private fun TX_OPCODE_IS_MACRO_ADDR(opcode: Int) = ToBytecodeTransformer { dest,  cp,  src, pos, macTab ->
     val macro = macTab[opcode]
-    val args = IntList()
-    val numBytes = readEExpArgsAsByteCode(src, pos, args, cp,  macro, macTab)
-    writeMacroBodyAsByteCode(macro, args, dest, cp, )
+    val numBytes = readEExpArgsAsByteCode(src, pos, dest, cp,  macro, macTab)
+    dest.add(MacroBytecode.OP_INVOKE_MACRO_ID.opToInstruction(opcode))
     numBytes
 }
 
@@ -352,11 +355,11 @@ private fun TX_1_BYTE_MACRO_ADDR(opcode: Int) = ToBytecodeTransformer { dest,  c
     var p = pos
     val bias = (opcode and 0xF) * 256 + 64
     val unbiasedId = src.get(p).toInt() and 0xFF
+    val macroId = unbiasedId + bias
     p++
-    val macro = macTab[unbiasedId + bias]
-    val args = IntList()
-    p += readEExpArgsAsByteCode(src, p, args, cp, macro, macTab)
-    writeMacroBodyAsByteCode(macro, args, dest, cp)
+    val macro = macTab[macroId]
+    p += readEExpArgsAsByteCode(src, p, dest, cp, macro, macTab)
+    dest.add(MacroBytecode.OP_INVOKE_MACRO_ID.opToInstruction(macroId))
     p - pos
 }
 
@@ -364,11 +367,11 @@ private fun TX_2_BYTE_MACRO_ADDR(opcode: Int) = ToBytecodeTransformer { dest, cp
     var p = pos
     val bias = (opcode and 0xF) * 256 * 256 + 4160
     val unbiasedId = src.getShort(p).toInt() and 0xFFFF
+    val macroId = unbiasedId + bias
     p += 2
-    val macro = macTab[unbiasedId + bias]
-    val args = IntList()
-    p += readEExpArgsAsByteCode(src, p, args, cp, macro, macTab)
-    writeMacroBodyAsByteCode(macro, args, dest, cp, )
+    val macro = macTab[macroId]
+    p += readEExpArgsAsByteCode(src, p, dest, cp, macro, macTab)
+    dest.add(MacroBytecode.OP_INVOKE_MACRO_ID.opToInstruction(macroId))
     p - pos
 }
 
@@ -378,19 +381,19 @@ private val TX_MACRO_W_FLEXUINT_ADDR = ToBytecodeTransformer { dest,  cp,  src, 
     val macroId = IntHelper.readFlexUIntWithLengthAt(src, p, lengthOfLength)
     p += lengthOfLength
     val macro = macTab[macroId]
-    val args = IntList()
-    p += readEExpArgsAsByteCode(src, p, args, cp, macro, macTab)
-    writeMacroBodyAsByteCode(macro, args, dest, cp, )
+//    val args = IntList()
+    p += readEExpArgsAsByteCode(src, p, dest, cp, macro, macTab)
+    dest.add(MacroBytecode.OP_INVOKE_MACRO_ID.opToInstruction(macroId))
     p - pos
 }
 
 private val TX_SYSTEM_MACRO = ToBytecodeTransformer { dest,  cp,  src, pos, macTab ->
     var numBytes = 1
     val macroId = src.get(pos).toInt() and 0xFF
-    val macro = macTab[macroId]
-    val args = IntList()
-    numBytes += readEExpArgsAsByteCode(src, pos, args, cp, macro, macTab)
-    writeMacroBodyAsByteCode(macro, args, dest, cp, )
+    val macro = SystemMacro[macroId]
+    // val args = IntList()
+    numBytes += readEExpArgsAsByteCode(src, pos, dest, cp, macro, macTab)
+    dest.add(MacroBytecode.OP_INVOKE_SYS_MACRO.opToInstruction(macroId))
     numBytes
 }
 
@@ -630,8 +633,7 @@ private val VALUE_TRANSFORMERS = Array<ToBytecodeTransformer>(256) { opcode ->
         Opcode.DELIMITED_STRUCT -> TX_DELIMITED_STRUCT
 
         Opcode.E_EXPRESSION_WITH_FLEX_UINT_ADDRESS -> TX_MACRO_W_FLEXUINT_ADDR
-
-        Opcode.VARIABLE_LENGTH_STRING -> toPrefixedReference(MacroBytecodeHelper::emitStringReference)
+        Opcode.VARIABLE_LENGTH_STRING -> TX_VAR_STRING
         Opcode.VARIABLE_LENGTH_INLINE_SYMBOL -> toPrefixedReference(MacroBytecodeHelper::emitSymbolTextReference)
         Opcode.VARIABLE_LENGTH_LIST -> toPrefixedReference(MacroBytecodeHelper::emitListReference)
         Opcode.VARIABLE_LENGTH_SEXP -> toPrefixedReference(MacroBytecodeHelper::emitSexpReference)

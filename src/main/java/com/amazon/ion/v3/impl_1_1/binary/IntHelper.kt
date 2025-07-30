@@ -62,6 +62,17 @@ object IntHelper {
     }
 
     @JvmStatic
+    fun readFixedIntAt(source: ByteBuffer, start: Int, length: Int): Long {
+        if (source.limit() < start + length) throw IonException("Incomplete data: start=$start, length=$length, limit=${source.limit()}")
+        if (length > 4) {
+            // TODO: See if we can simplify some of the calculations
+            return source.getLong(start - 8 + length) shr ((8 - length) * 8)
+        } else {
+            return (source.getInt(start - 4 + length) shr ((4 - length) * 8)).toLong()
+        }
+    }
+
+    @JvmStatic
     fun readFixedUIntAsLong(source: ByteBuffer, length: Int): Long {
         val value = readFixedInt(source, length)
         // Mask to remove any sign extension that occurred
@@ -74,6 +85,16 @@ object IntHelper {
     @JvmStatic
     fun readFixedUInt(source: ByteBuffer, length: Int): Int {
         val value = readFixedInt(source, length).toInt()
+        // Mask to remove any sign extension that occurred
+        val mask = -1 ushr (32 - length * 8)
+        val result = value and mask
+        if (result < 0) throw IonException("FixedUInt to large to fit in an int")
+        return result
+    }
+
+    @JvmStatic
+    fun readFixedUIntAt(source: ByteBuffer, start: Int, length: Int): Int {
+        val value = readFixedIntAt(source, start, length).toInt()
         // Mask to remove any sign extension that occurred
         val mask = -1 ushr (32 - length * 8)
         val result = value and mask
@@ -235,24 +256,26 @@ object IntHelper {
     fun readFlexUIntWithLengthAt(source: ByteBuffer, position: Int, length: Int): Int {
         when (length) {
             1 -> {
-                return (source.get(position).toInt() ushr 1)
+                return ((source.get(position).toInt() and 0xFF) ushr 1)
             }
             2 -> {
-                return (source.getShort(position).toInt() ushr 2)
+                return ((source.getShort(position).toInt() and 0xFFFF) ushr 2)
             }
             3 -> {
-                return (source.getInt(position - 1) ushr 3) and 0xFFFFFF
+                return ((source.getInt(position - 1) and 0xFFFFFF ) ushr 3)
             }
             4 -> {
                 val data = source.getInt(position)
                 return data ushr 4
             }
             5 -> {
+                // FIXME:
                 val firstByte = source.get(position)
                 val data = source.getInt(position + 1)
                 val data1 = (data shl 3) shr 3
                 if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
-                return (data shl 3) + (firstByte.toInt() ushr 5)
+                // return (data shl 3) + (firstByte.toInt() ushr 5)
+                TODO()
             }
             else -> throw IonException("FlexUInt value too large to find in an Int")
         }

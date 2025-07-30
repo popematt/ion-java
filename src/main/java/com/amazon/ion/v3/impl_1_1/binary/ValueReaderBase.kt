@@ -3,17 +3,38 @@ package com.amazon.ion.v3.impl_1_1.binary
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.*
+import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.template.*
-import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
-import com.amazon.ion.v3.unused.*
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
 import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 
+/**
+ *
+ * Current profile:
+ *  * 46% of all is spent reading EExp into MacroBytecode
+ *    * A relatively small fraction of that is spent reading the EExp Args.
+ *    * 33% of all is spent converting template-body-expression into MacroBytecode (with argument substitutions)
+ *      * Can we cache more of it somehow?
+ *    * A lot is in [Environment.copyArgInto]
+ *  * Up to 10% is spent in [IntList.add]
+ *  * Up to 4% is spent in [IntList.addSlice]
+ *  * Up to 4% is spent in [IntList.<init>]
+ *
+ *
+ *  * 4% of all is spent copying bytebuffers.
+ *  * 5% of all is spent creating new instances of TemplateStructReader
+ *  * 4% of all is spent creating new instances of TemplateReaderImpl
+ *
+ *
+ *
+ * TODO: track position here rather than in the ByteBuffer, so that we can avoid making so many copies of the bytebuffer.
+ *       That means rewriting everything to be `read___At`.
+ */
 abstract class ValueReaderBase(
     @JvmField
     internal var source: ByteBuffer,
@@ -449,16 +470,79 @@ abstract class ValueReaderBase(
         }
     }
 
+    @OptIn(ExperimentalStdlibApi::class)
+    private fun macroRef(opcode: Int): MacroRef {
+        when (opcode shr 4) {
+            0x0, 0x1, 0x2, 0x3 -> {
+                if (opcode >= macroTable.size) {
+                    println(source)
+                    println("Macro Table size: " + macroTable.size)
+                }
+                return MacroRef.byId(opcode)
+            }
+            0x4 -> {
+                // Opcode with 12-bit address and bias
+                val bias = (opcode and 0xF) * 256 + 64
+                val unbiasedId = source.get().toInt() and 0xFF
+                val id: Int = unbiasedId + bias
+                if (id >= macroTable.size) {
+                    println(source)
+                    println("Macro Table size: " + macroTable.size)
+                }
+                return MacroRef.byId(id)
+            }
+            0x5 -> {
+                // Opcode with 20-bit address and bias
+                val bias = (opcode and 0xF) * 256 * 256 + 4160
+                val unbiasedId = source.getShort().toInt() and 0xFFFF
+                val id: Int = unbiasedId + bias
+                return MacroRef.byId(id)
+            }
+            0xE -> {
+                if (opcode == 0xEF) {
+                    // System macro
+                    val id = source.get().toInt()
+                    return MacroRef.byId("\$ion", id)
+                } else {
+                    throw IonException("Not positioned on an E-Expression: ${opcode.toByte().toHexString()} @ ${source.position()}")
+                }
+            }
+            0xF -> {
+                if (opcode == 0xF4) {
+                    // E-expression with FlexUInt macro address
+                    val id = IntHelper.readFlexUInt(source)
+                    return MacroRef.byId(id)
+                } else if (opcode == 0xF5) {
+                    // E-expression with FlexUInt macro address followed by FlexUInt length prefix
+                    val id = IntHelper.readFlexUInt(source)
+                    return MacroRef.byId(id)
+                } else {
+                    throw IonException("Not positioned on an E-Expression")
+                }
+            }
+            else -> throw IonException("Not positioned on an E-Expression")
+
+        }
+    }
+
+
     final override fun macroInvocation(): MacroInvocation {
         val opcode = opcode.toInt()
-        val macro = macroValue(opcode)
+        val macroRef = macroRef(opcode)
+//        val macro = macroValue(opcode)
+        val macro = if (macroRef.isSystemMacro()) {
+            EncodingContextManager.ION_1_1_SYSTEM_MACROS[macroRef.id]
+        } else {
+            macroTable[macroRef.id]
+        }
+
         this.opcode = TID_UNSET
         // We read the length in case it is there, but we don't actually need to use it.
         // Until we implement lazy reading of the args.
         IdMappings.length(opcode, source)
 
         // TODO: Make this lazy.
-        val argumentBytecode = IntList()
+        val argumentBytecode = IntList(64)
         val currentPosition = source.position()
         val constants = mutableListOf<Any?>()
         val argLength = readEExpArgsAsByteCode(source, source.position(), argumentBytecode, constants, macro, macroTable)
@@ -470,30 +554,12 @@ abstract class ValueReaderBase(
             signature = macro.signature,
         )
 
-        return MacroInvocation(
-            macro,
-            { args },
-            { startMacroEvaluation(macro, args, pool, symbolTable, macroTable) },
-            {
-                object : Iterator<ValueReader> {
-                    private var i = 0
-                    private val n = args.signature.size
-                    private val theseArgs = args
+        // MacroBytecode.debugString(argumentBytecode.toArray(), constantPool = constants.toTypedArray())
 
-                    override fun hasNext(): Boolean = i < n
-
-                    override fun next(): ValueReader {
-                        val bytecode = theseArgs.getArgument(i++)
-                        // TODO: Make this read a slice of the args rather than needing to perform an array copy.
-                        return pool.getSequence(ArgumentBytecode.NO_ARGS, bytecode, 0, theseArgs.constantPool(), symbolTable, macroTable)
-                    }
-                }
-            }
-        )
+        return MacroInvocation(macro, args, pool, symbolTable, macroTable)
     }
 
-    private val scratch = IntList(32)
-
+    /* UNUSED
     private fun parseArgs(macro: MacroV2): ArgumentBytecode {
         val signature = macro.signature
         var presenceBitsPosition = source.position()
@@ -589,7 +655,9 @@ abstract class ValueReaderBase(
             signature = signature,
         )
     }
+    */
 
+    /* UNUSED
     internal fun readArgumentValue(tokenType: Int, bytecode: IntList) {
 //        println(source.position())
         // TODO: Lazy parsing of values.
@@ -776,15 +844,15 @@ abstract class ValueReaderBase(
                 // TODO: Consider flattening this macro inline?
                 val macro = macroValue(opcode.toInt())
 
-                val args = parseArgs(macro)
+                val args: ArgumentBytecode = TODO() // parseArgs(macro)
                 // val macroInvocation = macroInvocation()
 
                 if (macro.body != null) {
                     // Inline the template body into the macro argument.
-                    templateExpressionToBytecode(macro.body, bytecode, mutableListOf()) { parameterIndex, destination ->
-                        val bytes = args.getArgument(parameterIndex)
-                        destination.addAll(bytes)
-                    }
+//                    templateExpressionToBytecode(macro.body, bytecode, mutableListOf()) { parameterIndex, destination ->
+//                        val bytes = args.getArgument(parameterIndex)
+//                        destination.addAll(bytes)
+//                    }
                 } else {
                     macro.signature.forEachIndexed { index, parameter ->
                         val arg = args.getArgument(index)
@@ -840,6 +908,7 @@ abstract class ValueReaderBase(
             else -> TODO("${TokenTypeConst(tokenType)} at ~${source.position()}")
         }
     }
+    */
 
     final override fun annotations(): AnnotationIterator {
         val opcode = opcode.toInt()

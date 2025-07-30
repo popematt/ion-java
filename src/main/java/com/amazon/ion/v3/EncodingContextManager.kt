@@ -250,7 +250,7 @@ internal class EncodingContextManager(
         }
     }
 
-    fun updateFlattenedTables(valueReaderBase: ValueReaderBase, additionalMacros: List<MacroV2>) {
+    fun updateFlattenedTables(valueReaderBase: ValueReaderBase, additionalMacros: List<MacroV2> = emptyList()) {
         // TODO: See if we can avoid rebuilding symbol tables and/or macro tables that haven't changed.
         //       This might require an API change.
 
