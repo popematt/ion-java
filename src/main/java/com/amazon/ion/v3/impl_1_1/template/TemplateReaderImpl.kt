@@ -147,9 +147,9 @@ open class TemplateReaderImpl internal constructor(
         if (instruction == INSTRUCTION_END) {
             return TokenTypeConst.END
         }
-        var instruction = INSTRUCTION_NOT_SET
+        var instruction: Int
         var i = this.i
-        while (instruction == INSTRUCTION_NOT_SET) {
+        while (true) {
 //            print("Reading @ $i...")
             instruction = bytecode[i++]
 //            println(" ${MacroBytecode(instruction)}")
@@ -163,12 +163,14 @@ open class TemplateReaderImpl internal constructor(
                     when (instruction and 0xFF) {
                         SystemMacro.DEFAULT_ADDRESS -> i = handleDefaultSystemMacro(i)
                         // Anything else passes through.
-                        else -> continue
+                        else -> break
                     }
                 }
-                else -> continue
+                // Manually add these in to make the compiler use a tableswitch instead of a lookupswitch
+                140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150 -> break
+                else -> break
             }
-            instruction = INSTRUCTION_NOT_SET
+            // instruction = INSTRUCTION_NOT_SET
         }
         this.instruction = instruction
         this.i = i
