@@ -28,35 +28,28 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitInt32Value(bytecode: IntList, int: Int) {
-        bytecode.add(MacroBytecode.OP_INLINE_INT.opToInstruction())
-        bytecode.add(int)
+        bytecode.add2(MacroBytecode.OP_INLINE_INT.opToInstruction(), int)
     }
 
     @JvmStatic
     fun emitInt64Value(bytecode: IntList, longValue: Long) {
-        bytecode.add(MacroBytecode.OP_INLINE_LONG.opToInstruction())
-        bytecode.add((longValue shr 32).toInt())
-        bytecode.add(longValue.toInt())
+        bytecode.add3(MacroBytecode.OP_INLINE_LONG.opToInstruction(), (longValue shr 32).toInt(), longValue.toInt())
     }
 
     @JvmStatic
     fun emitFloatValue(bytecode: IntList, floatValue: Float) {
-        bytecode.add(MacroBytecode.OP_INLINE_FLOAT.opToInstruction())
-        bytecode.add(floatValue.toRawBits())
+        bytecode.add2(MacroBytecode.OP_INLINE_FLOAT.opToInstruction(), floatValue.toRawBits())
     }
 
     @JvmStatic
     fun emitDoubleValue(bytecode: IntList, doubleValue: Double) {
-        bytecode.add(MacroBytecode.OP_INLINE_DOUBLE.opToInstruction())
         val doubleBits = doubleValue.toRawBits()
-        bytecode.add(doubleBits.toInt())
-        bytecode.add((doubleBits shr 32).toInt())
+        bytecode.add3(MacroBytecode.OP_INLINE_DOUBLE.opToInstruction(), doubleBits.toInt(), (doubleBits shr 32).toInt())
     }
 
     @JvmStatic
     fun emitDecimalReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add(MacroBytecode.OP_REF_DECIMAL.opToInstruction(length))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_DECIMAL.opToInstruction(length), start)
     }
 
     @JvmStatic
@@ -68,14 +61,12 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitShortTimestampReference(bytecode: IntList, opcode: Int, start: Int) {
-        bytecode.add(MacroBytecode.OP_REF_TIMESTAMP_SHORT.opToInstruction(opcode))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_TIMESTAMP_SHORT.opToInstruction(opcode), start)
     }
 
     @JvmStatic
     fun emitLongTimestampReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add(MacroBytecode.OP_REF_TIMESTAMP_LONG.opToInstruction(length))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_TIMESTAMP_LONG.opToInstruction(length), start)
     }
 
     @JvmStatic
@@ -87,8 +78,7 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitStringReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add(MacroBytecode.OP_REF_STRING.opToInstruction(length))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_STRING.opToInstruction(length), start)
     }
 
     @JvmStatic
@@ -100,8 +90,7 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitSymbolTextReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add(MacroBytecode.OP_REF_SYMBOL_TEXT.opToInstruction(length))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_SYMBOL_TEXT.opToInstruction(length), start)
     }
 
     @JvmStatic
@@ -130,15 +119,13 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitListReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add(MacroBytecode.OP_REF_LIST.opToInstruction(length))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_LIST.opToInstruction(length), start)
     }
 
     @JvmStatic
     inline fun emitInlineList(bytecode: IntList, content: () -> Unit) {
-        val containerStartIndex = bytecode.size()
-        bytecode.add(MacroBytecode.UNSET.opToInstruction())
-        val start = bytecode.size()
+        val containerStartIndex = bytecode.reserve()
+        val start = containerStartIndex + 1
         content()
         bytecode.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
         val end = bytecode.size()
@@ -147,15 +134,13 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitSexpReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add(MacroBytecode.OP_REF_SEXP.opToInstruction(length))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_SEXP.opToInstruction(length), start)
     }
 
     @JvmStatic
     inline fun emitInlineSexp(bytecode: IntList, content: () -> Unit) {
-        val containerStartIndex = bytecode.size()
-        bytecode.add(MacroBytecode.UNSET.opToInstruction())
-        val start = bytecode.size()
+        val containerStartIndex = bytecode.reserve()
+        val start = containerStartIndex + 1
         content()
         bytecode.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
         val end = bytecode.size()
@@ -164,15 +149,13 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitStructReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add(MacroBytecode.OP_REF_SID_STRUCT.opToInstruction(length))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_SID_STRUCT.opToInstruction(length), start)
     }
 
     @JvmStatic
     inline fun emitInlineStruct(bytecode: IntList, content: () -> Unit) {
-        val containerStartIndex = bytecode.size()
-        bytecode.add(MacroBytecode.UNSET.opToInstruction())
-        val start = bytecode.size()
+        val containerStartIndex = bytecode.reserve()
+        val start = containerStartIndex + 1
         content()
         bytecode.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
         val end = bytecode.size()
@@ -181,8 +164,7 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitFieldNameTextReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add(MacroBytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(length))
-        bytecode.add(start)
+        bytecode.add2(MacroBytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(length), start)
     }
 
     @JvmStatic
@@ -215,9 +197,8 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     inline fun emitArgumentValue(bytecode: IntList, content: () -> Unit) {
-        val containerStartIndex = bytecode.size()
-        bytecode.add(MacroBytecode.UNSET.opToInstruction())
-        val start = bytecode.size()
+        val containerStartIndex = bytecode.reserve()
+        val start = containerStartIndex + 1
         content()
         bytecode.add(MacroBytecode.OP_END_ARGUMENT_VALUE.opToInstruction())
         val end = bytecode.size()

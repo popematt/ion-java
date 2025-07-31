@@ -83,17 +83,41 @@ public class IntList {
     }
 
     /**
+     * Increases the size of the list without modifying the backing data.
+     * @return the position that was reserved.
+     */
+    public int reserve() {
+        return numberOfValues++;
+    }
+
+    /**
      * Appends an int to the end of the list, growing the list if necessary.
      * @param value     The int to add to the end of the list.
      */
     public void add(int value) {
         int n = numberOfValues;
         int newNumberOfValues = n + 1;
-//        if (n == capacity) {
-//            grow();
-//        }
         int[] data = ensureCapacity(newNumberOfValues);
         data[n] = value;
+        numberOfValues = newNumberOfValues;
+    }
+
+    public void add2(int value0, int value1) {
+        int n = numberOfValues;
+        int newNumberOfValues = n + 2;
+        int[] data = ensureCapacity(newNumberOfValues);
+        data[n] = value0;
+        data[n + 1] = value1;
+        numberOfValues = newNumberOfValues;
+    }
+
+    public void add3(int value0, int value1, int value2) {
+        int n = numberOfValues;
+        int newNumberOfValues = n + 3;
+        int[] data = ensureCapacity(newNumberOfValues);
+        data[n] = value0;
+        data[n + 1] = value1;
+        data[n + 2] = value2;
         numberOfValues = newNumberOfValues;
     }
 

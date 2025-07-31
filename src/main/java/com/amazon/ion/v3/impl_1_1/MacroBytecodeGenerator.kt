@@ -134,12 +134,9 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 if (longValue.toShort().toLong() == longValue) {
                     bytecode.add(MacroBytecode.OP_SMALL_INT.opToInstruction(longValue.toInt() and 0xFFFF))
                 } else if (longValue.toInt().toLong() == longValue) {
-                    bytecode.add(MacroBytecode.OP_INLINE_INT.opToInstruction())
-                    bytecode.add(longValue.toInt())
+                    bytecode.add2(MacroBytecode.OP_INLINE_INT.opToInstruction(), longValue.toInt())
                 } else {
-                    bytecode.add(MacroBytecode.OP_INLINE_LONG.opToInstruction())
-                    bytecode.add((longValue shr 32).toInt())
-                    bytecode.add(longValue.toInt())
+                    bytecode.add3(MacroBytecode.OP_INLINE_LONG.opToInstruction(), (longValue shr 32).toInt(), longValue.toInt())
                 }
             }
         }
@@ -409,9 +406,8 @@ private fun handleContainerLikeThingWithArgs(startOp: Int, endOp: Int, expr: Tem
 }
 
 inline fun generateBytecodeContainer(startOp: Int, endOp: Int, bytecode: IntList, content: () -> Unit) {
-    val containerStartIndex = bytecode.size()
-    bytecode.add(MacroBytecode.UNSET.opToInstruction())
-    val start = bytecode.size()
+    val containerStartIndex = bytecode.reserve()
+    val start = containerStartIndex + 1
     content()
     bytecode.add(endOp.opToInstruction())
     val end = bytecode.size()

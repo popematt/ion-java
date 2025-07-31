@@ -29,6 +29,12 @@ fun writeMacroBodyAsByteCode(macro: MacroV2, eexpArgs: IntList, bytecode: IntLis
     templateExpressionToBytecode(macro.body!!, env, bytecode, constantPool)
 }
 
+private fun compileValue(opcode: Int, dest: IntList, cp: MutableList<Any?>, src: ByteBuffer, position: Int, macTab: Array<MacroV2>): Int {
+    val valueCompiler = VALUE_TRANSFORMERS[opcode]
+    val n = valueCompiler.toBytecode(dest, cp, src, position, macTab)
+    return n
+}
+
 /**
  * Returns the number of bytes consumed while reading the arguments.
  */
@@ -43,11 +49,12 @@ fun readEExpArgsAsByteCode(src: ByteBuffer, position: Int, bytecode: IntList, co
     var presenceByte = 0
 
     for (parameter in signature) {
-        MacroBytecodeHelper.emitArgumentValue(bytecode) {
+        val containerStartIndex = bytecode.reserve()
+        val start = containerStartIndex + 1
 
-            if (parameter.iCardinality == 1) {
+        if (parameter.iCardinality == 1) {
                 val opcode = src.get(p++).toInt() and 0xFF
-                p += VALUE_TRANSFORMERS[opcode].toBytecode(bytecode, constantPool, src, p, macTab)
+                p += compileValue(opcode, bytecode, constantPool, src, p, macTab)
             } else {
                 // Read a value from the presence bitmap
                 // But we might need to "refill" our presence byte first
@@ -61,7 +68,7 @@ fun readEExpArgsAsByteCode(src: ByteBuffer, position: Int, bytecode: IntList, co
                     0 -> {}
                     1 -> {
                         val opcode = src.get(p++).toInt() and 0xFF
-                        p += VALUE_TRANSFORMERS[opcode].toBytecode(bytecode, constantPool, src, p, macTab)
+                        p += compileValue(opcode, bytecode, constantPool, src, p, macTab)
                     }
                     2 -> {
                         // TODO: See if we can optimize based on checking the first byte only.
@@ -71,19 +78,20 @@ fun readEExpArgsAsByteCode(src: ByteBuffer, position: Int, bytecode: IntList, co
                         val lengthOfLength = IntHelper.lengthOfFlexUIntAt(src, p)
                         val expressionGroupLength = IntHelper.readFlexUIntWithLengthAt(src, p, lengthOfLength)
                         p += lengthOfLength
-                        // MacroBytecodeHelper.emitArgumentValue(bytecode) {
-                            if (expressionGroupLength == 0) {
-                                p += readTaggedDelimitedExpressionGroupContent(src, p, bytecode, constantPool, macTab)
-                            } else {
-                                readTaggedPrefixedExpressionGroupContent(src, p, expressionGroupLength, bytecode, constantPool, macTab)
-                                p += expressionGroupLength
-                            }
-                        // }
+                        if (expressionGroupLength == 0) {
+                            p += readTaggedDelimitedExpressionGroupContent(src, p, bytecode, constantPool, macTab)
+                        } else {
+                            readTaggedPrefixedExpressionGroupContent(src, p, expressionGroupLength, bytecode, constantPool, macTab)
+                            p += expressionGroupLength
+                        }
                     }
                     else -> throw IonException("Invalid presence bits value at position $presenceBitsPosition")
                 }
             }
-        }
+
+        bytecode.add(MacroBytecode.OP_END_ARGUMENT_VALUE.opToInstruction())
+        val end = bytecode.size()
+        bytecode[containerStartIndex] = MacroBytecode.OP_START_ARGUMENT_VALUE.opToInstruction(end - start)
     }
     return p - position
 }
@@ -105,12 +113,7 @@ private fun readTaggedDelimitedExpressionGroupContent(src: ByteBuffer, position:
     var p = position
     var opcode = src.get(p++).toInt() and 0xFF
     while (opcode != Opcode.DELIMITED_CONTAINER_END) {
-//        println("Read opcode ${opcode.toUByte().toHexString()} at position ${p - 1}")
-        val consumedBytes = VALUE_TRANSFORMERS[opcode].toBytecode(dest, constantPool, src, p, macTab)
-        if (consumedBytes > 10000 || consumedBytes < 0) {
-            throw Exception("consumedBytes=$consumedBytes; opcode=${opcode.toHexString()}, position=$position, $p=p")
-        }
-        p += consumedBytes
+        p += compileValue(opcode, dest, constantPool, src, p, macTab)
         opcode = src.get(p++).toInt() and 0xFF
     }
     return p - position
@@ -121,7 +124,7 @@ private fun readTaggedPrefixedExpressionGroupContent(src: ByteBuffer, start: Int
     val end = start + length
     while (p < end) {
         val opcode = src.get(p++).toInt() and 0xFF
-        p += VALUE_TRANSFORMERS[opcode].toBytecode(dest, constantPool, src, p, macTab)
+        p += compileValue(opcode, dest, constantPool, src, p, macTab)
     }
 }
 
@@ -402,37 +405,30 @@ inline fun toPrefixedReference(crossinline emitter: (IntList, Int, Int) -> Unit)
     val lengthOfLength = IntHelper.lengthOfFlexUIntAt(src, pos)
     val length = IntHelper.readFlexUIntWithLengthAt(src, pos, lengthOfLength)
     emitter(dest, pos + lengthOfLength, length)
-    length + lengthOfLength.also {
-        if (it > 10000) {
-            println("lengthOfLength: $lengthOfLength")
-            println("length: $length")
-            println("pos: $pos")
-        }
-    }
+    length + lengthOfLength
 }
 
 private val TX_VAR_STRING = ToBytecodeTransformer { dest,  cp,  src, pos, macTab ->
     val lengthOfLength = IntHelper.lengthOfFlexUIntAt(src, pos)
     val length = IntHelper.readFlexUIntWithLengthAt(src, pos, lengthOfLength)
     MacroBytecodeHelper.emitStringReference(dest, pos + lengthOfLength, length)
-    (length + lengthOfLength).also {
-        if (it > 10000) {
-            println("lengthOfLength: $lengthOfLength")
-            println("length: $length")
-            println("pos: $pos")
-        }
-    }
+    (length + lengthOfLength)
 }
 
 private val TX_DELIMITED_LIST: ToBytecodeTransformer = ToBytecodeTransformer { dest,  cp,   src, pos, macTab ->
     var p = pos
-    MacroBytecodeHelper.emitInlineList(dest) {
-        var opcode = src.get(p++).toInt() and 0xFF
-        while (opcode != Opcode.DELIMITED_CONTAINER_END) {
-            p += VALUE_TRANSFORMERS[opcode].toBytecode(dest, cp, src, p, macTab)
-            opcode = src.get(p++).toInt() and 0xFF
-        }
+    val containerStartIndex = dest.reserve()
+    val start = containerStartIndex + 1
+
+    var opcode = src.get(p++).toInt() and 0xFF
+    while (opcode != Opcode.DELIMITED_CONTAINER_END) {
+        p += compileValue(opcode, dest, cp, src, p, macTab)
+        opcode = src.get(p++).toInt() and 0xFF
     }
+
+    dest.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
+    val end = dest.size()
+    dest[containerStartIndex] = MacroBytecode.OP_LIST_START.opToInstruction(end - start)
     p - pos
 }
 
@@ -441,7 +437,7 @@ private val TX_DELIMITED_SEXP: ToBytecodeTransformer = ToBytecodeTransformer { d
     MacroBytecodeHelper.emitInlineSexp(dest) {
         var opcode = src.get(p++).toInt() and 0xFF
         while (opcode != Opcode.DELIMITED_CONTAINER_END) {
-            p += VALUE_TRANSFORMERS[opcode].toBytecode(dest, cp, src, p, macTab)
+            p += compileValue(opcode, dest, cp, src, p, macTab)
             opcode = src.get(p++).toInt() and 0xFF
         }
     }
@@ -468,7 +464,7 @@ private val TX_DELIMITED_STRUCT: ToBytecodeTransformer = ToBytecodeTransformer {
                 p += length
             }
             val opcode = src.get(p++).toInt() and 0xFF
-            p += VALUE_TRANSFORMERS[opcode].toBytecode(dest, cp, src, p, macTab)
+            p += compileValue(opcode, dest, cp, src, p, macTab)
         }
     }
     p - pos

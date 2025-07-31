@@ -87,7 +87,8 @@ open class TemplateReaderImpl internal constructor(
             @JvmStatic
             private val EMPTY_ARRAY = IntArray(0)
 
-            @JvmStatic
+//            @JvmStatic
+            @JvmField
             val EOF_FRAME = EvaluationStackFrame().apply {
                 i = 0
                 bytecode = intArrayOf(MacroBytecode.EOF.opToInstruction())
@@ -124,23 +125,6 @@ open class TemplateReaderImpl internal constructor(
         this.symbolTable = symbolTable
         this.macroTable = macroTable
     }
-
-//    val opHandlers = Array<(Int, Int) -> Int>(256) {
-//        when (it) {
-//            MacroBytecode.OP_START_ARGUMENT_VALUE -> { { instruction, i -> -collectAllArgs(instruction, i) } }
-//            MacroBytecode.OP_PARAMETER -> {{ instruction, i -> -switchToReadingArguments(instruction, i) }}
-//            MacroBytecode.OP_END_ARGUMENT_VALUE,
-//            MacroBytecode.OP_RETURN -> { { instruction, i -> -switchBackToReadingBody() }}
-//            MacroBytecode.OP_INVOKE_SYS_MACRO -> { { instruction, i ->
-//                when (instruction and 0xFF) {
-//                    SystemMacro.DEFAULT_ADDRESS -> -handleDefaultSystemMacro(i)
-//                    // Anything else passes through.
-//                    else -> i
-//                }
-//            } }
-//            else -> { { instruction, i, -> i } }
-//        }
-//    }
 
     override fun nextToken(): Int {
 //        println(javaClass.simpleName + "@" + Integer.toHexString(System.identityHashCode(this)) + " -> ")
@@ -223,6 +207,9 @@ open class TemplateReaderImpl internal constructor(
         frame.constantPool = constantPool
     }
 
+    /**
+     * Returns the new `i` value. (Does not set the class member named `i`.)
+     */
     private fun switchBackToReadingBody(): Int {
         val frame = evaluationStack[(--stackFrameSize).toInt()]
         bytecode = frame.bytecode
@@ -232,24 +219,58 @@ open class TemplateReaderImpl internal constructor(
     }
 
     private fun handleDefaultSystemMacro(i: Int): Int {
+        // Take the args from the arg stack
         val argumentValueIndicesStack = argumentValueIndicesStack
+        var argStackSize = this.argStackSize
         val secondArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
         val firstArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
+        this.argStackSize = argStackSize
 
-        pushEvaluationFrame(i)
+        // Get some local references for things
+        val currentBytecode = bytecode
+        val currentCP = constantPool
+        var stackFrameSize = stackFrameSize
+        val evaluationStack = evaluationStack
 
+        // Save the current stack frame (to be resumed after the result of default is done)
+        val currentFrame = evaluationStack[(stackFrameSize++).toInt()]
+        currentFrame.i = i
+        currentFrame.bytecode = currentBytecode
+        currentFrame.constantPool = currentCP
+
+        // If the first arg is an empty expression group, then don't bother evaluating further.
         if (firstArgStartIndex == secondArgStartIndex - 2) {
-            // Empty expression group
+            this.stackFrameSize = stackFrameSize
             return secondArgStartIndex + 1
         }
 
-        val sequence = pool.getSequence(arguments, bytecode, firstArgStartIndex + 1, constantPool, symbolTable, macroTable)
-        val programCounterPosition = if (sequence.nextToken() != TokenTypeConst.END) {
+        // Put on an EOF frame
+        // Note that we can't just put it there because we re-use these slots in the array, so we have to copy the fields.
+        val eofFrame = EvaluationStackFrame.EOF_FRAME
+        val depth = stackFrameSize++
+        val frame = evaluationStack[depth.toInt()]
+        frame.i = 0
+        frame.bytecode = eofFrame.bytecode
+        frame.constantPool = eofFrame.constantPool
+
+        // Set the current execution to the first arg
+        this.i = firstArgStartIndex + 1
+        this.stackFrameSize = stackFrameSize
+
+        // Check whether the first arg contains anything
+        val isFirstArgSomething = nextToken() != TokenTypeConst.END
+
+        // Clean up the extra frames we added
+        this.stackFrameSize = depth
+        this.bytecode = currentBytecode
+        this.constantPool = currentCP
+
+        // Choose the argument that will be returned by the `default` invocation
+        val programCounterPosition = if (isFirstArgSomething) {
             firstArgStartIndex + 1
         } else {
             secondArgStartIndex + 1
         }
-        sequence.close()
         return programCounterPosition
     }
 
