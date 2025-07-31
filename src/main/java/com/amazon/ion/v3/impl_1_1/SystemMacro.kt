@@ -10,6 +10,8 @@ import com.amazon.ion.impl.macro.ParameterFactory.exactlyOneTagged
 import com.amazon.ion.impl.macro.ParameterFactory.zeroOrOneTagged
 import com.amazon.ion.impl.macro.ParameterFactory.zeroToManyTagged
 import com.amazon.ion.v3.impl_1_1.ExpressionBuilderDsl.Companion.templateBody
+import com.amazon.ion.v3.impl_1_1.template.*
+import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 
 /**
  * Macros that are built in, rather than being defined by a template.
@@ -98,6 +100,8 @@ object SystemMacro {
         body = templateBody { macro(Values) { expressionGroup {  } } },
         systemName = NONE,
         systemAddress = NONE_ADDRESS,
+//         bytecode = IntArray(MacroBytecode.OP_RETURN.opToInstruction()),
+//         constants = emptyArray(),
     )
 
 
@@ -115,11 +119,13 @@ object SystemMacro {
         body = templateBody { macro(None) {} },
         systemName = META,
         systemAddress = META_ADDRESS,
+//        bytecode = IntArray(MacroBytecode.OP_RETURN.opToInstruction()),
+//        constants = emptyArray(),
     )
 
     @JvmStatic
     val Repeat = MacroV2(
-        listOf(exactlyOneTagged("n"), zeroToManyTagged("value")),
+        arrayOf(exactlyOneTagged("n"), zeroToManyTagged("value")),
         body = null,
         systemName = REPEAT,
         systemAddress = REPEAT_ADDRESS,
@@ -143,7 +149,7 @@ object SystemMacro {
 
     @JvmStatic
     val Sum = MacroV2(
-        signature = listOf(exactlyOneTagged("a"), exactlyOneTagged("b")),
+        signature = arrayOf(exactlyOneTagged("a"), exactlyOneTagged("b")),
         body = null,
         systemName = SUM,
         systemAddress = SUM_ADDRESS,
@@ -175,7 +181,7 @@ object SystemMacro {
 
     @JvmStatic
     val MakeDecimal = MacroV2(
-        listOf(exactlyOneTagged("coefficient"), exactlyOneTagged("exponent")),
+        arrayOf(exactlyOneTagged("coefficient"), exactlyOneTagged("exponent")),
         body = null,
         systemName = MAKE_DECIMAL,
         systemAddress = MAKE_DECIMAL_ADDRESS,
@@ -183,7 +189,7 @@ object SystemMacro {
 
     @JvmStatic
     val MakeTimestamp = MacroV2(
-        listOf(
+        arrayOf(
             exactlyOneTagged("year"),
             zeroOrOneTagged("month"),
             zeroOrOneTagged("day"),
@@ -235,7 +241,7 @@ object SystemMacro {
 
     @JvmStatic
     val MakeField = MacroV2(
-        listOf(exactlyOneTagged("fieldName"), exactlyOneTagged("value")),
+        arrayOf(exactlyOneTagged("fieldName"), exactlyOneTagged("value")),
         body = null,
         systemName = MAKE_FIELD,
         systemAddress = MAKE_FIELD_ADDRESS,

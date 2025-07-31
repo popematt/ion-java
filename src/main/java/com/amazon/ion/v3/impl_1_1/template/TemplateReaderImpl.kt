@@ -50,7 +50,11 @@ open class TemplateReaderImpl internal constructor(
 //    private var bytecode0: IntArray? = null
 //    private var constantPool0: Array<Any?>? = null
 
-    private var evaluationStack: EvaluationStackFrame? = null
+    private var evaluationStack = Array(32) { EvaluationStackFrame() }.also {
+        it[0] = EvaluationStackFrame.EOF_FRAME
+    }
+
+    private var stackFrameSize: Byte = 1
 
     @JvmField
     var arguments: ArgumentBytecode = ArgumentBytecode.NO_ARGS
@@ -82,6 +86,12 @@ open class TemplateReaderImpl internal constructor(
         companion object {
             @JvmStatic
             private val EMPTY_ARRAY = IntArray(0)
+
+            @JvmStatic
+            val EOF_FRAME = EvaluationStackFrame().apply {
+                i = 0
+                bytecode = intArrayOf(MacroBytecode.EOF.opToInstruction())
+            }
         }
     }
 
@@ -97,7 +107,8 @@ open class TemplateReaderImpl internal constructor(
         this.arguments = arguments
         instruction = INSTRUCTION_NOT_SET
         i = 0
-        evaluationStack = null
+        stackFrameSize = 1
+//        evaluationStack[0] = EvaluationStackFrame.EOF_FRAME
 
 //        i0 = -1
 //        bytecode0 = null
@@ -114,11 +125,22 @@ open class TemplateReaderImpl internal constructor(
         this.macroTable = macroTable
     }
 
-    internal fun rewind() {
-        instruction = INSTRUCTION_NOT_SET
-        i = 0
-        evaluationStack = null
-    }
+//    val opHandlers = Array<(Int, Int) -> Int>(256) {
+//        when (it) {
+//            MacroBytecode.OP_START_ARGUMENT_VALUE -> { { instruction, i -> -collectAllArgs(instruction, i) } }
+//            MacroBytecode.OP_PARAMETER -> {{ instruction, i -> -switchToReadingArguments(instruction, i) }}
+//            MacroBytecode.OP_END_ARGUMENT_VALUE,
+//            MacroBytecode.OP_RETURN -> { { instruction, i -> -switchBackToReadingBody() }}
+//            MacroBytecode.OP_INVOKE_SYS_MACRO -> { { instruction, i ->
+//                when (instruction and 0xFF) {
+//                    SystemMacro.DEFAULT_ADDRESS -> -handleDefaultSystemMacro(i)
+//                    // Anything else passes through.
+//                    else -> i
+//                }
+//            } }
+//            else -> { { instruction, i, -> i } }
+//        }
+//    }
 
     override fun nextToken(): Int {
 //        println(javaClass.simpleName + "@" + Integer.toHexString(System.identityHashCode(this)) + " -> ")
@@ -131,21 +153,12 @@ open class TemplateReaderImpl internal constructor(
 //            print("Reading @ $i...")
             instruction = bytecode[i++]
 //            println(" ${MacroBytecode(instruction)}")
-            val op = instruction ushr 24
+            val op = instruction ushr MacroBytecode.OPERATION_SHIFT_AMOUNT
             when (op) {
                 MacroBytecode.OP_START_ARGUMENT_VALUE -> i = collectAllArgs(instruction, i)
                 MacroBytecode.OP_PARAMETER -> i = switchToReadingArguments(instruction, i)
                 MacroBytecode.OP_END_ARGUMENT_VALUE,
-                MacroBytecode.OP_RETURN -> {
-                    if (evaluationStack == null) {
-                        instruction = MacroBytecode.EOF.opToInstruction()
-                        // TODO: See if we can remove this by putting a `values` invocation around all arguments in the argument iterator.
-                        break
-                    } else {
-                        i = switchBackToReadingBody()
-                    }
-                }
-
+                MacroBytecode.OP_RETURN -> i = switchBackToReadingBody()
                 MacroBytecode.OP_INVOKE_SYS_MACRO -> {
                     when (instruction and 0xFF) {
                         SystemMacro.DEFAULT_ADDRESS -> i = handleDefaultSystemMacro(i)
@@ -201,17 +214,15 @@ open class TemplateReaderImpl internal constructor(
      * `i` is the program counter pointing to the next instruction for the current stack frame.
      */
     private fun pushEvaluationFrame(i: Int) {
-        val frame = EvaluationStackFrame()
+        val depth = (stackFrameSize++).toInt()
+        val frame = evaluationStack[depth]
         frame.i = i
         frame.bytecode = bytecode
         frame.constantPool = constantPool
-        frame.next = evaluationStack
-        evaluationStack = frame
     }
 
     private fun switchBackToReadingBody(): Int {
-        val frame = evaluationStack!!
-        evaluationStack = frame.next
+        val frame = evaluationStack[(--stackFrameSize).toInt()]
         bytecode = frame.bytecode
         constantPool = frame.constantPool
         val i = frame.i
@@ -219,7 +230,7 @@ open class TemplateReaderImpl internal constructor(
     }
 
     private fun handleDefaultSystemMacro(i: Int): Int {
-//        println("Evaluating `default` at $i for ${System.identityHashCode(this)}")
+        val argumentValueIndicesStack = argumentValueIndicesStack
         val secondArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
         val firstArgStartIndex = argumentValueIndicesStack[(--argStackSize).toInt()]
 

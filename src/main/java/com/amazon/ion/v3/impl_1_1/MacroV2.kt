@@ -22,69 +22,34 @@ import java.nio.ByteBuffer
  * A system address of -99 indicates it is not a system macro (or special form).
  */
 data class MacroV2 internal constructor(
+    @JvmField
     val signature: Array<Macro.Parameter>,
+    @JvmField
     val body: Array<TemplateBodyExpressionModel>?,
+    @JvmField
     val systemAddress: Int = -99,
+    @JvmField
     val systemName: SystemSymbols_1_1? = null,
+    @JvmField
+    val bytecode: IntArray,
+    @JvmField
+    val constants: Array<Any?>,
 ) {
 
+    @JvmField
     val numPresenceBitsRequired = signature.count { it.iCardinality != 1 } * 2
+    @JvmField
     val numPresenceBytesRequired = if (numPresenceBitsRequired == 0) {
         0
     } else {
         (numPresenceBitsRequired / 8) + 1
     }
 
-    val bytecode: IntArray by lazy {
-        val constants = mutableListOf<Any?>()
-        val bytecode = IntList()
-        if (body != null) {
-            templateExpressionToBytecode(body, null, bytecode, constants)
-            bytecode.add(MacroBytecode.EOF.opToInstruction())
-        }
-        bytecode.toArray()
-    }
-    val constants: Array<Any?> by lazy {
-
-        val constants = mutableListOf<Any?>()
-        val bytecode = IntList()
-
-        if (body != null) {
-            templateExpressionToBytecode(body, null, bytecode, constants)
-            bytecode.add(MacroBytecode.EOF.opToInstruction())
-        }
-
-        constants.toTypedArray()
-    }
-
-    init {
-//        val constants = mutableListOf<Any?>()
-//        val bytecode = IntList()
-//
-//        if (body != null) {
-//            templateExpressionToBytecode(body, null, bytecode, constants)
-//            bytecode.add(MacroBytecode.EOF.opToInstruction())
-//        }
-//
-//        this.constants = constants.toTypedArray()
-//        this.bytecode = bytecode.toArray()
-    }
-
-    companion object {
-
-    }
 
     // TODO: Expansion analysis
     //      * Can this produce a system value?
     //      * Can this produce 0, 1, or more values?
 
-    constructor(signature: Array<Macro.Parameter>, body: Array<TemplateBodyExpressionModel>) : this(signature, body, -1, null)
-    constructor(signature: List<Macro.Parameter>, body: Array<TemplateBodyExpressionModel>) : this(signature.toTypedArray(), body, -1, null)
-    constructor(signature: Array<Macro.Parameter>, body: List<TemplateBodyExpressionModel>) : this(signature, body.toTypedArray(), -1, null)
-    constructor(signature: List<Macro.Parameter>, body: List<TemplateBodyExpressionModel>?, systemAddress: Int = -99, systemName: SystemSymbols_1_1? = null) : this(signature.toTypedArray(), body?.toTypedArray(), systemAddress, systemName)
-
-    internal constructor(vararg signature: Macro.Parameter, body: TemplateDsl.() -> Unit) : this(signature.asList(), body)
-    internal constructor(signature: List<Macro.Parameter>, body: TemplateDsl.() -> Unit) : this(signature, templateBody(signature, body))
 
     // TODO: Consider rewriting the body of the macro if we discover that there are any macros invoked using only
     //       constants as arguments—either at compile time or lazily.
@@ -147,7 +112,6 @@ data class MacroV2 internal constructor(
                 val numberOfTimesToStepOut = IntArray(macro.body.size)
 
                 macro.body.forEachIndexed { index, expression ->
-
 
                     when (expression.expressionKind) {
                         Kind.FIELD_NAME -> setFieldName(expression.fieldName)
@@ -220,6 +184,57 @@ data class MacroV2 internal constructor(
             body.mapNotNull { it.valueObject as? MacroV2 }.distinct()
         } else {
             emptyList()
+        }
+    }
+
+
+    companion object {
+        @JvmStatic
+        internal operator fun invoke(signature: List<Macro.Parameter>, body: List<TemplateBodyExpressionModel>): MacroV2 = invoke(signature.toTypedArray(), body.toTypedArray())
+        @JvmStatic
+        internal operator fun invoke(signature: Array<Macro.Parameter>, body: List<TemplateBodyExpressionModel>): MacroV2 = invoke(signature, body.toTypedArray())
+        @JvmStatic
+        internal operator fun invoke(signature: List<Macro.Parameter>, body: Array<TemplateBodyExpressionModel>): MacroV2 = invoke(signature.toTypedArray(), body)
+
+        @JvmStatic
+        internal operator fun invoke(
+            signature: Array<Macro.Parameter>,
+            body: Array<TemplateBodyExpressionModel>?,
+            systemAddress: Int = -99,
+            systemName: SystemSymbols_1_1? = null,
+        ): MacroV2 {
+            val constants = mutableListOf<Any?>()
+            val bytecode = IntList()
+            if (body != null) {
+                templateExpressionToBytecode(body, null, bytecode, constants)
+                bytecode.add(MacroBytecode.EOF.opToInstruction())
+            }
+            return MacroV2(
+                signature,
+                body,
+                systemAddress,
+                systemName,
+                bytecode.toArray(),
+                constants.toTypedArray()
+            )
+        }
+
+        @JvmStatic
+        fun create(signature: List<Macro.Parameter>, body: List<TemplateBodyExpressionModel>): MacroV2 {
+            return MacroV2(signature.toTypedArray(), body.toTypedArray())
+        }
+
+        @JvmStatic
+        internal operator fun invoke(signature: List<Macro.Parameter>, body: TemplateDsl.() -> Unit): MacroV2 {
+            val bodyExpressions = templateBody(signature, body)
+            return MacroV2(signature.toTypedArray(), bodyExpressions)
+        }
+
+        @JvmStatic
+        internal operator fun invoke(vararg signature: Macro.Parameter, body: TemplateDsl.() -> Unit): MacroV2 {
+            val bodyExpressions = templateBody(signature.toList(), body)
+            signature as Array<Macro.Parameter>
+            return invoke(signature, bodyExpressions)
         }
     }
 }

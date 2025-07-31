@@ -566,7 +566,7 @@ class TypedReadersTest {
         @Test
         fun nestedInvocationTemplateMacroWithPassedThroughVariable() {
             val macro2 = MacroV2(
-                signature = listOf(exactlyOneTagged("x")),
+                signature = arrayOf(exactlyOneTagged("x")),
                 body = templateBody {
                     list {
                         variable("x", 0)
@@ -574,7 +574,7 @@ class TypedReadersTest {
                 }
             )
             val macro = MacroV2(
-                signature = listOf(exactlyOneTagged("y")),
+                signature = arrayOf(exactlyOneTagged("y")),
                 body = templateBody {
                     list {
                         int(1)
