@@ -21,13 +21,10 @@ internal class AnnotationIteratorImpl(
     @JvmField
     val pool: ResourcePool,
     private var symbolTable: Array<String?>,
-): AnnotationIterator, PrivateAnnotationIterator, FlexSymHelper.FlexSymDestination {
+): AnnotationIterator, PrivateAnnotationIterator {
 
-    override fun clone(): AnnotationIterator {
-        val start = source.position()
-        val length = source.limit() - start
-        return pool.getAnnotations(opcode, start, length, symbolTable)
-    }
+    private var i = -1
+    private var limit = -1
 
     companion object {
         const val END = 0xF0
@@ -36,90 +33,87 @@ internal class AnnotationIteratorImpl(
          * Must be called before getting the new annotations.
          */
         @JvmStatic
-        fun calculateLength(opcode: Int, source: ByteBuffer): Int {
+        fun calculateLength(opcode: Int, source: ByteBuffer, start: Int): Int {
+            var p = start
             return when (opcode) {
-                0xE4 -> {
-                    // Peek at the size of the only FlexUInt SID
-                    source.get(source.position()).toInt().countTrailingZeroBits() + 1
-                }
+                0xE4 -> IntHelper.lengthOfFlexUIntAt(source, p)
                 0xE5 -> {
-                    // Peek at the size of the two FlexUInt SIDs
-                    val position = source.position()
-                    val lengthOfFirstSid = source.get(position).toInt().countTrailingZeroBits() + 1
-                    source.get(position + lengthOfFirstSid).countTrailingZeroBits() + 1 + lengthOfFirstSid
+                    p += IntHelper.lengthOfFlexUIntAt(source, p)
+                    p += IntHelper.lengthOfFlexUIntAt(source, p)
+                    p - start
                 }
-                0xE6 -> {
-                    IntHelper.readFlexUInt(source)
-                }
-                0xE7 -> {
-                    val start = source.position()
-                    FlexSymHelper.skipFlexSym(source)
-                    val end = source.position()
-                    source.position(start)
-                    end - start
-                }
+                0xE6 -> IntHelper.getLengthPlusValueOfFlexUIntAt(source, p)
+                0xE7 -> FlexSymHelper.lengthOfFlexSymAt(source, p)
                 0xE8 -> {
-                    val start = source.position()
-                    FlexSymHelper.skipFlexSym(source)
-                    FlexSymHelper.skipFlexSym(source)
-                    val end = source.position()
-                    source.position(start)
-                    end - start
+                    p += FlexSymHelper.lengthOfFlexSymAt(source, p)
+                    p += FlexSymHelper.lengthOfFlexSymAt(source, p)
+                    p - start
                 }
-                0xE9 -> IntHelper.readFlexUInt(source)
+                0xE9 -> IntHelper.getLengthPlusValueOfFlexUIntAt(source, p)
                 else -> TODO("Not a valid annotation op-code")
             }
         }
     }
 
-    override var _sid = -1
-    override var _text: String? = null
+    private var _sid = -1
+    private var _text: String? = null
 
     override fun hasNext(): Boolean = opcode != END
+
     override fun next(): String? {
+        var p = i
         if (!hasNext()) throw NoSuchElementException()
         opcode = when (opcode) {
             0xE4 -> {
-                val sid = IntHelper.readFlexUInt(source)
-                _sid = sid
-                _text = symbolTable[sid]
+                p += readSidAnnotation(p)
                 END
             }
             0xE5 -> {
-                val sid = IntHelper.readFlexUInt(source)
-                _sid = sid
-                _text = symbolTable[sid]
+                p += readSidAnnotation(p)
                 0xE4
             }
             0xE6 -> {
-                val sid = IntHelper.readFlexUInt(source)
-                _sid = sid
-                _text = symbolTable[sid]
-                if (source.hasRemaining()) 0xE6 else END
+                p += readSidAnnotation(p)
+                if (i < limit) 0xE6 else END
             }
             0xE7 -> {
-                FlexSymHelper.readFlexSym(source, this, pool, symbolTable)
-                // readFlexSym()
+                p += readFlexSymAnnotation(p)
                 END
             }
             0xE8 -> {
-                readFlexSym()
+                p += readFlexSymAnnotation(p)
                 0xE7
             }
             0xE9 -> {
-                readFlexSym()
-                if (source.hasRemaining()) 0xE9 else END
+                p += readFlexSymAnnotation(p)
+                if (p >= limit) 0xE9 else END
             }
             else -> opcode
         }
+        i = p
         return _text
     }
 
-    private fun readFlexSym() {
-        val flexSym = IntHelper.readFlexIntAsLong(source).toInt()
+    /** Returns the number of bytes consumed */
+    private fun readSidAnnotation(position: Int): Int {
+        val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, position)
+        val bytesConsumed = (flexUIntValueAndLength and 0xFF).toInt()
+        val sid = (flexUIntValueAndLength ushr 8).toInt()
+        _sid = sid
+        _text = symbolTable[sid]
+        return bytesConsumed
+    }
+
+
+    /** Returns the number of bytes consumed */
+    private fun readFlexSymAnnotation(position: Int): Int {
+        var p = position
+        val flexIntValueAndLength = IntHelper.readFlexIntValueAndLengthAt(source, p)
+        val flexSym = (flexIntValueAndLength shr 8).toInt()
+        p += (flexIntValueAndLength and 0xFF).toInt()
 
         if (flexSym == 0) {
-            val systemSid = (source.get().toInt() and 0xFF) - 0x60
+            val systemSid = (source.get(p).toInt() and 0xFF) - 0x60
             _sid = if (systemSid == 0) 0 else -1
             _text = SystemSymbols_1_1[systemSid]?.text
         } else if (flexSym > 0) {
@@ -128,13 +122,12 @@ internal class AnnotationIteratorImpl(
         } else {
             _sid = -1
             val length = -flexSym
-//            val position = source.position()
-//            source.position(position + length)
-//            val scratchBuffer = pool.scratchBuffer
-//            scratchBuffer.limit(position + length)
-//            scratchBuffer.position(position)
-            _text = pool.utf8Decoder.decode(source, length)
+            val scratchBuffer = pool.scratchBuffer
+            scratchBuffer.limit(p + length)
+            scratchBuffer.position(p)
+            _text = pool.utf8Decoder.decode(scratchBuffer, length)
         }
+        return p
     }
 
     override fun getSid(): Int = _sid
@@ -147,17 +140,17 @@ internal class AnnotationIteratorImpl(
 
     fun init(opcode: Int, start: Int, length: Int, symbolTable: Array<String?>) {
         this.opcode = opcode
-        source.limit(start + length)
-        source.position(start)
+        i = start
+        limit = length
         _sid = -1
         _text = null
         this.symbolTable = symbolTable
     }
 
     override fun peek() {
-        source.mark()
+        val i0 = i
         next()
-        source.reset()
+        i = i0
     }
 
     override fun toStringArray(): Array<String?> {

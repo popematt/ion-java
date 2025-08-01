@@ -29,10 +29,10 @@ class ArgumentBytecode(
 
     companion object {
 
-        @JvmStatic
+        @JvmField
         val EMPTY_ARG = intArrayOf(MacroBytecode.OP_END_ARGUMENT_VALUE.opToInstruction())
 
-        @JvmStatic
+        @JvmField
         val NO_ARGS = ArgumentBytecode(
             bytecode = intArrayOf(),
             constantPool = arrayOfNulls(0),
@@ -80,10 +80,12 @@ class ArgumentBytecode(
 //        return destination
 //    }
 
-    class ArgSlice(val bytecode: IntArray, val startIndex: Int) {
+    class ArgSlice(@JvmField var bytecode: IntArray, @JvmField var startIndex: Int) {
         companion object {
-            @JvmStatic
+            @JvmField
             val EMPTY = ArgSlice(bytecode = EMPTY_ARG, startIndex = 0)
+            @JvmField
+            val NON_EMPTY = ArgSlice(bytecode = EMPTY_ARG, startIndex = 0)
         }
     }
 
@@ -92,7 +94,12 @@ class ArgumentBytecode(
         val start = indices[parameterIndex]
         if (start == -1) {
             return ArgSlice.EMPTY
+        } else {
+            val slice = ArgSlice.NON_EMPTY
+            slice.bytecode = bytecode
+            slice.startIndex = start + 1
+            return slice
         }
-        return ArgSlice(bytecode, start + 1)
+//        return ArgSlice(bytecode, start + 1)
     }
 }

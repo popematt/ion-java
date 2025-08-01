@@ -26,7 +26,7 @@ internal class Annotations : Iterator<String?> {
     var annotationsSids = IntArray(8) { -1 }
     var annotationsSize = 0
 
-    fun storeAnnotations(annotationsIterator: AnnotationIterator) {
+    fun storeAnnotations(annotationsIterator: AnnotationIterator): Int {
         var annotationCount = 0
         while (annotationsIterator.hasNext()) {
             if (annotationCount >= annotations.size) {
@@ -44,6 +44,7 @@ internal class Annotations : Iterator<String?> {
             annotationCount++
         }
         annotationsSize = annotationCount
+        return annotationCount
     }
 
     fun getTypeAnnotations(): Array<String?> = annotations.copyOf(annotationsSize)

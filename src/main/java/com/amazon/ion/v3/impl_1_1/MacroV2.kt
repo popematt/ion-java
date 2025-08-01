@@ -220,6 +220,25 @@ data class MacroV2 internal constructor(
         }
 
         @JvmStatic
+        internal fun precompiled(
+            signature: Array<Macro.Parameter>,
+            body: Array<TemplateBodyExpressionModel>?,
+            systemAddress: Int = -99,
+            systemName: SystemSymbols_1_1? = null,
+            bytecode: IntArray,
+            constants: Array<Any?>,
+        ): MacroV2 {
+            return MacroV2(
+                signature,
+                body,
+                systemAddress,
+                systemName,
+                bytecode,
+                constants,
+            )
+        }
+
+        @JvmStatic
         fun create(signature: List<Macro.Parameter>, body: List<TemplateBodyExpressionModel>): MacroV2 {
             return MacroV2(signature.toTypedArray(), body.toTypedArray())
         }

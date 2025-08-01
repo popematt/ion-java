@@ -19,16 +19,23 @@ internal class EncodingContextManager(
 ) {
 
     companion object {
-        @JvmStatic
+
+        @JvmField
+        internal val ION_1_1_SYSTEM_SYMBOLS_AS_SYMBOL_TABLE = SystemSymbols_1_1.allSymbolTexts()
+            .toMutableList()
+            .also { it.add(0, null) }
+            .toTypedArray()
+
+        @JvmField
         internal val ION_1_1_SYSTEM_MACROS: Array<MacroV2> = SystemMacro.MACROS_BY_ID
 
-        @JvmStatic
+        @JvmField
         internal val ION_1_1_DEFAULT_SYMBOL_TABLE = SystemSymbols_1_1.allSymbolTexts()
             .toMutableList()
             .also { it.add(0, null) }
             .toTypedArray()
 
-        @JvmStatic
+        @JvmField
         internal val ION_1_1_SYSTEM_SYMBOLS = SystemSymbols_1_1.allSymbolTexts().toTypedArray()
 
         @JvmStatic
@@ -38,7 +45,7 @@ internal class EncodingContextManager(
             ION_1_1_SYSTEM_MACROS.map { it.systemName!!.text to it },
         )
 
-        @JvmStatic
+        @JvmField
         internal val ION_1_0_SYMBOL_TABLE = arrayOf(
             null,
             SystemSymbols.ION,
@@ -114,6 +121,11 @@ internal class EncodingContextManager(
 //        defaultModule.symbols = newSymbols
     }
 
+    fun addSymbols(argReader: ValueReader) = addOrSetSymbols(argReader, append = true)
+    fun setSymbols(argReader: ValueReader) = addOrSetSymbols(argReader, append = false)
+    fun addMacros(argReader: ValueReader) = addOrSetMacros(argReader, append = true)
+    fun setMacros(argReader: ValueReader) = addOrSetMacros(argReader, append = false)
+
     /**
      * Short-circuit evaluation of `add_macros` and `set_macros`.
      */
@@ -139,7 +151,7 @@ internal class EncodingContextManager(
     }
 
     fun readLegacySymbolTable11(structReader: StructReader) {
-        // TODO: Update to use ionReaderShim
+        // TODO: Update to use ionReaderShim -- why? In case there's a macro invocation inside the symbol table?
         val newSymbols = ArrayList<String?>()
         var isLstAppend = false
         while (true) {

@@ -10,17 +10,17 @@ import kotlin.IllegalStateException
  * Helper class containing info about Ion 1.1 opcodes.
  */
 object IdMappings {
-    @JvmStatic
+    @JvmField
     val TOKEN_TYPE_FOR_OPCODE = IntArray(256) { i -> tokenTypeForOpCode(i) }
 
-    @JvmStatic
-    private val LENGTH_FOR_OPCODE = IntArray(256) { i -> lengthForOpCode(i) }
+    @JvmField
+    val LENGTH_FOR_OPCODE = IntArray(256) { i -> lengthForOpCode(i) }
 
     fun interface LengthCalculator {
         fun calculate(source: ByteBuffer, macroTable: Array<MacroV2>, positionAfterOpcode: Int): Int
     }
 
-    @JvmStatic
+    @JvmField
     val LENGTH_FOR_OPCODE_CALCULATOR = Array(256) { opcode ->
         when (opcode) {
             in 0..0x5F -> LengthCalculator { s, m, p -> SkipHelper.skipMacro(s, m, opcode, p) - p }

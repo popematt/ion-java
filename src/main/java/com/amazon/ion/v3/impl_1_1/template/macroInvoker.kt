@@ -10,6 +10,9 @@ import com.amazon.ion.v3.impl_1_1.binary.*
  * This takes ownership of the ArgumentReader and closes it when this evaluator is closed.
  */
 fun startMacroEvaluation(macro: MacroV2, arguments: ArgumentBytecode, resourcePool: ResourcePool, symbolTable: Array<String?>, macroTable: Array<MacroV2>): ValueReader {
+    return resourcePool.getSequence(arguments, macro.bytecode, 0, macro.constants, symbolTable, macroTable)
+
+    /*
     return when (macro.systemAddress) {
 //            SystemMacro.VALUES_ADDRESS -> {
 //                getVariable(arguments, 0, isArgumentOwner = true)
@@ -37,4 +40,5 @@ fun startMacroEvaluation(macro: MacroV2, arguments: ArgumentBytecode, resourcePo
             }
         }
     }
+     */
 }

@@ -95,13 +95,13 @@ object SystemMacro {
     )
 
     @JvmStatic
-    val None = MacroV2(
+    val None = MacroV2.precompiled(
         signature = emptyArray(),
         body = templateBody { macro(Values) { expressionGroup {  } } },
         systemName = NONE,
         systemAddress = NONE_ADDRESS,
-//         bytecode = IntArray(MacroBytecode.OP_RETURN.opToInstruction()),
-//         constants = emptyArray(),
+        bytecode = intArrayOf(MacroBytecode.OP_RETURN.opToInstruction()),
+        constants = emptyArray(),
     )
 
 
@@ -111,6 +111,11 @@ object SystemMacro {
         body = null,
         systemName = DEFAULT,
         systemAddress = DEFAULT_ADDRESS,
+        bytecode = intArrayOf(
+            MacroBytecode.OP_INVOKE_SYS_MACRO.opToInstruction(DEFAULT_ADDRESS),
+            MacroBytecode.OP_RETURN.opToInstruction()
+        ),
+        constants = emptyArray(),
     )
 
     @JvmStatic
@@ -119,8 +124,8 @@ object SystemMacro {
         body = templateBody { macro(None) {} },
         systemName = META,
         systemAddress = META_ADDRESS,
-//        bytecode = IntArray(MacroBytecode.OP_RETURN.opToInstruction()),
-//        constants = emptyArray(),
+        bytecode = intArrayOf(MacroBytecode.OP_RETURN.opToInstruction()),
+        constants = emptyArray(),
     )
 
     @JvmStatic
@@ -465,7 +470,7 @@ object SystemMacro {
         .filter { it.systemName != null }
         .associateBy { it.systemName!!.text }
 
-    @JvmStatic
+    @JvmField
     internal val MACROS_BY_ID: Array<MacroV2> = SystemMacro.entries
         .filterNot { it.systemAddress < 0 }
         .sortedBy { it.systemAddress }

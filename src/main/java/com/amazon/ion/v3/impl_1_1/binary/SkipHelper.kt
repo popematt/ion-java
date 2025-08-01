@@ -124,15 +124,15 @@ object SkipHelper {
 
 
 
-    @JvmStatic
-    private val SINGLE_ARG_LENGTH_CALCULATOR = LengthCalculator { source, macroTable, p ->
+    @JvmField
+    internal val SINGLE_ARG_LENGTH_CALCULATOR = LengthCalculator { source, macroTable, p ->
         val argOpcode = source.get(p).toInt() and 0xFF
         val calculator = IdMappings.LENGTH_FOR_OPCODE_CALCULATOR[argOpcode]
         return@LengthCalculator calculator.calculate(source, macroTable, p + 1)
     }
 
-    @JvmStatic
-    private val ARG_LENGTH_CALCULATORS = Array<LengthCalculator>(4) {
+    @JvmField
+    internal val ARG_LENGTH_CALCULATORS = Array<LengthCalculator>(4) {
         when (it) {
             0 -> LengthCalculator { _, _, _, -> 0 }
             1 -> SINGLE_ARG_LENGTH_CALCULATOR

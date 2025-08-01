@@ -24,7 +24,4 @@ interface AnnotationIterator: Iterator<String?>, AutoCloseable {
      * Convenience method that loads all annotations into an array of strings.
      */
     fun toStringArray(): Array<String?>
-
-    // TODO: Can we get rid of this?
-    fun clone(): AnnotationIterator
 }

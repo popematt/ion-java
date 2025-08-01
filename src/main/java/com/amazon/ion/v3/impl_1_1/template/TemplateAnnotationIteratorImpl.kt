@@ -16,10 +16,6 @@ internal class TemplateAnnotationIteratorImpl(
     @JvmField
     var currentAnnotationText: String? = null
 
-    override fun clone(): AnnotationIterator {
-        return pool.getAnnotations(annotations)
-    }
-
     override fun hasNext(): Boolean = i < annotations.size
     override fun next(): String? {
         if (!hasNext()) throw NoSuchElementException()

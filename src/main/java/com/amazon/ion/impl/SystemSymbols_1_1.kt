@@ -85,6 +85,7 @@ enum class SystemSymbols_1_1(val text: String, val id: Int) {
             // This allows us to have O(1) lookup, but it doesn't rely on the enum's ordinal value, which could change.
             Arrays.sort(this) { o1, o2 -> o1.id.compareTo(o2.id) }
         }
+
         init {
             // Initialization checks to make sure that the system symbols are not misconfigured.
             ALL_VALUES

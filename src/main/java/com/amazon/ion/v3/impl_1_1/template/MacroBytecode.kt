@@ -21,6 +21,12 @@ import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.SRC_INDE
  *
  *     Operation | Data
  *      00000001   00000000 00000000 00000001
+ *
+ *
+ *
+ *
+ * TODO: Currently, the 0x00 operation is reserved for "unset", but consider using it for Ion Binary opcodes instead.
+ *       That might allow us to unify the macro reader and the raw binary reader. Will it improve performance? I'm not sure.
  */
 object MacroBytecode {
 
@@ -189,8 +195,8 @@ object MacroBytecode {
         @OptIn(ExperimentalStdlibApi::class)
         companion object {
 
-            @JvmStatic
-            private val OPERATIONS = Array<Operations?>(256) { i ->
+            @JvmField
+            internal val OPERATIONS = Array<Operations?>(256) { i ->
                 Operations.entries.singleOrNull { it.operation == i }
             }
 

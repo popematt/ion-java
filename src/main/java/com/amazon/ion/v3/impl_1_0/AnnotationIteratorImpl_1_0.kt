@@ -27,12 +27,6 @@ internal class AnnotationIteratorImpl_1_0(
         sid = -1
     }
 
-    override fun clone(): AnnotationIterator {
-        val start = source.position()
-        val length = source.limit() - start
-        return pool.getAnnotations(start, length, symbolTable)
-    }
-
     override fun peek() {
         source.mark()
         next()

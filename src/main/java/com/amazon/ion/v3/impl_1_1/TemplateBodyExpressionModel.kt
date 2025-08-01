@@ -48,16 +48,16 @@ data class TemplateBodyExpressionModel(
         @JvmStatic
         val EMPTY_CONTENT_TOKEN_ARRAY = intArrayOf(TokenTypeConst.END)
 
-        @JvmStatic
+        @JvmField
         val SCALAR_TOKEN_ARRAY = intArrayOf()
 
-        @JvmStatic
+        @JvmField
         val EMPTY_EXPRESSION_ARRAY = emptyArray<TemplateBodyExpressionModel>()
 
-        @JvmStatic
+        @JvmField
         val EMPTY_ANNOTATIONS_ARRAY = emptyArray<String?>()
 
-        @JvmStatic
+        @JvmField
         val ABSENT_ARG_EXPRESSION = TemplateBodyExpressionModel(Kind.EXPRESSION_GROUP)
     }
 

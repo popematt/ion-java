@@ -194,6 +194,45 @@ object IntHelper {
         }
     }
 
+    /**
+     * This employs some hackery. The result contains both the value and the length.
+     * The 8 low order bits are the length, and the other bits are the value.
+     */
+    @JvmStatic
+    fun readFlexUIntValueAndLengthAt(source: ByteBuffer, position: Int): Long {
+        val firstByte = try {
+            source.get(position)
+        } catch (e: Exception) {
+            println(source)
+            throw e
+        }
+        val numBytes = firstByte.countTrailingZeroBits() + 1
+        val value = when (numBytes) {
+            1 -> {
+                ((firstByte.toInt() and 0xFF) ushr 1)
+            }
+            2, 3, 4 -> {
+                // TODO: We could probably simplify some of these calculations.
+                val backtrack = 4 - numBytes
+                val data = source.getInt(position - backtrack)
+                val shiftAmount = 8 * backtrack + numBytes
+                (data ushr shiftAmount)
+            }
+            5 -> {
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 3) ushr 3
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                (data shl 3) + (firstByte.toInt() ushr 5)
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+        return (value.toLong() shl 8) or numBytes.toLong()
+    }
+
+
+    /**
+     * Returns the length of the flexuint + the value of the flexuint. Useful for skipping length-prefixed values.
+     */
     @JvmStatic
     fun getLengthPlusValueOfFlexUIntAt(source: ByteBuffer, position: Int): Int {
         val firstByte = source.get(position)
@@ -337,12 +376,42 @@ object IntHelper {
             }
             5 -> {
                 val data = source.getInt(position + 1)
-                val data1 = (data shl 3) shr 3
+                val data1 = (data shl 4) shr 4
                 if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
                 return (data shl 3) + (firstByte.toInt() ushr 5)
             }
             else -> throw IonException("FlexUInt value too large to find in an Int")
         }
+    }
+
+    /**
+     * This employs some hackery. The result contains both the value and the length.
+     * The 8 low order bits are the length, and the other bits are the value.
+     */
+    @JvmStatic
+    fun readFlexIntValueAndLengthAt(source: ByteBuffer, position: Int): Long {
+        val firstByte = source.get(position)
+        val numBytes = firstByte.countTrailingZeroBits() + 1
+        val value = when (numBytes) {
+            1 -> {
+                (firstByte.toInt() shr 1)
+            }
+            2, 3, 4 -> {
+                // TODO: We could probably simplify some of these calculations.
+                val backtrack = 4 - numBytes
+                val data = source.getInt(position - backtrack)
+                val shiftAmount = 8 * backtrack + numBytes
+                (data shr shiftAmount)
+            }
+            5 -> {
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 3) ushr 3
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                (data shl 3) + (firstByte.toInt() ushr 5)
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+        return ((value.toLong() shl 32) shr 24) or numBytes.toLong()
     }
 
     @JvmStatic

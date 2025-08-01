@@ -20,6 +20,7 @@ class MacroInvocation(
     private val macroTable: Array<MacroV2>,
 ) {
     fun evaluate(): ValueReader { return startMacroEvaluation(macro, arguments, pool, symbolTable, macroTable) }
+
     fun iterateArguments(): Iterator<ValueReader> = object : Iterator<ValueReader> {
             private var i = 0
             private val n = arguments.signature.size

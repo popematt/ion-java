@@ -15,7 +15,6 @@ import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
-import java.nio.charset.StandardCharsets
 
 open class TemplateReaderImpl internal constructor(
     @JvmField
@@ -84,8 +83,8 @@ open class TemplateReaderImpl internal constructor(
         @JvmField var next: EvaluationStackFrame? = null
 
         companion object {
-            @JvmStatic
-            private val EMPTY_ARRAY = IntArray(0)
+            @JvmField
+            val EMPTY_ARRAY = IntArray(0)
 
 //            @JvmStatic
             @JvmField
@@ -125,6 +124,80 @@ open class TemplateReaderImpl internal constructor(
         this.symbolTable = symbolTable
         this.macroTable = macroTable
     }
+
+
+    private object Foo {
+        @JvmField
+        val TOKEN_HANDLERS = Array(256) {
+            when (it) {
+                MacroBytecode.OP_START_ARGUMENT_VALUE -> ::collectAllArgs0
+                MacroBytecode.OP_PARAMETER -> ::switchToReadingArguments0
+                MacroBytecode.OP_END_ARGUMENT_VALUE,
+                MacroBytecode.OP_RETURN -> ::switchBackToReadingBody
+                MacroBytecode.OP_INVOKE_SYS_MACRO -> ::handleSystemMacro0
+                else -> ::passThrough
+            }
+        }
+
+        @JvmStatic
+        private fun passThrough(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
+            return i
+        }
+
+        @JvmStatic
+        private fun handleSystemMacro0(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
+            return when (instruction and 0xFF) {
+                SystemMacro.DEFAULT_ADDRESS -> -reader.handleDefaultSystemMacro(i)
+                // Anything else passes through.
+                else -> i
+            }
+        }
+
+        @JvmStatic
+        private fun collectAllArgs0(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
+            var instruction = instruction
+            var i = i
+            val argStack = reader.argumentValueIndicesStack
+            var argStackSize = reader.argStackSize
+            val bytecode = reader.bytecode
+            do {
+                argStack[(argStackSize++).toInt()] = i - 1
+                i += (instruction and MacroBytecode.DATA_MASK)
+                instruction = bytecode[i++]
+            } while (instruction.instructionToOp() == MacroBytecode.OP_START_ARGUMENT_VALUE)
+            reader.argStackSize = argStackSize
+            i--
+            return -i
+        }
+
+        /**
+         * Returns the new `i` value. (Does not set the class member named `i`.)
+         */
+        @JvmStatic
+        private fun switchBackToReadingBody(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
+            val frame = reader.evaluationStack[(--reader.stackFrameSize).toInt()]
+            reader.bytecode = frame.bytecode
+            reader.constantPool = frame.constantPool
+            val i = frame.i
+            return -i
+        }
+
+        @JvmStatic
+        private fun switchToReadingArguments0(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
+            if (reader.bytecode[i].instructionToOp() == MacroBytecode.OP_END_ARGUMENT_VALUE) {
+                // Don't push anything. Just replace the current top of the stack.
+            } else {
+                reader.pushEvaluationFrame(i)
+            }
+            val arguments = reader.arguments
+            reader.constantPool = arguments.constantPool()
+            val argSlice = arguments.getArgumentSlice(instruction and MacroBytecode.DATA_MASK)
+            reader.bytecode = argSlice.bytecode
+            return -argSlice.startIndex
+        }
+
+    }
+
 
     override fun nextToken(): Int {
 //        println(javaClass.simpleName + "@" + Integer.toHexString(System.identityHashCode(this)) + " -> ")
@@ -175,12 +248,6 @@ open class TemplateReaderImpl internal constructor(
         this.argStackSize = argStackSize
         i--
         return i
-    }
-
-    private fun addArgumentToStack(instruction: Int, i: Int): Int {
-        // Put args positions on stack for template macro invocations to use in evaluation
-        argumentValueIndicesStack[(argStackSize++).toInt()] = i - 1
-        return i + (instruction and MacroBytecode.DATA_MASK)
     }
 
     private fun switchToReadingArguments(instruction: Int, i: Int): Int {
@@ -536,7 +603,7 @@ open class TemplateReaderImpl internal constructor(
                 MacroBytecode.OP_REF_ONE_FLEXSYM_ANNOTATION -> {
                     val length = instruction and MacroBytecode.DATA_MASK
                     val position = bytecode[i++]
-                    annotations += readTextRef(position, length)
+                    annotations += readText(position, length, pool.scratchBuffer)
                 }
                 else -> {
                     if (annotations.isNotEmpty()) break
@@ -639,7 +706,7 @@ open class TemplateReaderImpl internal constructor(
             MacroBytecode.OP_REF_STRING -> {
                 val length = instruction and MacroBytecode.DATA_MASK
                 val position = bytecode[i++]
-                return readTextRef(position, length)
+                return readText(position, length, pool.scratchBuffer)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
@@ -663,7 +730,7 @@ open class TemplateReaderImpl internal constructor(
                 val length = instruction and MacroBytecode.DATA_MASK
                 this.instruction = INSTRUCTION_NOT_SET
                 val position = bytecode[i++]
-                return readTextRef(position, length)
+                return readText(position, length, pool.scratchBuffer)
                 // .also { println("... \"$it\"\n; i=$i") }
             }
             MacroBytecode.OP_SYSTEM_SYMBOL_SID -> {
@@ -839,7 +906,7 @@ open class TemplateReaderImpl internal constructor(
                 val length = instruction and MacroBytecode.DATA_MASK
                 val position = bytecode[i++]
                 this.instruction = INSTRUCTION_NOT_SET
-                return readTextRef(position, length)
+                return readText(position, length, pool.scratchBuffer)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
         }
@@ -864,11 +931,4 @@ open class TemplateReaderImpl internal constructor(
     override fun ivm(): Short = throw IonException("IVM is not supported by this reader")
     override fun seekTo(position: Int) = throw UnsupportedOperationException("This method only applies to readers that support IVMs.")
     override fun position(): Int  = throw UnsupportedOperationException("This method only applies to readers that support IVMs.")
-
-    private fun readTextRef(position: Int, length: Int): String {
-        val scratchBuffer = pool.scratchBuffer
-        scratchBuffer.limit(position + length)
-        scratchBuffer.position(position)
-        return StandardCharsets.UTF_8.decode(scratchBuffer).toString()
-    }
 }

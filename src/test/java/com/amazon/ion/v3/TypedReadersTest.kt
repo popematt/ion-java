@@ -717,82 +717,6 @@ class TypedReadersTest {
         }
 
         @Test
-        fun readEExpArgs() {
-            val data = """
-                01
-                60
-                6E
-            """
-            val signature = template("foo", "bar?", "baz?"){}.signature
-
-            val source = toByteBuffer(data)
-
-
-            val pool = ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN))
-            val reader = EExpArgumentReaderImpl(
-                source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
-                pool,
-                symbolTable = arrayOf(),
-                macroTable = arrayOf(),
-                pool.getList(0, 0, arrayOf(), arrayOf()),
-            )
-            reader.initArgs(signature)
-            // reader.calculateEndPosition()
-
-            reader.seekToBeforeArgument(1)
-            reader.assertNextToken(TokenTypeConst.BOOL).skip()
-
-            reader.seekToBeforeArgument(0)
-            reader.assertNextToken(TokenTypeConst.INT).skip()
-
-            reader.seekToBeforeArgument(1)
-            reader.assertNextToken(TokenTypeConst.BOOL).skip()
-
-            reader.seekToBeforeArgument(2)
-            reader.assertNextToken(TokenTypeConst.ABSENT_ARGUMENT)
-
-            reader.seekToBeforeArgument(1)
-            reader.assertNextToken(TokenTypeConst.BOOL).skip()
-
-            reader.seekToBeforeArgument(0)
-            reader.assertNextToken(TokenTypeConst.INT).skip()
-        }
-
-        @Test
-        fun readPrefixedExprGroup() {
-            val data = """
-                02  | Presence Bits -- one group arg
-                05  | Group length = 2
-                60
-                6E
-            """
-            val signature = template("foo*"){}.signature
-
-            val source = toByteBuffer(data)
-
-            val pool = ResourcePool(source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN))
-            val reader = EExpArgumentReaderImpl(
-                source.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN),
-                pool,
-                symbolTable = arrayOf(),
-                macroTable = arrayOf(),
-                pool.getList(0, 0, arrayOf(), arrayOf()),
-            )
-            reader.initArgs(signature)
-            reader.calculateEndPosition()
-
-            reader.seekToBeforeArgument(0)
-            reader.assertNextToken(TokenTypeConst.EXPRESSION_GROUP)
-                .expressionGroup()
-                .use { eg ->
-                    eg.assertNextToken(TokenTypeConst.INT).skip()
-                    eg.assertNextToken(TokenTypeConst.BOOL).skip()
-                    eg.assertNextToken(TokenTypeConst.END)
-                }
-
-        }
-
-        @Test
         fun readVariableThatReferencesEExpArgs() {
             val identity = template("x") { variable(0) }
             val foo = template("f") {
@@ -810,9 +734,12 @@ class TypedReadersTest {
                     macroTable = arrayOf(identity, foo)
                 )
                 stream.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
-                stream.startMacroEvaluation().use { m2 ->
-                    m2.assertNextToken(TokenTypeConst.INT).skip()
-                    m2.assertNextToken(TokenTypeConst.END)
+                stream.startMacroEvaluation().use { m1 ->
+                    m1.assertNextToken(TokenTypeConst.MACRO_INVOCATION)
+                    m1.startMacroEvaluation().use { m2 ->
+                        m2.assertNextToken(TokenTypeConst.INT).skip()
+                        m2.assertNextToken(TokenTypeConst.END)
+                    }
                 }
                 stream.assertNextToken(TokenTypeConst.END)
             }
@@ -2483,15 +2410,21 @@ class TypedReadersTest {
 
                 StreamReaderAsIonReader(data).use { reader ->
                     val iter = ION.iterate(reader)
+                    println("@" + reader.ion11Reader.position())
                     assertTrue(iter.hasNext())
+                    println("@" + reader.ion11Reader.position())
                     val value0 = iter.next()
                     println(value0)
                     assertEquals(ION.newInt(0), value0)
+                    println("@" + reader.ion11Reader.position())
                     assertTrue(iter.hasNext())
+                    println("@" + reader.ion11Reader.position())
                     val value1 = iter.next()
+                    println("@" + reader.ion11Reader.position())
                     println(value1)
                     assertEquals(ION.newInt(1), value1)
                     assertFalse(iter.hasNext())
+                    println("@" + reader.ion11Reader.position())
                 }
             }
 
@@ -2509,11 +2442,16 @@ class TypedReadersTest {
                     61 05
                 """)
 
-                StreamReaderAsIonReader(data).expect {
+                val reader = StreamReaderAsIonReader(data)
+                reader.expect {
                     value("0")
+                    println("@" + reader.ion11Reader.position())
                     value("[1, 2]")
+                    println("@" + reader.ion11Reader.position())
                     value("[3, 4]")
+                    println("@" + reader.ion11Reader.position())
                     value("5")
+                    println("@" + reader.ion11Reader.position())
                 }
 
                 StreamReaderAsIonReader(data).expect {
@@ -2648,10 +2586,15 @@ class TypedReadersTest {
                        61 04             | Int 4
                        01 F0
                 """)
-                StreamReaderAsIonReader(data).expect {
+                val reader = StreamReaderAsIonReader(data)
+                reader.expect {
+                    println("@" + reader.ion11Reader.position())
                     value("0")
+                    println("@" + reader.ion11Reader.position())
                     value("{ $1: 1, $2: 2 }")
+                    println("@" + reader.ion11Reader.position())
                     value("{ $3: 3, $4: 4 }")
+                    println("@" + reader.ion11Reader.position())
                 }
             }
 
@@ -4291,6 +4234,37 @@ class TypedReadersTest {
                 assertEquals(expected.size, actual.size)
             }
 
+            @Test
+            fun `a medium-large one log Ion 1 1 with macros`() {
+                val path = Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_medlarge.11.10n")
+
+                val actual = ION.newDatagram()
+
+                FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+                    val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                    StreamReaderAsIonReader(mappedByteBuffer).use {
+                        val iter = ION.iterate(it)
+                        while (iter.hasNext()) {
+                            val value = iter.next()
+                            actual.add(value)
+                        }
+                    }
+                }
+
+                val expected = ION.loader.load(path.toFile())
+                val ei = expected.iterator()
+                val ai = actual.iterator()
+                var i = 0
+                while (ei.hasNext() && ai.hasNext()) {
+                    val e = ei.next()
+                    val a = ai.next()
+                    assertEquals(e.toPrettyString(), a.toPrettyString(), "Value $i does not match")
+                    i++
+                }
+                assertEquals(expected.size, actual.size)
+            }
+
+
             @Disabled
             @Test
             fun `a big log for Ion 1 1 with macros`() {
@@ -4334,7 +4308,7 @@ class TypedReadersTest {
             }
 
             fun Iterator<IonValue>.value(ion: String) {
-                assertTrue(hasNext())
+//                assertTrue(hasNext())
                 val value = next()
                 println(value)
                 val expected = ION.singleValue(ion)

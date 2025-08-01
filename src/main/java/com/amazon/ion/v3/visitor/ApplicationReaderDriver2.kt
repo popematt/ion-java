@@ -26,16 +26,8 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     constructor(outputStream: ByteArrayOutputStream): this(ByteBuffer.wrap(outputStream.toByteArray()))
 
     companion object {
-        @JvmStatic
-        internal val ION_1_1_SYSTEM_MACROS: Array<MacroV2> = SystemMacro.MACROS_BY_ID
-        @JvmStatic
-        internal val ION_1_1_SYSTEM_SYMBOLS = SystemSymbols_1_1.allSymbolTexts()
-            .toMutableList()
-            .also { it.add(0, null) }
-            .toTypedArray()
 
-
-        @JvmStatic
+        @JvmField
         internal val ION_1_0_SYMBOL_TABLE = arrayOf(
             null,
             SystemSymbols.ION,
@@ -64,7 +56,7 @@ class ApplicationReaderDriver @JvmOverloads constructor(
     }
     private fun initIon11Reader() {
         ion11Reader = StreamReaderImpl(source.asReadOnlyBuffer()).also {
-            it.initTables(ION_1_1_SYSTEM_SYMBOLS, ION_1_1_SYSTEM_MACROS)
+            it.initTables(EncodingContextManager.ION_1_1_SYSTEM_SYMBOLS_AS_SYMBOL_TABLE, EncodingContextManager.ION_1_1_SYSTEM_MACROS)
         }
     }
 

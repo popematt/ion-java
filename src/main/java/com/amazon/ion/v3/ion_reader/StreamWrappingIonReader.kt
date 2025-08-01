@@ -10,6 +10,7 @@ import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
 import com.amazon.ion.impl._Private_Utils
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -89,6 +90,11 @@ class StreamWrappingIonReader: IonReader {
             }
             TokenTypeConst.FIELD_NAME -> {
                 fieldNameSid = (reader as StructReader).fieldNameSid()
+                (reader as? ValueReaderBase)?.let {
+                    if (it.symbolTable.size < fieldNameSid) {
+                        TODO()
+                    }
+                }
                 if (fieldNameSid < 0) {
                     fieldName = (reader as StructReader).fieldName()
                 } else {

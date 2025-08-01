@@ -7,8 +7,8 @@ import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.template.*
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_MACROS
-import com.amazon.ion.v3.visitor.ApplicationReaderDriver.Companion.ION_1_1_SYSTEM_SYMBOLS
+import com.amazon.ion.v3.EncodingContextManager.Companion.ION_1_1_SYSTEM_MACROS
+import com.amazon.ion.v3.EncodingContextManager.Companion.ION_1_1_SYSTEM_SYMBOLS_AS_SYMBOL_TABLE
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
@@ -34,6 +34,11 @@ import java.nio.charset.StandardCharsets
  *
  * TODO: track position here rather than in the ByteBuffer, so that we can avoid making so many copies of the bytebuffer.
  *       That means rewriting everything to be `read___At`.
+ *
+ *
+ * TODO: Consider creating a custom, UTF8-based implementation of `CharSequence` and changing the
+ *       various APIs to use `CharSequence` instead of `String`.
+ *       C.f. https://github.com/apache/avro/blob/main/lang/java/avro/src/main/java/org/apache/avro/util/Utf8.java
  */
 abstract class ValueReaderBase(
     @JvmField
@@ -47,6 +52,7 @@ abstract class ValueReaderBase(
 ): ValueReader {
 
     init {
+        // This will become redundant.
         source.order(ByteOrder.LITTLE_ENDIAN)
     }
 
@@ -85,20 +91,25 @@ abstract class ValueReaderBase(
     @JvmField
     internal var opcode: Short = TID_UNSET
 
+    @JvmField
+    internal var i: Int = 0
+
+    @JvmField
+    protected var limit: Int = source.capacity()
+
 //    internal var id = "" // UUID.randomUUID().toString().take(8)
 
     internal fun init(
         start: Int,
         length: Int,
     ) {
-        source.limit(start + length)
-        source.position(start)
+        limit = start + length
+        if (source.limit() < limit) TODO()
+        i = start
         opcode = TID_UNSET
 //        id = UUID.randomUUID().toString().take(8)
         resetState()
     }
-
-    protected open fun resetState() {}
 
     // TODO: Consolidate with `init`
     internal fun initTables(
@@ -110,23 +121,35 @@ abstract class ValueReaderBase(
         this.macroTable = macroTable
     }
 
+    protected open fun resetState() {}
+
     override fun nextToken(): Int {
         var type: Int
+        var i = i
+        val source = source
+        val limit = limit
+        var opcode: Short
         do {
-            if (!source.hasRemaining()) return TokenTypeConst.END
+            if (i >= limit) return TokenTypeConst.END
 
             // Check for the next token...
-            val b = source.get()
-//            if (Debug.enabled) println("[$id ${this::class.simpleName}] At position ${source.position() - 1}, read byte ${(b.toInt() and 0xFF).toString(16)}")
+            val b = source.get(i++)
+//            if (Debug.enabled) println("[$id ${this::class.simpleName}] At position ${i - 1}, read byte ${(b.toInt() and 0xFF).toString(16)}")
             opcode = (b.toInt() and 0xFF).toShort()
             type = type(opcode.toInt())
+            // TODO: See if we can clean this up. It might be completely unnecessary.
             when (opcode) {
                 TID_UNSET -> continue
-                TID_END -> return TokenTypeConst.END
+                TID_END -> {
+                    this.i = i
+                    this.opcode = opcode
+                    return TokenTypeConst.END
+                }
                 else -> break
             }
         } while (true)
-
+        this.opcode = opcode
+        this.i = i
         return type
     }
 
@@ -155,8 +178,7 @@ abstract class ValueReaderBase(
                 if (opcode == 0xEA) {
                     IonType.NULL
                 } else {
-                    source.mark()
-                    val type = when (source.get().toInt()) {
+                    val type = when (source.get(i).toInt()) {
                         0x00 -> IonType.BOOL
                         0x01 -> IonType.INT
                         0x02 -> IonType.FLOAT
@@ -171,7 +193,6 @@ abstract class ValueReaderBase(
                         0x0B -> IonType.STRUCT
                         else -> throw IonException("Not a valid null value")
                     }
-                    source.reset()
                     type
                 }
             }
@@ -206,9 +227,9 @@ abstract class ValueReaderBase(
             this.opcode = TID_AFTER_FIELD_NAME
             return
         }
-        val currentPosition = source.position()
+        val currentPosition = i
         val length = IdMappings.LENGTH_FOR_OPCODE_CALCULATOR[opcode].calculate(source, macroTable, currentPosition)
-        source.position(currentPosition + length)
+        i = currentPosition + length
     }
 
     override fun nullValue(): IonType {
@@ -217,7 +238,7 @@ abstract class ValueReaderBase(
         return if (opcode == 0xEA) {
             IonType.NULL
         } else if (opcode == 0xEB) {
-            val type = source.get()
+            val type = source.get(i++)
             when (type.toInt()) {
                 0x00 -> IonType.BOOL
                 0x01 -> IonType.INT
@@ -252,23 +273,26 @@ abstract class ValueReaderBase(
     override fun longValue(): Long {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
-        return when (opcode) {
+        val longValue = when (opcode) {
             0x60 -> 0
-            0x61 -> source.get().toLong()
-            0x62 -> source.getShort().toLong()
-            0x63 -> IntHelper.readFixedInt(source, 3)
-            0x64 -> source.getInt().toLong()
-            0x65 -> IntHelper.readFixedInt(source, 5)
-            0x66 -> IntHelper.readFixedInt(source, 6)
-            0x67 -> IntHelper.readFixedInt(source, 7)
-            0x68 -> source.getLong()
+            0x61 -> source.get(i).toLong()
+            0x62 -> source.getShort(i).toLong()
+            0x63 -> IntHelper.readFixedIntAt(source, i, 3)
+            0x64 -> source.getInt(i).toLong()
+            0x65 -> IntHelper.readFixedIntAt(source, i, 5)
+            0x66 -> IntHelper.readFixedIntAt(source, i, 6)
+            0x67 -> IntHelper.readFixedIntAt(source, i, 7)
+            0x68 -> source.getLong(i)
             else -> if (opcode == 0xF6) {
                 // Not really supported for Longs anyway.
+                // When we do support this, we need to do an early return in this branch.
                 TODO("Variable length integers")
             } else {
                 throw IonException("Not positioned on an int; found ${TokenTypeConst(opcode)} (opcode: $opcode)")
             }
         }
+        i += (opcode and 0xF)
+        return longValue
     }
 
     override fun stringValue(): String {
@@ -277,16 +301,18 @@ abstract class ValueReaderBase(
         val length = if (opcode shr 4 == 9) {
             opcode and 0xF
         } else if (opcode == 0xF9) {
-            IntHelper.readFlexUInt(source)
+            val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, i)
+            i += (flexUIntValueAndLength and 0xFF).toInt()
+            (flexUIntValueAndLength ushr 8).toInt()
         } else {
             throw IonException("Not positioned on a string")
         }
-        val position = source.position()
+        val position = i
         // Why do we need scratchBuffer here?
         val scratchBuffer = pool.scratchBuffer
         scratchBuffer.limit(position + length)
         scratchBuffer.position(position)
-        source.position(position + length)
+        i = position + length
         return pool.utf8Decoder.decode(scratchBuffer, length)
     }
 
@@ -303,35 +329,51 @@ abstract class ValueReaderBase(
     override fun symbolValue(): String? {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
-        val length = IdMappings.length(opcode, source)
-        val position = source.position()
-        if (opcode == 0xFA || opcode and 0xF0 == 0xA0) {
-            // Inline text
-            val scratchBuffer = pool.scratchBuffer
-            scratchBuffer.limit(position + length)
-            scratchBuffer.position(position)
-            source.position(position + length)
-            return StandardCharsets.UTF_8.decode(scratchBuffer).toString()
-            // return pool.utf8Decoder.decode(scratchBuffer, length)
-        } else if (opcode == 0xEE) {
-            // System SID
-            val sid = IntHelper.readFixedUInt(source, 1)
-            return SystemSymbols_1_1[sid]?.text
-        } else if (opcode == 0xE1) {
-            // 1 byte SID
-            val sid = IntHelper.readFixedUInt(source, 1)
-            return symbolTable[sid]
-        } else if (opcode == 0xE2) {
-            // 2 byte SID with bias
-            val sid = IntHelper.readFixedUInt(source, 2) + 256
-            return symbolTable[sid]
-        } else if (opcode == 0xE3) {
-            // FlexUInt SID with bias
-            val sid = IntHelper.readFlexUInt(source) + 65792
-            return symbolTable[sid]
-        } else {
-            throw IonException("Not positioned on a symbol")
+        var position = i
+        val text = when (opcode) {
+            0xA0 -> ""
+            0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF -> {
+                val length = opcode and 0xF
+                val text = readText(position, length, pool.scratchBuffer)
+                position += length
+                text
+            }
+            0xFA -> {
+                val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, position)
+                position += (flexUIntValueAndLength and 0xFF).toInt()
+                val length = (flexUIntValueAndLength ushr 8).toInt()
+                val text = readText(position, length, pool.scratchBuffer)
+                position += length
+                text
+            }
+            0xEE -> {
+                // System SID
+                val sid = IntHelper.readFixedUIntAt(source, position++, 1)
+                SystemSymbols_1_1[sid]?.text
+            }
+            0xE1 -> {
+                // 1 byte SID
+                val sid = IntHelper.readFixedUIntAt(source, position++, 1)
+                symbolTable[sid]
+            }
+            0xE2 -> {
+                // 2 byte SID with bias
+                val sid = IntHelper.readFixedUIntAt(source, position, 2) + 256
+                position += 2
+                symbolTable[sid]
+            }
+            0xE3 -> {
+                // FlexUInt SID with bias
+                val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, i)
+                val sidLength = (flexUIntValueAndLength and 0xFF).toInt()
+                val sid = (flexUIntValueAndLength ushr 8).toInt() + 65792
+                position += sidLength
+                symbolTable[sid]
+            }
+            else -> throw IonException("Not positioned on a symbol")
         }
+        i = position
+        return text
     }
 
     override fun symbolValueSid(): Int {
@@ -343,11 +385,20 @@ abstract class ValueReaderBase(
             // System SID
             0xEE -> -1
             // 1 byte SID
-            0xE1 -> source.get().toInt() and 0xFF
+            0xE1 -> source.get(i++).toInt() and 0xFF
             // 2 byte SID with bias
-            0xE2 -> (source.getShort().toInt() and 0xFFFF) + 256
+            0xE2 -> {
+                val sid = (source.getShort(i).toInt() and 0xFFFF) + 256
+                i += 2
+                sid
+            }
             // FlexUInt SID with bias
-            0xE3 -> IntHelper.readFlexUInt(source) + 65792
+            0xE3 -> {
+                val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, i)
+                val sid = (flexUIntValueAndLength ushr 8).toInt() + 65792
+                i += (flexUIntValueAndLength.toInt() and 0xFF)
+                sid
+            }
             else -> throw IonException("Not positioned on a symbol")
         }
         if (sid >= 0) {
@@ -370,49 +421,62 @@ abstract class ValueReaderBase(
         val length = if (opcode shr 4 == 0xB) {
             opcode and 0xF
         } else if (opcode == 0xFB) {
-            IntHelper.readFlexUInt(source)
+            val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, i)
+            val listLength = (flexUIntValueAndLength ushr 8).toInt()
+            i += (flexUIntValueAndLength.toInt() and 0xFF)
+            listLength
         } else if (opcode == 0xF1) {
-            val start = source.position()
+            val start = i
             return pool.getDelimitedSequence(start, this, symbolTable, macroTable)
         } else {
             throw IonException("Not positioned on a list")
         }
-        val start = source.position()
-        source.position(start + length)
+        val start = i
+        i = start + length
         return pool.getList(start, length, symbolTable, macroTable)
     }
 
     override fun sexpValue(): SexpReader {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
-        val length = IdMappings.length(opcode.toInt(), source)
-        if (length < 0) {
-            // Delimited container
-            val start = source.position()
-            return pool.getDelimitedSexp(start, this, symbolTable, macroTable)
+        val length = if (opcode shr 4 == 0xC) {
+            opcode and 0xF
+        } else if (opcode == 0xFC) {
+            val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, i)
+            val sexpLength = (flexUIntValueAndLength ushr 8).toInt()
+            i += (flexUIntValueAndLength.toInt() and 0xFF)
+            sexpLength
+        } else if (opcode == 0xF2) {
+            val start = i
+            return pool.getDelimitedSequence(start, this, symbolTable, macroTable)
         } else {
-            // Length prefixed container
-            val start = source.position()
-            source.position(start + length)
-            return pool.getPrefixedSexp(start, length, symbolTable, macroTable)
+            throw IonException("Not positioned on a list")
         }
+        val start = i
+        i = start + length
+        return pool.getPrefixedSexp(start, length, symbolTable, macroTable)
     }
 
     override fun structValue(): StructReader {
         val opcode = opcode.toInt()
-        val length = IdMappings.length(opcode, source)
-        if (length < 0) {
-            // Delimited container
-            val start = source.position()
-            this.opcode = TID_UNSET
+        this.opcode = TID_UNSET
+        val length = if (opcode shr 4 == 0xD) {
+            opcode and 0xF
+        } else if (opcode == 0xFD) {
+            val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, i)
+            val sexpLength = (flexUIntValueAndLength ushr 8).toInt()
+            i += (flexUIntValueAndLength.toInt() and 0xFF)
+            sexpLength
+        } else if (opcode == 0xF3) {
+            // TODO: Consider converting delimited containers into MacroBytecode...
+            val start = i
             return pool.getDelimitedStruct(start, this, symbolTable, macroTable)
         } else {
-            // Length prefixed container
-            val start = source.position()
-            source.position(start + length)
-            this.opcode = TID_UNSET
-            return pool.getStruct(start, length, symbolTable, macroTable)
+            throw IonException("Not positioned on a list")
         }
+        val start = i
+        i = start + length
+        return pool.getStruct(start, length, symbolTable, macroTable)
     }
 
 
@@ -420,49 +484,44 @@ abstract class ValueReaderBase(
     private fun macroValue(opcode: Int): MacroV2 {
         when (opcode shr 4) {
             0x0, 0x1, 0x2, 0x3 -> {
-                if (opcode >= macroTable.size) {
-                    println(source)
-                    println("Macro Table size: " + macroTable.size)
-                }
                 return macroTable[opcode]
             }
             0x4 -> {
                 // Opcode with 12-bit address and bias
                 val bias = (opcode and 0xF) * 256 + 64
-                val unbiasedId = source.get().toInt() and 0xFF
+                val unbiasedId = source.get(i++).toInt() and 0xFF
                 val id: Int = unbiasedId + bias
-                if (id >= macroTable.size) {
-                    println(source)
-                    println("Macro Table size: " + macroTable.size)
-                }
                 return macroTable[id]
             }
             0x5 -> {
                 // Opcode with 20-bit address and bias
                 val bias = (opcode and 0xF) * 256 * 256 + 4160
-                val unbiasedId = source.getShort().toInt() and 0xFFFF
+                val unbiasedId = source.getShort(i).toInt() and 0xFFFF
+                i += 2
                 val id: Int = unbiasedId + bias
                 return macroTable[id]
             }
             0xE -> {
                 if (opcode == 0xEF) {
                     // System macro
-                    val id = source.get().toInt()
+                    val id = source.get(i++).toInt()
                     return EncodingContextManager.ION_1_1_SYSTEM_MACROS[id]
                 } else {
                     throw IonException("Not positioned on an E-Expression: ${opcode.toByte().toHexString()} @ ${source.position()}")
                 }
             }
             0xF -> {
-                if (opcode == 0xF4) {
-                    // E-expression with FlexUInt macro address
-                    return macroTable[IntHelper.readFlexUInt(source)]
-                } else if (opcode == 0xF5) {
-                    // E-expression with FlexUInt macro address followed by FlexUInt length prefix
-                    val address = IntHelper.readFlexUInt(source)
-                    return macroTable[address]
-                } else {
-                    throw IonException("Not positioned on an E-Expression")
+                when (opcode) {
+                    0xF4, 0xF5 -> {
+                        val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, i)
+                        val value = (flexUIntValueAndLength ushr 8).toInt()
+                        i += (flexUIntValueAndLength.toInt() and 0xFF)
+                        // E-expression with FlexUInt macro address
+                        return macroTable[value]
+                    }
+                    else -> {
+                        throw IonException("Not positioned on an E-Expression")
+                    }
                 }
             }
             else -> throw IonException("Not positioned on an E-Expression")
@@ -474,50 +533,44 @@ abstract class ValueReaderBase(
     private fun macroRef(opcode: Int): MacroRef {
         when (opcode shr 4) {
             0x0, 0x1, 0x2, 0x3 -> {
-                if (opcode >= macroTable.size) {
-                    println(source)
-                    println("Macro Table size: " + macroTable.size)
-                }
                 return MacroRef.byId(opcode)
             }
             0x4 -> {
                 // Opcode with 12-bit address and bias
                 val bias = (opcode and 0xF) * 256 + 64
-                val unbiasedId = source.get().toInt() and 0xFF
+                val unbiasedId = source.get(i++).toInt() and 0xFF
                 val id: Int = unbiasedId + bias
-                if (id >= macroTable.size) {
-                    println(source)
-                    println("Macro Table size: " + macroTable.size)
-                }
                 return MacroRef.byId(id)
             }
             0x5 -> {
                 // Opcode with 20-bit address and bias
                 val bias = (opcode and 0xF) * 256 * 256 + 4160
-                val unbiasedId = source.getShort().toInt() and 0xFFFF
+                val unbiasedId = source.getShort(i).toInt() and 0xFFFF
+                i += 2
                 val id: Int = unbiasedId + bias
                 return MacroRef.byId(id)
             }
             0xE -> {
                 if (opcode == 0xEF) {
                     // System macro
-                    val id = source.get().toInt()
+                    val id = source.get(i++).toInt()
                     return MacroRef.byId("\$ion", id)
                 } else {
                     throw IonException("Not positioned on an E-Expression: ${opcode.toByte().toHexString()} @ ${source.position()}")
                 }
             }
             0xF -> {
-                if (opcode == 0xF4) {
-                    // E-expression with FlexUInt macro address
-                    val id = IntHelper.readFlexUInt(source)
-                    return MacroRef.byId(id)
-                } else if (opcode == 0xF5) {
-                    // E-expression with FlexUInt macro address followed by FlexUInt length prefix
-                    val id = IntHelper.readFlexUInt(source)
-                    return MacroRef.byId(id)
-                } else {
-                    throw IonException("Not positioned on an E-Expression")
+                when (opcode) {
+                    0xF4, 0xF5 -> {
+                        val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, i)
+                        val value = (flexUIntValueAndLength ushr 8).toInt()
+                        i += (flexUIntValueAndLength.toInt() and 0xFF)
+                        // E-expression with FlexUInt macro address
+                        return MacroRef.Companion.byId(value)
+                    }
+                    else -> {
+                        throw IonException("Not positioned on an E-Expression")
+                    }
                 }
             }
             else -> throw IonException("Not positioned on an E-Expression")
@@ -531,7 +584,7 @@ abstract class ValueReaderBase(
         val macroRef = macroRef(opcode)
 //        val macro = macroValue(opcode)
         val macro = if (macroRef.isSystemMacro()) {
-            EncodingContextManager.ION_1_1_SYSTEM_MACROS[macroRef.id]
+            ION_1_1_SYSTEM_MACROS[macroRef.id]
         } else {
             macroTable[macroRef.id]
         }
@@ -539,18 +592,20 @@ abstract class ValueReaderBase(
         this.opcode = TID_UNSET
         // We read the length in case it is there, but we don't actually need to use it.
         // Until we implement lazy reading of the args.
-        IdMappings.length(opcode, source)
+        if (opcode == 0xF5) {
+            i += IntHelper.lengthOfFlexUIntAt(source, i)
+        }
 
         // TODO: Make this lazy.
         val argumentBytecode = IntList(64)
-        val currentPosition = source.position()
+        val currentPosition = i
         val constants = mutableListOf<Any?>()
-        val argLength = readEExpArgsAsByteCode(source, source.position(), argumentBytecode, constants, macro, macroTable)
-        source.position(currentPosition + argLength)
+        val argLength = readEExpArgsAsByteCode(source, currentPosition, argumentBytecode, constants, macro, macroTable)
+        i = currentPosition + argLength
         val args = ArgumentBytecode(
             argumentBytecode.toArray(),
             constantPool = constants.toTypedArray(),
-            source = pool.newSlice(0),
+            source = source,
             signature = macro.signature,
         )
 
@@ -913,16 +968,29 @@ abstract class ValueReaderBase(
     final override fun annotations(): AnnotationIterator {
         val opcode = opcode.toInt()
         this.opcode = TID_AFTER_ANNOTATION
-        val length = AnnotationIteratorImpl.calculateLength(opcode, source)
-        val start = source.position()
-        source.position(start + length)
+        val length = AnnotationIteratorImpl.calculateLength(opcode, source, i)
+        val start = i
+        i = start + length
         return pool.getAnnotations(opcode, start, length, symbolTable)
     }
 
     override fun timestampValue(): Timestamp {
         val opcode = opcode.toInt()
         this.opcode = TID_UNSET
-        return TimestampHelper.readTimestamp(opcode, source)
+        if (opcode == 0xF8) {
+            var p = i
+            val source = source
+            val flexUIntValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, p)
+            val lengthOfTimestamp = (flexUIntValueAndLength ushr 8).toInt()
+            p += (flexUIntValueAndLength.toInt() and 0xFF)
+            val ts = TimestampHelper.readLongTimestampAt(source, p, lengthOfTimestamp)
+            p += lengthOfTimestamp
+            return ts
+        } else {
+            val ts = TimestampHelper.readShortTimestampAt(opcode, source, i)
+            i += TimestampHelper.lengthOfShortTimestamp(opcode)
+            return ts
+        }
     }
 
     override fun doubleValue(): Double {
@@ -931,8 +999,16 @@ abstract class ValueReaderBase(
         return when (opcode) {
             0x6A -> 0.0
             0x6B -> TODO()
-            0x6C -> source.getFloat().toDouble()
-            0x6D -> source.getDouble()
+            0x6C -> {
+                val f = source.getFloat(i).toDouble()
+                i += 4
+                f
+            }
+            0x6D -> {
+                val f = source.getDouble(i)
+                i += 8
+                f
+            }
             else -> throw IonException("Not positioned on a float")
         }
     }
@@ -948,20 +1024,22 @@ abstract class ValueReaderBase(
     final override fun ivm(): Short {
         if (opcode.toInt() != 0xE0) throw IonException("Not positioned on an IVM")
         opcode = TID_UNSET
-        val version = source.getShort()
+        var p = i
+        val version = source.getShort(p)
+        p += 2
         // TODO: Check the last byte of the IVM to make sure it is well formed.
-        source.get()
-
-        symbolTable = ION_1_1_SYSTEM_SYMBOLS
+        source.get(p++)
+        this.i = p
+        symbolTable = ION_1_1_SYSTEM_SYMBOLS_AS_SYMBOL_TABLE
         macroTable = ION_1_1_SYSTEM_MACROS
 
         return version
     }
 
     final override fun seekTo(position: Int) {
-        source.position(position)
+        i = position
     }
-    final override fun position(): Int = source.position()
+    final override fun position(): Int = i
 
     override fun expressionGroup(): SequenceReader {
         TODO("Not yet implemented")

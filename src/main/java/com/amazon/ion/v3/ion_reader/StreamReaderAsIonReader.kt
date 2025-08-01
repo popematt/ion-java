@@ -40,33 +40,22 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
     @JvmField
     internal val ion11Reader: ValueReaderBase = StreamReaderImpl(source.asReadOnlyBuffer())
 
-//    private lateinit var _templateReaderPool: TemplateResourcePool
-//    private val templateReaderPool: TemplateResourcePool
-//        get() {
-//            if (! ::_templateReaderPool.isInitialized) _templateReaderPool = TemplateResourcePool.getInstance()
-//            return _templateReaderPool
-//        }
-
     private val encodingContextManager = EncodingContextManager(StreamWrappingIonReader())
-//
-//    private val moduleReader = ModuleReader2(ReaderAdapterIonReader(ionReaderShim))
-//    private val availableModules = mutableMapOf<String, ModuleReader2.Module>()
-//    private val activeModules = mutableListOf<ModuleReader2.Module>()
 
-    private var type: IonType? = null
+    private var type: Byte = 0
     private var fieldName: String? = null
     private var fieldNameSid: Int = -1
 
     private var isNull = false
 
     private val annotationState = Annotations()
+    private var annotationCount = 0
 
     private var reader: ValueReader = if (source.getInt(0).toUInt() == 0xE00101EAu) {
         ion11Reader
     } else {
         ion10Reader
     }
-
 
     private val readerManager = ReaderManager()
 
@@ -76,11 +65,11 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
     }
 
     private fun reset() {
-        type = null
+        type = 0
         fieldName = null
         fieldNameSid = -1
         isNull = false
-        annotationState.annotationsSize = 0
+        annotationCount = 0
     }
 
     override fun close() {
@@ -97,184 +86,220 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
 
     override fun next(): IonType? {
         reset()
+        // TODO: See if we can stop calling this method.
         if (reader.isTokenSet()) {
             reader.skip()
         }
         return _next()
     }
 
+    private companion object {
+        @JvmField
+        val TOKEN_TYPE_TO_ION_TYPE = Array(32) {
+            when (it) {
+                TokenTypeConst.NULL -> IonType.NULL
+                TokenTypeConst.BOOL -> IonType.BOOL
+                TokenTypeConst.INT -> IonType.INT
+                TokenTypeConst.FLOAT -> IonType.FLOAT
+                TokenTypeConst.DECIMAL -> IonType.DECIMAL
+                TokenTypeConst.TIMESTAMP -> IonType.TIMESTAMP
+                TokenTypeConst.STRING -> IonType.STRING
+                TokenTypeConst.SYMBOL -> IonType.SYMBOL
+                TokenTypeConst.CLOB -> IonType.CLOB
+                TokenTypeConst.BLOB -> IonType.BLOB
+                TokenTypeConst.LIST -> IonType.LIST
+                TokenTypeConst.SEXP -> IonType.SEXP
+                TokenTypeConst.STRUCT -> IonType.STRUCT
+                else -> null
+            }
+        }
+
+        @JvmStatic
+        fun nullHandler(_this: StreamReaderAsIonReader, reader: ValueReader, token: Int): Int {
+            _this.isNull = true
+            return reader.nullValue().ordinal + 1
+        }
+
+        @JvmStatic
+        fun sexpHandler(_this: StreamReaderAsIonReader, reader: ValueReader, token: Int): Int {
+            return if (_this.readerManager.containerDepth == 0 && _this.annotationCount != 0 && reader.getIonVersion().toInt() == 0x0101 && _this.annotationState.annotations[0] == "\$ion") {
+                val directive = reader.sexpValue()
+                _this.encodingContextManager.readDirective(directive)
+                _this.encodingContextManager.updateFlattenedTables(_this.ion11Reader, _this.additionalMacros)
+                _this.reset()
+                TokenTypeConst.UNSET
+            } else {
+                TokenTypeConst.SEXP
+            }
+        }
+
+        @JvmStatic
+        fun structHandler(_this: StreamReaderAsIonReader, reader: ValueReader, token: Int): Int {
+            return if (_this.readerManager.containerDepth == 0 && _this.annotationCount > 0 && reader.getIonVersion().toInt() == 0x0101 && _this.annotationState.annotations[0] == "\$ion_symbol_table") {
+                val encodingContextManager = _this.encodingContextManager
+                reader.structValue().use {
+                    encodingContextManager.readLegacySymbolTable11(it)
+                    encodingContextManager.updateFlattenedTables(_this.ion11Reader, _this.additionalMacros)
+                }
+                _this.reset()
+                TokenTypeConst.UNSET
+            } else {
+                TokenTypeConst.STRUCT
+            }
+        }
+
+        @JvmStatic
+        fun endHandler(_this: StreamReaderAsIonReader, reader: ValueReader, token: Int): Int {
+            val readerManager = _this.readerManager
+            // Something is wrong with how we're stepping out of things.
+            return if (readerManager.isTopAContainer()) {
+                TokenTypeConst.END
+            } else if (readerManager.readerDepth == 1) {
+                TokenTypeConst.END
+            } else {
+                _this.reader = readerManager.popReader()
+                TokenTypeConst.UNSET
+            }
+        }
+
+        @JvmStatic
+        fun annotationHandler(_this: StreamReaderAsIonReader, reader: ValueReader, token: Int): Int {
+            val a = reader.annotations()
+            _this.annotationCount = _this.annotationState.storeAnnotations(a)
+            a.close()
+            return TokenTypeConst.UNSET
+        }
+
+        @JvmStatic
+        fun fieldHandler(_this: StreamReaderAsIonReader, reader: ValueReader, token: Int): Int {
+            val r = (reader as StructReader)
+            var fnSid: Int
+            val fnText: String?
+            fnSid = r.fieldNameSid()
+            if (fnSid < 0) {
+                fnText = r.fieldName()
+                if (fnText == null) {
+                    fnSid = 0
+                }
+            } else {
+                fnText = r.lookupSid(fnSid)
+            }
+            _this.fieldNameSid = fnSid
+            _this.fieldName = fnText
+            return TokenTypeConst.UNSET
+        }
+
+        @JvmStatic
+        fun handleTopLevelIvm(_this: StreamReaderAsIonReader, _unused: ValueReader, token: Int): Int {
+            val currentVersion = _this.reader.getIonVersion().toInt()
+            // Calling IVM also resets the symbol table, etc.
+            val version = _this.reader.ivm().toInt()
+            // If the version is the same, then we know it's a valid version, and we can skip validation
+            if (version != currentVersion) {
+                val position = _this.reader.position()
+                _this.readerManager.popReader()
+                _this.reader = when (version) {
+                    ApplicationReaderDriver.ION_1_0 -> _this.ion10Reader
+                    ApplicationReaderDriver.ION_1_1 -> _this.ion11Reader
+                    else -> throw IonException("Unknown Ion Version ${version ushr 8}.${version and 0xFF}")
+                }
+                _this.readerManager.pushReader(_this.reader)
+                _this.reader.seekTo(position)
+            }
+
+            if (version == 0x0101) {
+                _this.encodingContextManager.ivm()
+                _this.encodingContextManager.updateFlattenedTables(_this.ion11Reader, _this.additionalMacros)
+//            println("IVM: ${ion11Reader.symbolTable.contentToString()}")
+            }
+            return TokenTypeConst.UNSET
+        }
+
+        @JvmStatic
+        fun expressionGroupHandler(_this: StreamReaderAsIonReader, reader: ValueReader, token: Int): Int {
+            val expressionGroup = reader.expressionGroup()
+            _this.readerManager.pushReader(expressionGroup)
+            _this.reader = expressionGroup
+            return TokenTypeConst.UNSET
+        }
+
+        @JvmStatic
+        private fun handleMacro(_this: StreamReaderAsIonReader, reader: ValueReader, token: Int): Int {
+            val macroInvocation = reader.macroInvocation()
+            val macro = macroInvocation.macro
+
+            if (_this.readerManager.containerDepth == 0) {
+                when (macro.systemAddress) {
+                    SystemMacro.ADD_SYMBOLS_ADDRESS -> shortCircuitUpdateTables(_this, macroInvocation, EncodingContextManager::addSymbols)
+                    SystemMacro.SET_SYMBOLS_ADDRESS -> shortCircuitUpdateTables(_this, macroInvocation, EncodingContextManager::setSymbols)
+                    SystemMacro.ADD_MACROS_ADDRESS -> shortCircuitUpdateTables(_this, macroInvocation, EncodingContextManager::addMacros)
+                    SystemMacro.SET_MACROS_ADDRESS -> shortCircuitUpdateTables(_this, macroInvocation, EncodingContextManager::setMacros)
+                    SystemMacro.USE_ADDRESS -> TODO("Use")
+                    else -> handleRegularMacroEvaluation(_this, macroInvocation)
+                }
+            } else {
+                handleRegularMacroEvaluation(_this, macroInvocation)
+            }
+
+
+            return TokenTypeConst.UNSET
+        }
+
+        private fun handleRegularMacroEvaluation(_this: StreamReaderAsIonReader, macroInvocation: MacroInvocation) {
+            val eexp = macroInvocation.evaluate()
+            _this.readerManager.pushReader(eexp)
+            _this.reader = eexp
+            _this.type = TokenTypeConst.UNSET.toByte()
+        }
+
+        private fun shortCircuitUpdateTables(_this: StreamReaderAsIonReader, macroInvocation: MacroInvocation, method: (EncodingContextManager, ValueReader) -> Unit) {
+            val argIterator = macroInvocation.iterateArguments()
+            val firstArg = argIterator.next()
+            method(_this.encodingContextManager, firstArg)
+            _this.encodingContextManager.updateFlattenedTables(_this.ion11Reader, _this.additionalMacros)
+        }
+
+    }
 
     private tailrec fun _next(): IonType? {
         val reader = this.reader
         val token = reader.nextToken()
 
-        // TODO: Assign a local variable here.
-        val proposedType = when (token) {
-            TokenTypeConst.NULL -> {
-                isNull = true
-                reader.ionType()
-            }
-            TokenTypeConst.BOOL -> IonType.BOOL
-            TokenTypeConst.INT -> IonType.INT
-            TokenTypeConst.FLOAT -> IonType.FLOAT
-            TokenTypeConst.DECIMAL -> IonType.DECIMAL
-            TokenTypeConst.TIMESTAMP -> IonType.TIMESTAMP
-            TokenTypeConst.STRING -> IonType.STRING
-            TokenTypeConst.SYMBOL -> IonType.SYMBOL
-            TokenTypeConst.CLOB -> IonType.CLOB
-            TokenTypeConst.BLOB -> IonType.BLOB
-            TokenTypeConst.LIST -> IonType.LIST
-            TokenTypeConst.SEXP -> {
-                if (readerManager.containerDepth == 0 && annotationState.annotationsSize != 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion") {
-                    val directive = reader.sexpValue()
-                    encodingContextManager.readDirective(directive)
-                    encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
-                    reset()
-                    null
-                } else {
-                    IonType.SEXP
-                }
-            }
-            TokenTypeConst.STRUCT -> {
-                if (readerManager.containerDepth == 0 && annotationState.annotationsSize > 0 && reader.getIonVersion().toInt() == 0x0101 && annotationState.annotations[0] == "\$ion_symbol_table") {
-                    reader.structValue().use {
-                        encodingContextManager.readLegacySymbolTable11(it)
-                        encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
-                    }
-                    reset()
-                    null
-                } else {
-                    IonType.STRUCT
-                }
-            }
-            TokenTypeConst.ANNOTATIONS -> {
-                val a = reader.annotations()
-                annotationState.storeAnnotations(a)
-                a.close()
-                null
-            }
-            TokenTypeConst.FIELD_NAME -> {
-                val r = (reader as StructReader)
-                fieldNameSid = r.fieldNameSid()
-                if (fieldNameSid < 0) {
-                    fieldName = r.fieldName()
-                    if (fieldName == null) {
-                        fieldNameSid = 0
-                    }
-                } else {
-                    fieldName = r.lookupSid(fieldNameSid)
-                }
-                null
-            }
-            TokenTypeConst.END -> {
-                // Something is wrong with how we're stepping out of things.
-                if (readerManager.isTopAContainer()) {
-                    return null
-                } else if (readerManager.readerDepth == 1) {
-                    return null
-                } else {
-                    this.reader = readerManager.popReader()
-                    null
-                }
-            }
-            TokenTypeConst.IVM -> {
-                handleTopLevelIvm()
-                null
-            }
-            TokenTypeConst.MACRO_INVOCATION -> {
-                handleMacro()
-                null
-            }
+        val proposedType: Int = when (token) {
+            TokenTypeConst.NULL -> nullHandler(this, reader, token)
+            TokenTypeConst.BOOL,
+            TokenTypeConst.INT,
+            TokenTypeConst.FLOAT,
+            TokenTypeConst.DECIMAL,
+            TokenTypeConst.TIMESTAMP,
+            TokenTypeConst.STRING,
+            TokenTypeConst.SYMBOL,
+            TokenTypeConst.CLOB,
+            TokenTypeConst.BLOB,
+            TokenTypeConst.LIST -> token
+            TokenTypeConst.SEXP -> sexpHandler(this, reader, token)
+            TokenTypeConst.STRUCT -> structHandler(this, reader, token)
+            TokenTypeConst.ANNOTATIONS -> annotationHandler(this, reader, token)
+            TokenTypeConst.FIELD_NAME -> fieldHandler(this, reader, token)
+            TokenTypeConst.END -> endHandler(this, reader, token)
+            TokenTypeConst.IVM -> handleTopLevelIvm(this, reader, token)
+            TokenTypeConst.MACRO_INVOCATION -> handleMacro(this, reader, token)
             TokenTypeConst.ABSENT_ARGUMENT,
-            TokenTypeConst.EXPRESSION_GROUP -> {
-                val expressionGroup = reader.expressionGroup()
-                readerManager.pushReader(expressionGroup)
-                this.reader = expressionGroup
-                null
-            }
+            TokenTypeConst.EXPRESSION_GROUP -> expressionGroupHandler(this, reader, token)
             TokenTypeConst.UNSET -> {
                 // println("Got 'UNSET'. This is weird.")
-                null
+                TokenTypeConst.UNSET
             }
             else -> {
                 TODO("Unreachable: ${TokenTypeConst(token)}")
             }
         }
-        if (proposedType != null) {
-            type = proposedType
-            return proposedType
+
+        if (proposedType > 0) {
+            type = proposedType.toByte()
+            return TOKEN_TYPE_TO_ION_TYPE[proposedType]
         }
         return _next()
-    }
-
-    private fun handleMacro() {
-        val macroInvocation = reader.macroInvocation()
-        val macro = macroInvocation.macro
-
-        val isShortCircuitEvaluation = readerManager.containerDepth == 0 && when (macro.systemAddress) {
-            SystemMacro.ADD_SYMBOLS_ADDRESS -> {
-                val argIterator = macroInvocation.iterateArguments()
-                val symbolsList = argIterator.next()
-                encodingContextManager.addOrSetSymbols(symbolsList, append = true)
-                encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
-//                        println("Add symbols: ${ion11Reader.symbolTable.contentToString()}")
-                true
-            }
-            SystemMacro.SET_SYMBOLS_ADDRESS -> {
-                val argIterator = macroInvocation.iterateArguments()
-                val symbolsList = argIterator.next()
-                encodingContextManager.addOrSetSymbols(symbolsList, append = false)
-                encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
-                true
-            }
-            SystemMacro.ADD_MACROS_ADDRESS -> {
-                val argIterator = macroInvocation.iterateArguments()
-                val macroList = argIterator.next()
-                encodingContextManager.addOrSetMacros(macroList, append = true)
-                encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
-                true
-            }
-            SystemMacro.SET_MACROS_ADDRESS -> {
-                val argIterator = macroInvocation.iterateArguments()
-                val macroList = argIterator.next()
-                encodingContextManager.addOrSetMacros(macroList, append = false)
-                encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
-                true
-            }
-            SystemMacro.USE_ADDRESS -> TODO("Use")
-            else -> false
-        }
-
-        if (!isShortCircuitEvaluation) {
-            val eexp = macroInvocation.evaluate()
-            readerManager.pushReader(eexp)
-            reader = eexp
-            type = null
-        }
-    }
-
-    fun handleTopLevelIvm() {
-        val currentVersion = reader.getIonVersion().toInt()
-        // Calling IVM also resets the symbol table, etc.
-        val version = reader.ivm().toInt()
-        // If the version is the same, then we know it's a valid version, and we can skip validation
-        if (version != currentVersion) {
-            val position = reader.position()
-            readerManager.popReader()
-            reader = when (version) {
-                ApplicationReaderDriver.ION_1_0 -> ion10Reader
-                ApplicationReaderDriver.ION_1_1 -> ion11Reader
-                else -> throw IonException("Unknown Ion Version ${version ushr 8}.${version and 0xFF}")
-            }
-            readerManager.pushReader(reader)
-            reader.seekTo(position)
-        }
-
-        if (version == 0x0101) {
-            encodingContextManager.ivm()
-            encodingContextManager.updateFlattenedTables(ion11Reader, additionalMacros)
-//            println("IVM: ${ion11Reader.symbolTable.contentToString()}")
-        }
     }
 
     override fun stepIn() {
@@ -288,7 +313,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         }
         readerManager.pushContainer(child)
         reader = child
-        type = null
+        type = TokenTypeConst.UNSET.toByte()
         fieldName = null
         fieldNameSid = -1
     }
@@ -307,7 +332,7 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         }
     }
 
-    override fun getType(): IonType? = type
+    override fun getType(): IonType? = TOKEN_TYPE_TO_ION_TYPE[type.toInt()]
 
     override fun getIntegerSize(): IntegerSize {
         val size = reader.valueSize()
@@ -319,9 +344,18 @@ class StreamReaderAsIonReader @JvmOverloads constructor(
         }
     }
 
-    override fun getTypeAnnotations(): Array<String?> = annotationState.getTypeAnnotations()
-    override fun getTypeAnnotationSymbols(): Array<SymbolToken> = annotationState.getTypeAnnotationSymbols()
-    override fun iterateTypeAnnotations(): Iterator<String?> = annotationState.iterateTypeAnnotations()
+    override fun getTypeAnnotations(): Array<String?> = annotationState.let {
+        it.annotationsSize = annotationCount
+        it.getTypeAnnotations()
+    }
+    override fun getTypeAnnotationSymbols(): Array<SymbolToken> = annotationState.let {
+        it.annotationsSize = annotationCount
+        it.getTypeAnnotationSymbols()
+    }
+    override fun iterateTypeAnnotations(): Iterator<String?> = annotationState.let {
+        it.annotationsSize = annotationCount
+        it.iterateTypeAnnotations()
+    }
 
     override fun getFieldId(): Int = fieldNameSid
 
