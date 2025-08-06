@@ -18,8 +18,9 @@ class MacroInvocation(
     private val pool: ResourcePool,
     private val symbolTable: Array<String?>,
     private val macroTable: Array<MacroV2>,
+    private val evaluateFn: () -> ValueReader = { startMacroEvaluation(macro, arguments, pool, symbolTable, macroTable) }
 ) {
-    fun evaluate(): ValueReader { return startMacroEvaluation(macro, arguments, pool, symbolTable, macroTable) }
+    fun evaluate(): ValueReader = evaluateFn()
 
     fun iterateArguments(): Iterator<ValueReader> = object : Iterator<ValueReader> {
             private var i = 0

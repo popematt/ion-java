@@ -1,9 +1,7 @@
 package com.amazon.ion.v3.impl_1_1.template
 
-import com.amazon.ion.impl.macro.*
 import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.SystemMacro
 import com.amazon.ion.v3.impl_1_1.binary.*
 
 /**

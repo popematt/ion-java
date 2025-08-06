@@ -36,6 +36,9 @@ open class TemplateReaderImpl internal constructor(
     @JvmField
     var constantPool: Array<Any?> = arrayOf()
 
+    @JvmField
+    var openCount: Byte = 1
+
     private var argStackSize: Byte = 0
     private var argumentValueIndicesStack = IntArray(INITIAL_STACK_SIZE)
 
@@ -108,6 +111,7 @@ open class TemplateReaderImpl internal constructor(
         instruction = INSTRUCTION_NOT_SET
         i = 0
         stackFrameSize = 1
+        openCount = 1
 //        evaluationStack[0] = EvaluationStackFrame.EOF_FRAME
 
 //        i0 = -1
@@ -237,6 +241,8 @@ open class TemplateReaderImpl internal constructor(
     private fun collectAllArgs(instruction: Int, i: Int): Int {
         var instruction = instruction
         var i = i
+        // TODO: argStackSize is always 0 when we get here. Can we streamline things under the assumption that this will
+        //       always be followed by some sort of macro invocation?
         val argStack = argumentValueIndicesStack
         var argStackSize = argStackSize
         val bytecode = bytecode
@@ -343,7 +349,7 @@ open class TemplateReaderImpl internal constructor(
 
 
     override fun close() {
-        pool.returnSequence(this)
+        if (--openCount == 0.toByte()) pool.returnSequence(this)
     }
 
     // TODO: Make sure that this also returns END when at the end of the input.
@@ -430,6 +436,7 @@ open class TemplateReaderImpl internal constructor(
         this.instruction = INSTRUCTION_NOT_SET
         when (op) {
             // This should be unreachable if we have flattened all the macro invocations.
+            /*
             MacroBytecode.OP_INVOKE_MACRO -> {
                 val macro = constantPool[cpIndex] as MacroV2
                 // TODO: Ensure that there are no elided args in the bytecode.
@@ -534,6 +541,7 @@ open class TemplateReaderImpl internal constructor(
 
                 TODO("OP_INVOKE_MACRO")
             }
+             */
             MacroBytecode.OP_CP_MACRO_INVOCATION -> {
                 val invocation = (constantPool[cpIndex] as MacroInvocation)
                 return invocation
@@ -562,6 +570,7 @@ open class TemplateReaderImpl internal constructor(
                     indices = argumentValueIndicesStack.copyOfRange(argStackSize.toInt() - signature.size, argStackSize.toInt())
                 )
                 argStackSize = (argStackSize - (signature.size).toByte()).toByte()
+                // TODO: See if we can run this macro in the same evaluator.
                 return MacroInvocation(macro, args, pool, symbolTable, macroTable)
             }
             else -> throw IllegalStateException("Not positioned on macro: ${MacroBytecode(instruction)}")

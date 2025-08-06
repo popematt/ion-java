@@ -19,6 +19,8 @@ import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.ion_reader.*
 import com.amazon.ion.v3.visitor.*
+import com.amazon.ion.v3.visitor2.*
+import com.amazon.ion.v3.visitor2.AnnotationIterator as AnnotationVisitor
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.math.BigDecimal
@@ -323,6 +325,50 @@ class TypedReadersTest {
             }
         }
 
+        @Test
+        fun `a big one for Ion 1 0 using Visitor2 API`() {
+            val path = Paths.get("/Volumes/brazil-ws/ion-java-benchmark-cli/service_log_legacy.10n")
+
+            val ION = IonSystemBuilder.standard().build()
+            FileChannel.open(path, StandardOpenOption.READ).use { fileChannel ->
+
+                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+                val reader = VisitingIonReader10(mappedByteBuffer)
+                while (reader.next(Ion10Visitor)) {}
+            }
+        }
+    }
+    object Ion10Visitor: IonVisitor, IonFieldVisitor {
+        override fun onNull(ann: AnnotationVisitor?, type: IonType) {}
+        override fun onBool(ann: AnnotationVisitor?, value: Boolean) {}
+        override fun onLong(ann: AnnotationVisitor?, value: Long) {}
+        override fun onBigInt(ann: AnnotationVisitor?, value: () -> BigInteger) { value() }
+        override fun onDouble(ann: AnnotationVisitor?, value: Double) {}
+        override fun onDecimal(ann: AnnotationVisitor?, value: () -> BigDecimal) { value() }
+        override fun onTimestamp(ann: AnnotationVisitor?, value: () -> Timestamp) { value() }
+        override fun onSymbol(ann: AnnotationVisitor?, sid: Int, text: () -> String?) { text() }
+        override fun onString(ann: AnnotationVisitor?, text: () -> String) { text() }
+        override fun onBlob(ann: AnnotationVisitor?, bytes: ByteBuffer) {}
+        override fun onClob(ann: AnnotationVisitor?, bytes: ByteBuffer) {}
+        override fun onList(ann: AnnotationVisitor?, content: (IonVisitor) -> Unit) { content(this) }
+        override fun onSexp(ann: AnnotationVisitor?, content: (IonVisitor) -> Unit) { content(this) }
+        override fun onStruct(ann: AnnotationVisitor?, content: (IonFieldVisitor) -> Unit) { content(this) }
+        override fun onMacro(macro: MacroV2, evaluate: (IonVisitor) -> Unit, visitArguments: (IonVisitor) -> Unit) {}
+        override fun onNull(fieldName: String?, ann: AnnotationVisitor?, type: IonType) {}
+        override fun onBool(fieldName: String?, ann: AnnotationVisitor?, value: Boolean) {}
+        override fun onLong(fieldName: String?, ann: AnnotationVisitor?, value: Long) {}
+        override fun onBigInt(fieldName: String?, ann: AnnotationVisitor?, value: () -> BigInteger) { value()}
+        override fun onDouble(fieldName: String?, ann: AnnotationVisitor?, value: Double) {}
+        override fun onDecimal(fieldName: String?, ann: AnnotationVisitor?, value: () -> BigDecimal) {value()}
+        override fun onTimestamp(fieldName: String?, ann: AnnotationVisitor?, value: () -> Timestamp) { value() }
+        override fun onSymbol(fieldName: String?, ann: AnnotationVisitor?, sid: Int, text: () -> String?) { text() }
+        override fun onString(fieldName: String?, ann: AnnotationVisitor?, text: () -> String) { text() }
+        override fun onBlob(fieldName: String?, ann: AnnotationVisitor?, bytes: ByteBuffer) {}
+        override fun onClob(fieldName: String?, ann: AnnotationVisitor?, bytes: ByteBuffer) {}
+        override fun onList(fieldName: String?, ann: AnnotationVisitor?, visitContent: (IonVisitor) -> Unit) { visitContent(this) }
+        override fun onSexp(fieldName: String?, ann: AnnotationVisitor?, visitContent: (IonVisitor) -> Unit) { visitContent(this) }
+        override fun onStruct(fieldName: String?, ann: AnnotationVisitor?, visitContent: (IonFieldVisitor) -> Unit) { visitContent(this)}
+        override fun onMacro(fieldName: String?, macro: MacroV2, evaluate: (IonVisitor) -> Unit, visitArguments: (IonVisitor) -> Unit) {}
     }
 
     @Nested
