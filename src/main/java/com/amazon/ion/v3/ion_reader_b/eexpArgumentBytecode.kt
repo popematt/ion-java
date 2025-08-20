@@ -1,35 +1,43 @@
-package com.amazon.ion.v3.impl_1_1.binary
+package com.amazon.ion.v3.ion_reader_b
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.IntList
+import com.amazon.ion.v3.*
 import com.amazon.ion.v3.impl_1_1.*
+import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.lang.IllegalStateException
-import java.nio.ByteBuffer
 
 
-
-
-fun writeMacroBodyAsByteCode(macro: MacroV2, eexpArgs: IntList, bytecode: IntList, constantPool: MutableList<Any?>) {
-//    fun appendArg(parameterIndex: Int, bc: IntList) {
-//        var start = 0
-//        var length = eexpArgs[start++] and MacroBytecode.DATA_MASK
-//        for (ii in 0 until parameterIndex) {
-//            start += length
-//            length = eexpArgs[start++] and MacroBytecode.DATA_MASK
-//        }
-//        // This copies the arg value without the arg wrapper. This might break for structs.
-//        bc.addSlice(eexpArgs, start, length - 1)
-//    }
-
-    val env = Environment(eexpArgs, macro.signature)
-
-    templateExpressionToBytecode(macro.body!!, env, bytecode, constantPool)
+private fun ByteArray.getShort(position: Int): Short {
+    return ((this[position].toInt() and 0xFF) or ((this[position + 1].toInt() and 0xFF) shl 8)).toShort()
 }
 
-private fun compileValue(opcode: Int, dest: IntList, cp: MutableList<Any?>, src: ByteBuffer, position: Int, macTab: Array<MacroV2>): Int {
+private fun ByteArray.getInt(position: Int): Int {
+    return (this[position].toInt() and 0xFF) or
+            ((this[position + 1].toInt() and 0xFF) shl 8) or
+            ((this[position + 2].toInt() and 0xFF) shl 16) or
+            ((this[position + 3].toInt() and 0xFF) shl 24)
+}
+
+private fun ByteArray.getLong(position: Int): Long {
+    return (this[position].toLong() and 0xFF) or
+            ((this[position + 1].toLong() and 0xFF) shl 8) or
+            ((this[position + 2].toLong() and 0xFF) shl 16) or
+            ((this[position + 3].toLong() and 0xFF) shl 24) or
+            ((this[position + 4].toLong() and 0xFF) shl 32) or
+            ((this[position + 5].toLong() and 0xFF) shl 40) or
+            ((this[position + 6].toLong() and 0xFF) shl 48) or
+            ((this[position + 7].toLong() and 0xFF) shl 56)
+}
+
+private fun ByteArray.getFloat(position: Int): Float = Float.fromBits(getInt(position))
+
+private fun ByteArray.getDouble(position: Int): Double = Double.fromBits(getLong(position))
+
+fun compileValue(opcode: Int, dest: IntList, cp: MutableList<Any?>, src: ByteArray, position: Int, macTab: Array<MacroV2>): Int {
     val valueCompiler = VALUE_TRANSFORMERS[opcode]
     val n = valueCompiler.toBytecode(dest, cp, src, position, macTab)
     return n
@@ -38,7 +46,7 @@ private fun compileValue(opcode: Int, dest: IntList, cp: MutableList<Any?>, src:
 /**
  * Returns the number of bytes consumed while reading the arguments.
  */
-fun readEExpArgsAsByteCode(src: ByteBuffer, position: Int, bytecode: IntList, constantPool: MutableList<Any?>, macro: MacroV2, macTab: Array<MacroV2>): Int {
+private fun readEExpArgsAsByteCode(src: ByteArray, position: Int, bytecode: IntList, constantPool: MutableList<Any?>, macro: MacroV2, macTab: Array<MacroV2>): Int {
 
     var presenceBitsPosition = position
     var p = presenceBitsPosition + macro.numPresenceBytesRequired
@@ -85,7 +93,10 @@ fun readEExpArgsAsByteCode(src: ByteBuffer, position: Int, bytecode: IntList, co
                             p += expressionGroupLength
                         }
                     }
-                    else -> throw IonException("Invalid presence bits value at position $presenceBitsPosition")
+                    else -> {
+                        println(bytearraySliceToString(src, presenceBitsPosition))
+                        throw IonException("Invalid presence bits value at position $presenceBitsPosition")
+                    }
                 }
             }
 
@@ -96,6 +107,26 @@ fun readEExpArgsAsByteCode(src: ByteBuffer, position: Int, bytecode: IntList, co
     return p - position
 }
 
+@OptIn(ExperimentalStdlibApi::class)
+fun bytearraySliceToString(src: ByteArray, position: Int): String {
+    val start = (position - 10).coerceAtLeast(0)
+    val end = (position + 10).coerceAtMost(src.size - 1)
+    val sb = StringBuilder()
+    (start until position).forEach { i ->
+        sb.append(src[i].toHexString())
+            .append(", ")
+    }
+    sb.append("\u001B[1m")
+    sb.append(src[position].toHexString())
+    sb.append("\u001B[0m")
+    (position + 1 until end).forEach { i ->
+        sb.append(", ")
+            .append(src[i].toHexString())
+    }
+
+    return sb.toString()
+}
+
 
 
 fun interface ToBytecodeTransformer {
@@ -103,13 +134,13 @@ fun interface ToBytecodeTransformer {
      * Reads data off of [src], starting at [position], to emit bytecode into [dest], returning the number of
      * bytes consumed.
      */
-    fun toBytecode(dest: IntList, constantPool: MutableList<Any?>, src: ByteBuffer, pos: Int, macTab: Array<MacroV2>): Int
+    fun toBytecode(dest: IntList, constantPool: MutableList<Any?>, src: ByteArray, pos: Int, macTab: Array<MacroV2>): Int
 }
 
 
 
 @OptIn(ExperimentalStdlibApi::class)
-private fun readTaggedDelimitedExpressionGroupContent(src: ByteBuffer, position: Int, dest: IntList, constantPool: MutableList<Any?>, macTab: Array<MacroV2>): Int {
+private fun readTaggedDelimitedExpressionGroupContent(src: ByteArray, position: Int, dest: IntList, constantPool: MutableList<Any?>, macTab: Array<MacroV2>): Int {
     var p = position
     var opcode = src.get(p++).toInt() and 0xFF
     while (opcode != Opcode.DELIMITED_CONTAINER_END) {
@@ -119,7 +150,7 @@ private fun readTaggedDelimitedExpressionGroupContent(src: ByteBuffer, position:
     return p - position
 }
 
-private fun readTaggedPrefixedExpressionGroupContent(src: ByteBuffer, start: Int, length: Int, dest: IntList, constantPool: MutableList<Any?>, macTab: Array<MacroV2>) {
+private fun readTaggedPrefixedExpressionGroupContent(src: ByteArray, start: Int, length: Int, dest: IntList, constantPool: MutableList<Any?>, macTab: Array<MacroV2>) {
     var p = start
     val end = start + length
     while (p < end) {
@@ -133,7 +164,7 @@ private fun readTaggedPrefixedExpressionGroupContent(src: ByteBuffer, start: Int
 @OptIn(ExperimentalStdlibApi::class)
 private fun noBytecodeTransformer(opcode: Int): ToBytecodeTransformer {
     return object : ToBytecodeTransformer {
-        override fun toBytecode(dest: IntList, constantPool: MutableList<Any?>, src: ByteBuffer, pos: Int, macTab: Array<MacroV2>): Int {
+        override fun toBytecode(dest: IntList, constantPool: MutableList<Any?>, src: ByteArray, pos: Int, macTab: Array<MacroV2>): Int {
             throw IllegalStateException("No mapping for opcode ${opcode.toUByte().toHexString()}. This should be unreachable.")
         }
     }
@@ -229,54 +260,59 @@ private val TX_0xAD = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroByteco
 private val TX_0xAE = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSymbolTextReference(dest, pos, 0xE); 0xE }
 private val TX_0xAF = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSymbolTextReference(dest, pos, 0xF); 0xF }
 private val TX_LIST_ZERO_LENGTH = ToBytecodeTransformer { dest, _,  src, pos, macTab -> MacroBytecodeHelper.emitInlineList(dest, {}); 0 }
-private val TX_0xB1 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x1); 0x1 }
-private val TX_0xB2 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x2); 0x2 }
-private val TX_0xB3 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x3); 0x3 }
-private val TX_0xB4 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x4); 0x4 }
-private val TX_0xB5 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x5); 0x5 }
-private val TX_0xB6 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x6); 0x6 }
-private val TX_0xB7 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x7); 0x7 }
-private val TX_0xB8 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x8); 0x8 }
-private val TX_0xB9 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x9); 0x9 }
-private val TX_0xBA = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xA); 0xA }
-private val TX_0xBB = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xB); 0xB }
-private val TX_0xBC = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xC); 0xC }
-private val TX_0xBD = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xD); 0xD }
-private val TX_0xBE = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xE); 0xE }
-private val TX_0xBF = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xF); 0xF }
+private val TX_0xB1 = txPrefixedListToInline(0x1) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x1); 0x1 }
+private val TX_0xB2 = txPrefixedListToInline(0x2) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x2); 0x2 }
+private val TX_0xB3 = txPrefixedListToInline(0x3) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x3); 0x3 }
+private val TX_0xB4 = txPrefixedListToInline(0x4) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x4); 0x4 }
+private val TX_0xB5 = txPrefixedListToInline(0x5) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x5); 0x5 }
+private val TX_0xB6 = txPrefixedListToInline(0x6) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x6); 0x6 }
+private val TX_0xB7 = txPrefixedListToInline(0x7) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x7); 0x7 }
+private val TX_0xB8 = txPrefixedListToInline(0x8) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x8); 0x8 }
+private val TX_0xB9 = txPrefixedListToInline(0x9) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0x9); 0x9 }
+private val TX_0xBA = txPrefixedListToInline(0xA) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xA); 0xA }
+private val TX_0xBB = txPrefixedListToInline(0xB) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xB); 0xB }
+private val TX_0xBC = txPrefixedListToInline(0xC) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xC); 0xC }
+private val TX_0xBD = txPrefixedListToInline(0xD) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xD); 0xD }
+private val TX_0xBE = txPrefixedListToInline(0xE) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xE); 0xE }
+private val TX_0xBF = txPrefixedListToInline(0xF) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitListReference(dest, pos, 0xF); 0xF }
 private val TX_SEXP_ZERO_LENGTH = ToBytecodeTransformer { dest, _,  src, pos, macTab -> MacroBytecodeHelper.emitInlineSexp(dest, {}); 0 }
-private val TX_0xC1 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x1); 0x1 }
-private val TX_0xC2 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x2); 0x2 }
-private val TX_0xC3 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x3); 0x3 }
-private val TX_0xC4 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x4); 0x4 }
-private val TX_0xC5 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x5); 0x5 }
-private val TX_0xC6 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x6); 0x6 }
-private val TX_0xC7 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x7); 0x7 }
-private val TX_0xC8 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x8); 0x8 }
-private val TX_0xC9 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x9); 0x9 }
-private val TX_0xCA = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xA); 0xA }
-private val TX_0xCB = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xB); 0xB }
-private val TX_0xCC = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xC); 0xC }
-private val TX_0xCD = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xD); 0xD }
-private val TX_0xCE = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xE); 0xE }
-private val TX_0xCF = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xF); 0xF }
+private val TX_0xC1 = txPrefixedSexpToInline(0x1) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x1); 0x1 }
+private val TX_0xC2 = txPrefixedSexpToInline(0x2) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x2); 0x2 }
+private val TX_0xC3 = txPrefixedSexpToInline(0x3) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x3); 0x3 }
+private val TX_0xC4 = txPrefixedSexpToInline(0x4) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x4); 0x4 }
+private val TX_0xC5 = txPrefixedSexpToInline(0x5) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x5); 0x5 }
+private val TX_0xC6 = txPrefixedSexpToInline(0x6) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x6); 0x6 }
+private val TX_0xC7 = txPrefixedSexpToInline(0x7) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x7); 0x7 }
+private val TX_0xC8 = txPrefixedSexpToInline(0x8) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x8); 0x8 }
+private val TX_0xC9 = txPrefixedSexpToInline(0x9) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0x9); 0x9 }
+private val TX_0xCA = txPrefixedSexpToInline(0xA) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xA); 0xA }
+private val TX_0xCB = txPrefixedSexpToInline(0xB) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xB); 0xB }
+private val TX_0xCC = txPrefixedSexpToInline(0xC) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xC); 0xC }
+private val TX_0xCD = txPrefixedSexpToInline(0xD) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xD); 0xD }
+private val TX_0xCE = txPrefixedSexpToInline(0xE) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xE); 0xE }
+private val TX_0xCF = txPrefixedSexpToInline(0xF) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitSexpReference(dest, pos, 0xF); 0xF }
 private val TX_STRUCT_ZERO_LENGTH = ToBytecodeTransformer { dest, _,  src, pos, macTab -> MacroBytecodeHelper.emitInlineSexp(dest, {}); 0 }
 private val TX_RESERVED_0xD1 = noBytecodeTransformer(Opcode.RESERVED_0xD1)
-private val TX_0xD2 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x2); 0x2 }
-private val TX_0xD3 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x3); 0x3 }
-private val TX_0xD4 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x4); 0x4 }
-private val TX_0xD5 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x5); 0x5 }
-private val TX_0xD6 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x6); 0x6 }
-private val TX_0xD7 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x7); 0x7 }
-private val TX_0xD8 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x8); 0x8 }
-private val TX_0xD9 = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x9); 0x9 }
-private val TX_0xDA = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xA); 0xA }
-private val TX_0xDB = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xB); 0xB }
-private val TX_0xDC = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xC); 0xC }
-private val TX_0xDD = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xD); 0xD }
-private val TX_0xDE = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xE); 0xE }
-private val TX_0xDF = ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xF); 0xF }
+private val TX_0xD2 = txPrefixedStructToInline(0x2) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x2); 0x2 }
+private val TX_0xD3 = txPrefixedStructToInline(0x3) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x3); 0x3 }
+private val TX_0xD4 = txPrefixedStructToInline(0x4) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x4); 0x4 }
+private val TX_0xD5 = txPrefixedStructToInline(0x5) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x5); 0x5 }
+private val TX_0xD6 = txPrefixedStructToInline(0x6) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x6); 0x6 }
+private val TX_0xD7 = txPrefixedStructToInline(0x7) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x7); 0x7 }
+private val TX_0xD8 = txPrefixedStructToInline(0x8) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x8); 0x8 }
+private val TX_0xD9 = txPrefixedStructToInline(0x9) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0x9); 0x9 }
+private val TX_0xDA = txPrefixedStructToInline(0xA) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xA); 0xA }
+private val TX_0xDB = txPrefixedStructToInline(0xB) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xB); 0xB }
+private val TX_0xDC = txPrefixedStructToInline(0xC) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xC); 0xC }
+private val TX_0xDD = txPrefixedStructToInline(0xD) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xD); 0xD }
+private val TX_0xDE = txPrefixedStructToInline(0xE) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xE); 0xE }
+private val TX_0xDF = txPrefixedStructToInline(0xF) // ToBytecodeTransformer { dest, _,  _, pos, _ -> MacroBytecodeHelper.emitStructReference(dest, pos, 0xF); 0xF }
 private val TX_IVM = noBytecodeTransformer(Opcode.IVM)
+private val TX_IVM_TOP_LEVEL = ToBytecodeTransformer { dest: IntList, constantPool: MutableList<Any?>, src: ByteArray, pos: Int, macTab: Array<MacroV2> ->
+    val minorVersion = src[pos + 2].toInt()
+    dest.add(MacroBytecode.IVM.opToInstruction(minorVersion))
+    3
+}
 private val TX_SYMBOL_VALUE_SID_U8 = ToBytecodeTransformer { dest,  _, src, pos, macTab -> MacroBytecodeHelper.emitSymbolId(dest, src.get(pos).toInt() and 0xFF); 1 }
 private val TX_SYMBOL_VALUE_SID_U16 = ToBytecodeTransformer { dest, _,  src, pos, macTab -> MacroBytecodeHelper.emitSymbolId(dest, (src.getShort(pos).toInt() and 0xFFFF) + 256); 2 }
 private val TX_SYMBOL_VALUE_SID_FLEXUINT = ToBytecodeTransformer { dest, _, src, pos, macTab ->
@@ -342,15 +378,19 @@ private val TX_ANNOTATION_1_FLEXSYM = ToBytecodeTransformer { dest,  _, src, pos
 // TODO: ANNOTATION_N_FLEXSYMS
 private val TX_NULL_VALUE = ToBytecodeTransformer { dest,  _, src, pos, macTab -> MacroBytecodeHelper.emitNullValue(dest, IonType.NULL); 0 }
 private val TX_TYPED_NULL_VALUE = ToBytecodeTransformer { dest,  _, src, pos, macTab -> MacroBytecodeHelper.emitNullValue(dest, TYPED_NULL_ION_TYPES[src.get(pos).toInt()]); 1 }
-private val TX_NOP = ToBytecodeTransformer { dest,  _, src, pos, macTab -> 0 }
+private val TX_NOP = ToBytecodeTransformer { dest,  _, src, pos, macTab -> println("TX_NOP"); 0 }
 private val TX_NOP_WITH_LENGTH = ToBytecodeTransformer { dest,  _, src, pos, macTab -> IntHelper.getLengthPlusValueOfFlexUIntAt(src, pos) }
 private val TX_SYSTEM_SYMBOL = ToBytecodeTransformer { dest,  _, src, pos, macTab -> MacroBytecodeHelper.emitSystemSymbolId(dest, src.get(pos).toInt()); 1 }
 
 
+
+
+
 private fun TX_OPCODE_IS_MACRO_ADDR(opcode: Int) = ToBytecodeTransformer { dest,  cp,  src, pos, macTab ->
     val macro = macTab[opcode]
-    val numBytes = readEExpArgsAsByteCode(src, pos, dest, cp,  macro, macTab)
-    dest.add(MacroBytecode.OP_INVOKE_MACRO_ID.opToInstruction(opcode))
+    val args = IntList(32)
+    val numBytes = readEExpArgsAsByteCode(src, pos, args, cp,  macro, macTab)
+    flatten(macro.body!!, Environment(null, args.unsafeGetArray(), 0), dest, cp, macTab)
     numBytes
 }
 
@@ -361,8 +401,9 @@ private fun TX_1_BYTE_MACRO_ADDR(opcode: Int) = ToBytecodeTransformer { dest,  c
     val macroId = unbiasedId + bias
     p++
     val macro = macTab[macroId]
-    p += readEExpArgsAsByteCode(src, p, dest, cp, macro, macTab)
-    dest.add(MacroBytecode.OP_INVOKE_MACRO_ID.opToInstruction(macroId))
+    val args = IntList(32)
+    p += readEExpArgsAsByteCode(src, pos, args, cp,  macro, macTab)
+    flatten(macro.body!!, Environment(null, args.unsafeGetArray(), 0), dest, cp, macTab)
     p - pos
 }
 
@@ -373,8 +414,9 @@ private fun TX_2_BYTE_MACRO_ADDR(opcode: Int) = ToBytecodeTransformer { dest, cp
     val macroId = unbiasedId + bias
     p += 2
     val macro = macTab[macroId]
-    p += readEExpArgsAsByteCode(src, p, dest, cp, macro, macTab)
-    dest.add(MacroBytecode.OP_INVOKE_MACRO_ID.opToInstruction(macroId))
+    val args = IntList(32)
+    p += readEExpArgsAsByteCode(src, pos, args, cp,  macro, macTab)
+    flatten(macro.body!!, Environment(null, args.unsafeGetArray(), 0), dest, cp, macTab)
     p - pos
 }
 
@@ -384,19 +426,42 @@ private val TX_MACRO_W_FLEXUINT_ADDR = ToBytecodeTransformer { dest,  cp,  src, 
     val macroId = IntHelper.readFlexUIntWithLengthAt(src, p, lengthOfLength)
     p += lengthOfLength
     val macro = macTab[macroId]
-//    val args = IntList()
-    p += readEExpArgsAsByteCode(src, p, dest, cp, macro, macTab)
-    dest.add(MacroBytecode.OP_INVOKE_MACRO_ID.opToInstruction(macroId))
+    val args = IntList(32)
+    p += readEExpArgsAsByteCode(src, pos, args, cp,  macro, macTab)
+    flatten(macro.body!!, Environment(null, args.unsafeGetArray(), 0), dest, cp, macTab)
+    p - pos
+}
+
+private val TX_MACRO_W_LENGTH_AND_FLEXUINT_ADDR = ToBytecodeTransformer { dest,  cp,  src, pos, macTab ->
+    var p = pos
+    val lengthOfAddr = IntHelper.lengthOfFlexUIntAt(src, p)
+    val macroId = IntHelper.readFlexUIntWithLengthAt(src, p, lengthOfAddr)
+    p += lengthOfAddr
+
+    // We're eagerly reading the arguments, so we can skip over the length prefix
+    p += IntHelper.lengthOfFlexUIntAt(src, p)
+
+    val macro = macTab[macroId]
+    val args = IntList(32)
+    p += readEExpArgsAsByteCode(src, pos, args, cp,  macro, macTab)
+    flatten(macro.body!!, Environment(null, args.unsafeGetArray(), 0), dest, cp, macTab)
     p - pos
 }
 
 private val TX_SYSTEM_MACRO = ToBytecodeTransformer { dest,  cp,  src, pos, macTab ->
+    var p = pos
     var numBytes = 1
-    val macroId = src.get(pos).toInt() and 0xFF
+    val macroId = src.get(p++).toInt() and 0xFF
     val macro = SystemMacro[macroId]
-    // val args = IntList()
-    numBytes += readEExpArgsAsByteCode(src, pos + 1, dest, cp, macro, macTab)
-    dest.add(MacroBytecode.OP_INVOKE_SYS_MACRO.opToInstruction(macroId))
+    when (macroId) {
+        SystemMacro.SET_SYMBOLS_ADDRESS,
+        SystemMacro.ADD_SYMBOLS_ADDRESS,
+        SystemMacro.SET_MACROS_ADDRESS,
+        SystemMacro.ADD_MACROS_ADDRESS,
+        SystemMacro.USE_ADDRESS -> dest.add(MacroBytecode.DIRECTIVE_SYSTEM_MACRO.opToInstruction(macroId))
+        else -> dest.add(MacroBytecode.OP_INVOKE_SYS_MACRO.opToInstruction(macroId))
+    }
+    numBytes += readEExpArgsAsByteCode(src, p, dest, cp, macro, macTab)
     numBytes
 }
 
@@ -432,6 +497,43 @@ private val TX_DELIMITED_LIST: ToBytecodeTransformer = ToBytecodeTransformer { d
     p - pos
 }
 
+private fun txPrefixedListToInline(l: Int) = ToBytecodeTransformer { dest: IntList, cp: MutableList<Any?>, src: ByteArray, pos: Int, macTab: Array<MacroV2> ->
+    var p = pos
+    val sourceEnd = pos + l
+
+
+    val containerStartIndex = dest.reserve()
+    val start = containerStartIndex + 1
+
+    while (p < sourceEnd) {
+        val opcode = src.get(p++).toInt() and 0xFF
+        p += compileValue(opcode, dest, cp, src, p, macTab)
+    }
+
+    dest.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
+    val end = dest.size()
+    dest[containerStartIndex] = MacroBytecode.OP_LIST_START.opToInstruction(end - start)
+
+    l
+}
+
+private val TX_VAR_LIST_INLINE: ToBytecodeTransformer = ToBytecodeTransformer { dest,  cp,   src, pos, macTab ->
+    val lengthOfLength = IntHelper.lengthOfFlexUIntAt(src, pos)
+    val length = IntHelper.readFlexUIntWithLengthAt(src, pos, lengthOfLength)
+
+    var p = pos + lengthOfLength
+    val sourceEnd = p + length
+
+    MacroBytecodeHelper.emitInlineList(dest) {
+        while (p < sourceEnd) {
+            val opcode = src.get(p++).toInt() and 0xFF
+            p += compileValue(opcode, dest, cp, src, p, macTab)
+        }
+    }
+
+    sourceEnd - pos
+}
+
 private val TX_DELIMITED_SEXP: ToBytecodeTransformer = ToBytecodeTransformer { dest,  cp,  src, pos, macTab ->
     var p = pos
     MacroBytecodeHelper.emitInlineSexp(dest) {
@@ -443,6 +545,44 @@ private val TX_DELIMITED_SEXP: ToBytecodeTransformer = ToBytecodeTransformer { d
     }
     p - pos
 }
+
+private fun txPrefixedSexpToInline(l: Int) = ToBytecodeTransformer { dest: IntList, cp: MutableList<Any?>, src: ByteArray, pos: Int, macTab: Array<MacroV2> ->
+    var p = pos
+    val sourceEnd = pos + l
+
+
+    MacroBytecodeHelper.emitInlineSexp(dest) {
+        while (p < sourceEnd) {
+            val opcode = src.get(p++).toInt() and 0xFF
+            p += compileValue(opcode, dest, cp, src, p, macTab)
+        }
+    }
+    l
+}
+
+private val TX_VAR_SEXP_INLINE: ToBytecodeTransformer = ToBytecodeTransformer { dest,  cp,   src, pos, macTab ->
+    val lengthOfLength = IntHelper.lengthOfFlexUIntAt(src, pos)
+    val length = IntHelper.readFlexUIntWithLengthAt(src, pos, lengthOfLength)
+
+    var p = pos + lengthOfLength
+    val sourceEnd = p + length
+    val containerStartIndex = dest.reserve()
+    val start = containerStartIndex + 1
+
+    while (p < sourceEnd) {
+        val opcode = src.get(p++).toInt() and 0xFF
+        p += compileValue(opcode, dest, cp, src, p, macTab)
+    }
+
+    dest.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
+    val end = dest.size()
+    dest[containerStartIndex] = MacroBytecode.OP_SEXP_START.opToInstruction(end - start)
+
+
+    sourceEnd - pos
+}
+
+
 
 private val TX_DELIMITED_STRUCT: ToBytecodeTransformer = ToBytecodeTransformer { dest, cp, src, pos, macTab ->
     var p = pos
@@ -469,6 +609,95 @@ private val TX_DELIMITED_STRUCT: ToBytecodeTransformer = ToBytecodeTransformer {
     }
     p - pos
 }
+
+private fun txPrefixedStructToInline(l: Int) = ToBytecodeTransformer { dest: IntList, cp: MutableList<Any?>, src: ByteArray, pos: Int, macTab: Array<MacroV2> ->
+    var p = pos
+    val sourceEnd = pos + l
+    val containerStartIndex = dest.reserve()
+    val start = containerStartIndex + 1
+
+    var opcode: Int
+    while (p < sourceEnd) {
+
+        val sidValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, p)
+        p += (sidValueAndLength.toInt() and 0xFF)
+        val sid = (sidValueAndLength ushr 8).toInt()
+
+        if (sid == 0) {
+            handleFlexSymModeRemainder(dest, src, cp, macTab, p, sourceEnd)
+            break
+        }
+
+        MacroBytecodeHelper.emitFieldNameSid(dest, sid)
+
+        opcode = src.get(p++).toInt() and 0xFF
+        p += compileValue(opcode, dest, cp, src, p, macTab)
+    }
+
+    dest.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
+    val end = dest.size()
+    dest[containerStartIndex] = MacroBytecode.OP_STRUCT_START.opToInstruction(end - start)
+    l
+}
+
+private val TX_VAR_STRUCT_INLINE: ToBytecodeTransformer = ToBytecodeTransformer { dest,  cp,   src, pos, macTab ->
+    val lengthOfLength = IntHelper.lengthOfFlexUIntAt(src, pos)
+    val length = IntHelper.readFlexUIntWithLengthAt(src, pos, lengthOfLength)
+
+    var p = pos + lengthOfLength
+    val sourceEnd = p + length
+
+
+    val containerStartIndex = dest.reserve()
+    val start = containerStartIndex + 1
+
+    var opcode: Int
+    while (p < sourceEnd) {
+
+        val sidValueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, p)
+        p += (sidValueAndLength.toInt() and 0xFF)
+        val sid = (sidValueAndLength ushr 8).toInt()
+
+        if (sid == 0) {
+            handleFlexSymModeRemainder(dest, src, cp, macTab, p, sourceEnd)
+            break
+        }
+
+        MacroBytecodeHelper.emitFieldNameSid(dest, sid)
+
+        opcode = src.get(p++).toInt() and 0xFF
+        p += compileValue(opcode, dest, cp, src, p, macTab)
+    }
+
+    dest.add(MacroBytecode.OP_CONTAINER_END.opToInstruction())
+    val end = dest.size()
+    dest[containerStartIndex] = MacroBytecode.OP_STRUCT_START.opToInstruction(end - start)
+
+    sourceEnd - pos
+}
+
+@OptIn(ExperimentalStdlibApi::class)
+private fun handleFlexSymModeRemainder(dest: IntList, src: ByteArray, cp: MutableList<Any?>, macTab: Array<MacroV2>, start: Int, end: Int) {
+    var p = start
+    while (p < end) {
+        val flexSym = IntHelper.readFlexIntAt(src, p)
+        p += IntHelper.lengthOfFlexUIntAt(src, p)
+        if (flexSym == 0) {
+            val systemSid = src.get(p++).toInt() and 0xFF
+            MacroBytecodeHelper.emitFieldNameSystemSid(dest, systemSid - 0x60)
+        } else if (flexSym > 0) {
+            MacroBytecodeHelper.emitFieldNameSid(dest, flexSym)
+        } else {
+            val length = -flexSym
+            MacroBytecodeHelper.emitFieldNameTextReference(dest, p, length)
+            p += length
+        }
+        val opcode = src.get(p++).toInt() and 0xFF
+        p += compileValue(opcode, dest, cp, src, p, macTab)
+    }
+}
+
+
 
 private val VALUE_TRANSFORMERS = Array<ToBytecodeTransformer>(256) { opcode ->
     when (opcode) {
@@ -604,7 +833,7 @@ private val VALUE_TRANSFORMERS = Array<ToBytecodeTransformer>(256) { opcode ->
         0xDE -> TX_0xDE
         0xDF -> TX_0xDF
 
-        Opcode.IVM -> TX_IVM
+        Opcode.IVM -> TX_IVM_TOP_LEVEL
         Opcode.SYMBOL_VALUE_SID_U8 -> TX_SYMBOL_VALUE_SID_U8
         Opcode.SYMBOL_VALUE_SID_U16 -> TX_SYMBOL_VALUE_SID_U16
         Opcode.SYMBOL_VALUE_SID_FLEXUINT -> TX_SYMBOL_VALUE_SID_FLEXUINT
@@ -627,13 +856,13 @@ private val VALUE_TRANSFORMERS = Array<ToBytecodeTransformer>(256) { opcode ->
         Opcode.DELIMITED_LIST -> TX_DELIMITED_LIST
         Opcode.DELIMITED_SEXP -> TX_DELIMITED_SEXP
         Opcode.DELIMITED_STRUCT -> TX_DELIMITED_STRUCT
-
         Opcode.E_EXPRESSION_WITH_FLEX_UINT_ADDRESS -> TX_MACRO_W_FLEXUINT_ADDR
+        Opcode.LENGTH_PREFIXED_MACRO_INVOCATION -> TX_MACRO_W_LENGTH_AND_FLEXUINT_ADDR
         Opcode.VARIABLE_LENGTH_STRING -> TX_VAR_STRING
         Opcode.VARIABLE_LENGTH_INLINE_SYMBOL -> toPrefixedReference(MacroBytecodeHelper::emitSymbolTextReference)
-        Opcode.VARIABLE_LENGTH_LIST -> toPrefixedReference(MacroBytecodeHelper::emitListReference)
-        Opcode.VARIABLE_LENGTH_SEXP -> toPrefixedReference(MacroBytecodeHelper::emitSexpReference)
-        Opcode.VARIABLE_LENGTH_STRUCT_WITH_SIDS -> toPrefixedReference(MacroBytecodeHelper::emitStructReference)
+        Opcode.VARIABLE_LENGTH_LIST -> TX_VAR_LIST_INLINE // toPrefixedReference(MacroBytecodeHelper::emitListReference)
+        Opcode.VARIABLE_LENGTH_SEXP -> TX_VAR_SEXP_INLINE // toPrefixedReference(MacroBytecodeHelper::emitSexpReference)
+        Opcode.VARIABLE_LENGTH_STRUCT_WITH_SIDS -> TX_VAR_STRUCT_INLINE // toPrefixedReference(MacroBytecodeHelper::emitStructReference)
         Opcode.VARIABLE_LENGTH_DECIMAL -> toPrefixedReference(MacroBytecodeHelper::emitDecimalReference)
         Opcode.VARIABLE_LENGTH_TIMESTAMP -> toPrefixedReference(MacroBytecodeHelper::emitLongTimestampReference)
 

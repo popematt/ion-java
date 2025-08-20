@@ -2,13 +2,16 @@ package com.amazon.ion.v3.impl_1_1.template
 
 import com.amazon.ion.IonType
 import com.amazon.ion.v3.*
+import com.amazon.ion.v3.impl_1_1.*
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.AS_HEX_BYTE
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.AS_HEX_INT
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.AS_INT
+import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.AS_SYS_MACRO
+import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.BYTECODE_LENGTH
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.CHAR
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.CP_INDEX
-import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.LENGTH
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.NO_DATA
+import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.REF_LENGTH
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.SID
 import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.DataFormatters.SRC_INDEX
 
@@ -33,7 +36,7 @@ object MacroBytecode {
     @JvmStatic
     fun renderForDebugging(bytecode: IntArray): Array<String> {
         val sb = StringBuilder()
-        debugString(bytecode, sb::append, useIndent = false, useNumbers = false)
+        debugString(bytecode, sb::append, useIndent = true, useNumbers = false)
         return sb.toString().split("\n").toTypedArray()
     }
 
@@ -50,6 +53,7 @@ object MacroBytecode {
         return "L$n".padEnd(6, ' ')
     }
 
+    @OptIn(ExperimentalStdlibApi::class)
     @JvmStatic
     fun debugString(bytecode: IntArray, write: (String) -> Unit = ::print, useIndent: Boolean = true, useNumbers: Boolean = true, constantPool: Array<Any?>? = null) {
         var indent = ""
@@ -60,8 +64,9 @@ object MacroBytecode {
             val operationInt = instruction ushr OPERATION_SHIFT_AMOUNT
             if (operationInt == 0) {
                 write(indent)
-                write("NOP\n")
-                continue
+                write("NOP ${instruction.toHexString()}\n")
+                // continue
+                return
             }
 
             val operation = Operations.entries.singleOrNull() { it.operation == operationInt }
@@ -90,8 +95,9 @@ object MacroBytecode {
             repeat(operation.numberOfOperands) {
                 write("\n")
                 if (useNumbers) write(line(i))
+                val operand = bytecode[i++]
                 write("$indent  ")
-                write(operation.operandFormatter(bytecode[i++]))
+                write(operation.operandFormatter(operand))
             }
 
             write("\n")
@@ -101,6 +107,8 @@ object MacroBytecode {
                 OP_STRUCT_START,
                 OP_START_ARGUMENT_VALUE -> indent += ". "
             }
+
+            if (operationInt == REFILL) break
         }
     }
 
@@ -125,7 +133,9 @@ object MacroBytecode {
         @OptIn(ExperimentalStdlibApi::class)
         val AS_HEX_BYTE = { data: Int -> data.toUByte().toHexString()}
         val AS_INT = { data: Int -> data.toString() }
-        val LENGTH = { data: Int -> data.toString() }
+        val AS_SYS_MACRO = { data: Int -> SystemMacro[data].systemName!!.text }
+        val REF_LENGTH = { data: Int -> data.toString() }
+        val BYTECODE_LENGTH = { data: Int -> data.toString() }
         val SRC_INDEX = { data: Int -> data.toString() }
         val CP_INDEX = { data: Int -> data.toString() }
         val SID = { data: Int -> data.toString() }
@@ -143,53 +153,56 @@ object MacroBytecode {
         INT32(OP_INLINE_INT, NO_DATA, 1, AS_HEX_INT),
         INT64(OP_INLINE_LONG, NO_DATA, 2, AS_HEX_INT),
         INT_CNST(OP_CP_BIG_INT, CP_INDEX),
-        INT_REF(OP_REF_INT, LENGTH, 1, SRC_INDEX),
+        INT_REF(OP_REF_INT, REF_LENGTH, 1, SRC_INDEX),
         FLOAT32(OP_INLINE_FLOAT, NO_DATA, 1, AS_HEX_INT),
         FLOAT64(OP_INLINE_DOUBLE, NO_DATA, 2, AS_HEX_INT),
         DEC_CNST(OP_CP_DECIMAL, AS_INT),
-        DEC_REF(OP_REF_DECIMAL, LENGTH, 1, SRC_INDEX),
+        DEC_REF(OP_REF_DECIMAL, REF_LENGTH, 1, SRC_INDEX),
         TS_CNST(OP_CP_TIMESTAMP, CP_INDEX),
         TSS_REF(OP_REF_TIMESTAMP_SHORT, AS_HEX_BYTE, 1, SRC_INDEX),
-        TSL_REF(OP_REF_TIMESTAMP_LONG, LENGTH, 1, SRC_INDEX),
+        TSL_REF(OP_REF_TIMESTAMP_LONG, REF_LENGTH, 1, SRC_INDEX),
         STR_CNST(OP_CP_STRING, CP_INDEX),
-        STR_REF(OP_REF_STRING, LENGTH, 1, SRC_INDEX),
-        SYM_SYS(OP_SYSTEM_SYMBOL_SID, SID),
+        STR_REF(OP_REF_STRING, REF_LENGTH, 1, SRC_INDEX),
+        SYM_SYS(OP_SYMBOL_SYSTEM_SID, SID),
         SYM_CNST(OP_CP_SYMBOL_TEXT, CP_INDEX),
-        SYM_REF(OP_REF_SYMBOL_TEXT, LENGTH, 1, SRC_INDEX),
+        SYM_REF(OP_REF_SYMBOL_TEXT, REF_LENGTH, 1, SRC_INDEX),
         SYM_SID(OP_SYMBOL_SID, SID),
         SYM_1_CHAR(OP_SYMBOL_CHAR, CHAR),
         BLOB_CNST(OP_CP_BLOB, CP_INDEX),
-        BLOB_REF(OP_REF_BLOB, LENGTH, 1, SRC_INDEX),
+        BLOB_REF(OP_REF_BLOB, REF_LENGTH, 1, SRC_INDEX),
         CLOB_CNST(OP_CP_CLOB, CP_INDEX),
-        CLOB_REF(OP_REF_CLOB, LENGTH, 1, SRC_INDEX),
-        LIST_START(OP_LIST_START, LENGTH),
-        SEXP_START(OP_SEXP_START, LENGTH),
-        STRUCT_START(OP_STRUCT_START, LENGTH),
-        LIST_REF(OP_REF_LIST, LENGTH, 1, SRC_INDEX),
-        SEXP_REF(OP_REF_SEXP, LENGTH, 1, SRC_INDEX),
-        STRUCT_REF(OP_REF_SID_STRUCT, LENGTH, 1, SRC_INDEX),
+        CLOB_REF(OP_REF_CLOB, REF_LENGTH, 1, SRC_INDEX),
+        LIST_START(OP_LIST_START, BYTECODE_LENGTH),
+        SEXP_START(OP_SEXP_START, BYTECODE_LENGTH),
+        STRUCT_START(OP_STRUCT_START, BYTECODE_LENGTH),
+        LIST_REF(OP_REF_LIST, REF_LENGTH, 1, SRC_INDEX),
+        SEXP_REF(OP_REF_SEXP, REF_LENGTH, 1, SRC_INDEX),
+        STRUCT_REF(OP_REF_SID_STRUCT, REF_LENGTH, 1, SRC_INDEX),
         FNAME_SID(OP_FIELD_NAME_SID, SID),
         FNAME_CNST(OP_CP_FIELD_NAME, CP_INDEX),
         FNAME_SYS(OP_FIELD_NAME_SYSTEM_SID, SID),
-        FNAME_REF(OP_REF_FIELD_NAME_TEXT, LENGTH, 1, SRC_INDEX),
+        FNAME_REF(OP_REF_FIELD_NAME_TEXT, REF_LENGTH, 1, SRC_INDEX),
         ANN_CNST(OP_CP_ONE_ANNOTATION, CP_INDEX),
-        ANN_SID(OP_ONE_ANNOTATION_SID, SID),
-        ANN_REF(OP_REF_ONE_FLEXSYM_ANNOTATION, LENGTH, 1, SRC_INDEX),
-        ANN_SYS(OP_ANN_SYSTEM_SID, SID),
-        ARG_START(OP_START_ARGUMENT_VALUE, LENGTH),
+        ANN_SID(OP_ANNOTATION_SID, SID),
+        ANN_REF(OP_REF_ONE_FLEXSYM_ANNOTATION, REF_LENGTH, 1, SRC_INDEX),
+        ANN_SYS(OP_ANNOTATION_SYSTEM_SID, SID),
+        ARG_START(OP_START_ARGUMENT_VALUE, BYTECODE_LENGTH),
         PARAM(OP_PARAMETER, AS_INT),
         MAC_CNST(OP_INVOKE_MACRO, CP_INDEX),
-        // TODO? An instruction denoting that an inline macro invocation is about to start.
-        MAC_START(999, LENGTH),
+        // TODO? An instruction denoting that an inlined macro invocation is about to start.
+        MAC_START(999, BYTECODE_LENGTH),
         // TODO? An instruction referencing the current macro table?
         MAC_INVOKE(OP_INVOKE_MACRO_ID, AS_INT),
-        MAC_SYS(OP_INVOKE_SYS_MACRO, AS_HEX_BYTE),
+        MAC_SYS(OP_INVOKE_SYS_MACRO, AS_SYS_MACRO),
         CP_MACRO_INVOCATION(OP_CP_MACRO_INVOCATION, CP_INDEX),
         EOF(MacroBytecode.EOF, NO_DATA),
         CONTAINER_END(OP_CONTAINER_END, NO_DATA),
         ARG_END(OP_END_ARGUMENT_VALUE, NO_DATA),
         RETURN(OP_RETURN, NO_DATA),
 
+        REFILL(MacroBytecode.REFILL, NO_DATA),
+        DIRECTIVE_MACRO(DIRECTIVE_SYSTEM_MACRO, AS_SYS_MACRO),
+        IVM(MacroBytecode.IVM, NO_DATA),
         ;
 
         @OptIn(ExperimentalStdlibApi::class)
@@ -198,6 +211,40 @@ object MacroBytecode {
             @JvmField
             internal val OPERATIONS = Array<Operations?>(256) { i ->
                 Operations.entries.singleOrNull { it.operation == i }
+            }
+
+            @JvmField
+            internal val N_OPERANDS = ByteArray(256) { i ->
+                val op = Operations.entries.singleOrNull { it.operation == i }
+                if (op == null) {
+                    0
+                } else {
+                    if (op.numberOfOperands == 0 && op.dataFormatter === DataFormatters.BYTECODE_LENGTH) {
+                        -1
+                    } else {
+                        op.numberOfOperands
+                    }
+                }.toByte()
+            }
+
+            @JvmField
+            internal val IS_CP_INDEX = BooleanArray(256) { i ->
+                val op = Operations.entries.singleOrNull { it.operation == i }
+                if (op == null) {
+                    false
+                } else {
+                    op.dataFormatter === DataFormatters.CP_INDEX
+                }
+            }
+
+            @JvmField
+            internal val IS_BYTECODE_LENGTH = BooleanArray(256) { i ->
+                val op = Operations.entries.singleOrNull { it.operation == i }
+                if (op == null) {
+                    false
+                } else {
+                    op.dataFormatter === DataFormatters.BYTECODE_LENGTH
+                }
             }
 
             @JvmStatic
@@ -217,8 +264,18 @@ object MacroBytecode {
     }
 
 
+    // TODO: Standardize the values of the instruction suffixes
+    //       Suffixes:
+    //         * SID = ?  (symbol, fieldname, annotation)
+    //         * REF = ?  (fieldname, annotation, int, decimal, timestamp, string, symbol, blob, clob, list, sexp, struct)
+    //         * CP = ?   (fieldname, annotation, int, decimal, timestamp, string, symbol, blob, clob)
+    //         * INLINE_VALUE = ?
+    //         * NULL = 7 (all types)
+
+
+
     /** No DATA */
-    const val OP_NULL_NULL = TokenTypeConst.NULL shl TOKEN_TYPE_SHIFT_AMOUNT
+    const val OP_NULL_NULL = (TokenTypeConst.NULL shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
     /** DATA is the IonType ordinal */
     const val OP_NULL_TYPED = (TokenTypeConst.NULL shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     /** DATA is 0 for false; 1 for true */
@@ -258,7 +315,7 @@ object MacroBytecode {
     const val OP_REF_STRING = (TokenTypeConst.STRING shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
 
     /** DATA is SID as u24 */
-    const val OP_SYSTEM_SYMBOL_SID = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT)
+    const val OP_SYMBOL_SYSTEM_SID = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT)
     // const val OP_UNKNOWN_SYMBOL = TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT
     /** DATA is u24 index into constant pool */
     const val OP_CP_SYMBOL_TEXT = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
@@ -312,9 +369,9 @@ object MacroBytecode {
      */
     const val OP_REF_ONE_FLEXSYM_ANNOTATION = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     /** DATA is SID as u24 */
-    const val OP_ONE_ANNOTATION_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
+    const val OP_ANNOTATION_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
     /** DATA is system sid */
-    const val OP_ANN_SYSTEM_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
+    const val OP_ANNOTATION_SYSTEM_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
 
     // TODO: Could we just chain multiple "one" annotation opcodes?
     /** DATA is u8 indicating whether this is SIDs, CP Indexes, or FlexSyms and u16 indicating the number of annotations; followed by n operands */
@@ -332,6 +389,22 @@ object MacroBytecode {
     // Must be preceded by an acceptable number of ARGUMENT_VALUE
     /** DATA is a constant pool index to the `Macro` instance */
     const val OP_INVOKE_MACRO = TokenTypeConst.MACRO_INVOCATION shl TOKEN_TYPE_SHIFT_AMOUNT
+
+
+
+
+    const val OP_NULL_BOOL = (TokenTypeConst.BOOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_INT = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_FLOAT = (TokenTypeConst.FLOAT shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_DECIMAL = (TokenTypeConst.DECIMAL shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_TIMESTAMP = (TokenTypeConst.TIMESTAMP shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_STRING = (TokenTypeConst.STRING shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_SYMBOL = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_BLOB = (TokenTypeConst.BLOB shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_CLOB = (TokenTypeConst.CLOB shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_LIST = (TokenTypeConst.LIST shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_SEXP = (TokenTypeConst.SEXP shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
+    const val OP_NULL_STRUCT = (TokenTypeConst.STRUCT shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
 
     /**
      * TODO: Special instructions for system macros that should be hard coded
@@ -384,6 +457,13 @@ object MacroBytecode {
     const val OP_END_ARGUMENT_VALUE = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
     const val OP_RETURN = (TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
+
+    const val IVM = (TokenTypeConst.IVM shl TOKEN_TYPE_SHIFT_AMOUNT)
+    const val REFILL = (TokenTypeConst.REFILL shl TOKEN_TYPE_SHIFT_AMOUNT)
+    const val DIRECTIVE_SYMBOL_TABLE_STRUCT = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT)
+    const val DIRECTIVE_SEXP = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    const val DIRECTIVE_SYSTEM_MACRO = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
+
 
     // NOTE about ref opcodes
     // It seems that data locality is one of the most important concerns for performance.

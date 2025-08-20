@@ -126,6 +126,8 @@ class StreamWrappingIonReader: IonReader {
 //                reader = variableReader
                 null
             }
+            TokenTypeConst.REFILL -> return null
+            TokenTypeConst.UNSET -> return null
             else -> TODO("Unreachable: ${TokenTypeConst(token)}")
         }
         if (type != null) {

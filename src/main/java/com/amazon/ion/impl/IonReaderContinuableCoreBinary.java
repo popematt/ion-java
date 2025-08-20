@@ -37,6 +37,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -2593,6 +2594,10 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
      * @return the value.
      */
     String readString() {
+        // 123.991 ±   0.550
+        // p0=117.834
+        // p50=122.946
+        // p90=128.831
         if (isEvaluatingEExpression) {
             return macroEvaluatorIonReader.stringValue();
         }
@@ -2602,6 +2607,22 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
         prepareScalar();
         ByteBuffer utf8InputBuffer = prepareByteBuffer(valueMarker.startIndex, valueMarker.endIndex);
         return utf8Decoder.decode(utf8InputBuffer, (int) (valueMarker.endIndex - valueMarker.startIndex));
+    }
+
+    String readStringB() {
+        // 138.557 ±  0.612
+        if (isEvaluatingEExpression) {
+            return macroEvaluatorIonReader.stringValue();
+        }
+        Marker valueMarker = this.valueMarker;
+        if (valueMarker.typeId.isNull) {
+            return null;
+        }
+        prepareScalar();
+//        ByteBuffer utf8InputBuffer = prepareByteBuffer(valueMarker.startIndex, valueMarker.endIndex);
+//        return utf8Decoder.decode(utf8InputBuffer, (int) (valueMarker.endIndex - valueMarker.startIndex));
+        int startIndex = (int) valueMarker.startIndex;
+        return new String(buffer, startIndex, ((int) valueMarker.endIndex)- startIndex, StandardCharsets.UTF_8);
     }
 
     @Override

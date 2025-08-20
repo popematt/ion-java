@@ -127,7 +127,6 @@ fun templateExpressionToBytecode(expr: TemplateBodyExpressionModel, env: Environ
                 val bigInt = expr.valueObject as BigInteger
                 val cpIndex = constants.size
                 constants.add(bigInt)
-                // Unnecessary to add the cpIndex, but relatively cheap, and helpful for debugging.
                 bytecode.add(MacroBytecode.OP_CP_BIG_INT.opToInstruction(cpIndex))
             } else {
                 val longValue = expr.primitiveValue

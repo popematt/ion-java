@@ -65,4 +65,18 @@ object FixedInt {
         }
         return numMagnitudeBitsRequired / 8 + 1
     }
+
+    /** Determine the length of FixedInt for the provided value.  */
+    @JvmStatic
+    fun fixedIntLength(value: Int): Int {
+        val numMagnitudeBitsRequired: Int
+        if (value < 0) {
+            val numLeadingOnes = Integer.numberOfLeadingZeros(value.inv())
+            numMagnitudeBitsRequired = 64 - numLeadingOnes
+        } else {
+            val numLeadingZeros = Integer.numberOfLeadingZeros(value)
+            numMagnitudeBitsRequired = 64 - numLeadingZeros
+        }
+        return numMagnitudeBitsRequired / 8 + 1
+    }
 }

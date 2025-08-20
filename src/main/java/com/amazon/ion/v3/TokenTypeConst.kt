@@ -36,6 +36,9 @@ object TokenTypeConst {
     const val ABSENT_ARGUMENT = 22 // Try making this the same number as NOP
     const val RESERVED = 23 // TODO: Remove this?
 
+    const val SYSTEM_VALUE = 24
+    const val REFILL = 25
+
     operator fun invoke(i: Int) : String {
         return when (i) {
             0 -> "UNSET"
@@ -62,6 +65,8 @@ object TokenTypeConst {
             21 -> "VARIABLE_REF"
             22 -> "EMPTY_ARGUMENT"
             23 -> "RESERVED"
+            24 -> "SYSTEM_VALUE"
+            25 -> "REFILL"
             else -> "UNKNOWN"
         } + "($i)"
     }

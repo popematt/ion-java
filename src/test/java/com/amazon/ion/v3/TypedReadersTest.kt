@@ -2732,6 +2732,7 @@ class TypedReadersTest {
                     value("[bar]")
                 }
             }
+
             @Test
             fun constantScalarTemplateMacro() {
                 val macro = MacroV2(
@@ -2854,7 +2855,6 @@ class TypedReadersTest {
                     value("3")
                 }
             }
-
 
             @Test
             fun constantNestedInvocationTemplateMacro() {
@@ -2990,7 +2990,6 @@ class TypedReadersTest {
                 }
             }
 
-
             @Test
             fun simpleInvocationOfDefault() {
                 val macro = MacroV2(
@@ -3044,7 +3043,6 @@ class TypedReadersTest {
                     value("4")
                 }
             }
-
 
             @Test
             fun complexConstantMacro() {
@@ -3794,7 +3792,6 @@ class TypedReadersTest {
                     value("2")
                 }
             }
-
 
             @Test
             fun templateMacroWithMultipleVariables() {

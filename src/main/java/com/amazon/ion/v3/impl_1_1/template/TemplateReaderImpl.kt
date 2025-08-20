@@ -129,80 +129,6 @@ open class TemplateReaderImpl internal constructor(
         this.macroTable = macroTable
     }
 
-
-    private object Foo {
-        @JvmField
-        val TOKEN_HANDLERS = Array(256) {
-            when (it) {
-                MacroBytecode.OP_START_ARGUMENT_VALUE -> ::collectAllArgs0
-                MacroBytecode.OP_PARAMETER -> ::switchToReadingArguments0
-                MacroBytecode.OP_END_ARGUMENT_VALUE,
-                MacroBytecode.OP_RETURN -> ::switchBackToReadingBody
-                MacroBytecode.OP_INVOKE_SYS_MACRO -> ::handleSystemMacro0
-                else -> ::passThrough
-            }
-        }
-
-        @JvmStatic
-        private fun passThrough(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
-            return i
-        }
-
-        @JvmStatic
-        private fun handleSystemMacro0(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
-            return when (instruction and 0xFF) {
-                SystemMacro.DEFAULT_ADDRESS -> -reader.handleDefaultSystemMacro(i)
-                // Anything else passes through.
-                else -> i
-            }
-        }
-
-        @JvmStatic
-        private fun collectAllArgs0(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
-            var instruction = instruction
-            var i = i
-            val argStack = reader.argumentValueIndicesStack
-            var argStackSize = reader.argStackSize
-            val bytecode = reader.bytecode
-            do {
-                argStack[(argStackSize++).toInt()] = i - 1
-                i += (instruction and MacroBytecode.DATA_MASK)
-                instruction = bytecode[i++]
-            } while (instruction.instructionToOp() == MacroBytecode.OP_START_ARGUMENT_VALUE)
-            reader.argStackSize = argStackSize
-            i--
-            return -i
-        }
-
-        /**
-         * Returns the new `i` value. (Does not set the class member named `i`.)
-         */
-        @JvmStatic
-        private fun switchBackToReadingBody(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
-            val frame = reader.evaluationStack[(--reader.stackFrameSize).toInt()]
-            reader.bytecode = frame.bytecode
-            reader.constantPool = frame.constantPool
-            val i = frame.i
-            return -i
-        }
-
-        @JvmStatic
-        private fun switchToReadingArguments0(reader: TemplateReaderImpl, instruction: Int, i: Int): Int {
-            if (reader.bytecode[i].instructionToOp() == MacroBytecode.OP_END_ARGUMENT_VALUE) {
-                // Don't push anything. Just replace the current top of the stack.
-            } else {
-                reader.pushEvaluationFrame(i)
-            }
-            val arguments = reader.arguments
-            reader.constantPool = arguments.constantPool()
-            val argSlice = arguments.getArgumentSlice(instruction and MacroBytecode.DATA_MASK)
-            reader.bytecode = argSlice.bytecode
-            return -argSlice.startIndex
-        }
-
-    }
-
-
     override fun nextToken(): Int {
 //        println(javaClass.simpleName + "@" + Integer.toHexString(System.identityHashCode(this)) + " -> ")
         if (instruction == INSTRUCTION_END) {
@@ -594,7 +520,7 @@ open class TemplateReaderImpl internal constructor(
                     annotations += constantPool[constantPoolIndex] as String?
                     sids.add(-1)
                 }
-                MacroBytecode.OP_ANN_SYSTEM_SID -> {
+                MacroBytecode.OP_ANNOTATION_SYSTEM_SID -> {
                     val sid = instruction and MacroBytecode.DATA_MASK
                     if (sid == 0) {
                         annotations += null
@@ -604,7 +530,7 @@ open class TemplateReaderImpl internal constructor(
                         sids.add(-1)
                     }
                 }
-                MacroBytecode.OP_ONE_ANNOTATION_SID -> {
+                MacroBytecode.OP_ANNOTATION_SID -> {
                     val sid = (instruction and MacroBytecode.DATA_MASK)
                     annotations += symbolTable[sid]
                     sids.add(sid)
@@ -742,7 +668,7 @@ open class TemplateReaderImpl internal constructor(
                 return readText(position, length, pool.scratchBuffer)
                 // .also { println("... \"$it\"\n; i=$i") }
             }
-            MacroBytecode.OP_SYSTEM_SYMBOL_SID -> {
+            MacroBytecode.OP_SYMBOL_SYSTEM_SID -> {
                 this.instruction = INSTRUCTION_NOT_SET
                 return SystemSymbols_1_1[instruction and MacroBytecode.DATA_MASK]!!.text
             }
@@ -759,7 +685,7 @@ open class TemplateReaderImpl internal constructor(
         val instruction = this.instruction
 //        println("Reading symbol sid from ${MacroBytecode(instruction)}")
         when (instruction.instructionToOp()) {
-            MacroBytecode.OP_SYSTEM_SYMBOL_SID -> {
+            MacroBytecode.OP_SYMBOL_SYSTEM_SID -> {
                 val systemSid = (instruction and MacroBytecode.DATA_MASK)
                 if (systemSid == 0) {
                     this.instruction = INSTRUCTION_NOT_SET

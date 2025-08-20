@@ -48,6 +48,31 @@ import java.nio.ByteBuffer
  * - shift right by (8 * 0 + 4) = 4
  */
 object IntHelper {
+
+    @JvmStatic
+    private fun ByteArray.getShort(position: Int): Short {
+        return ((this[position].toInt() and 0xFF) or ((this[position + 1].toInt() and 0xFF) shl 8)).toShort()
+    }
+    @JvmStatic
+    private fun ByteArray.getInt(position: Int): Int {
+        return (this[position].toInt() and 0xFF) or
+                ((this[position + 1].toInt() and 0xFF) shl 8) or
+                ((this[position + 2].toInt() and 0xFF) shl 16) or
+                ((this[position + 3].toInt() and 0xFF) shl 24)
+    }
+    @JvmStatic
+    private fun ByteArray.getLong(position: Int): Long {
+        return (this[position].toLong() and 0xFF) or
+                ((this[position + 1].toLong() and 0xFF) shl 8) or
+                ((this[position + 2].toLong() and 0xFF) shl 16) or
+                ((this[position + 3].toLong() and 0xFF) shl 24) or
+                ((this[position + 4].toLong() and 0xFF) shl 32) or
+                ((this[position + 5].toLong() and 0xFF) shl 40) or
+                ((this[position + 6].toLong() and 0xFF) shl 48) or
+                ((this[position + 7].toLong() and 0xFF) shl 56)
+    }
+
+
     @JvmStatic
     fun readFixedInt(source: ByteBuffer, length: Int): Long {
         if (source.remaining() < length) throw IonException("Incomplete data")
@@ -231,6 +256,42 @@ object IntHelper {
 
 
     /**
+     * This employs some hackery. The result contains both the value and the length.
+     * The 8 low order bits are the length, and the other bits are the value.
+     */
+    @JvmStatic
+    fun readFlexUIntValueAndLengthAt(source: ByteArray, position: Int): Long {
+        val firstByte = try {
+            source.get(position)
+        } catch (e: Exception) {
+            println(source)
+            throw e
+        }
+        val numBytes = firstByte.countTrailingZeroBits() + 1
+        val value = when (numBytes) {
+            1 -> {
+                ((firstByte.toInt() and 0xFF) ushr 1)
+            }
+            2, 3, 4 -> {
+                // TODO: We could probably simplify some of these calculations.
+                val backtrack = 4 - numBytes
+                val data = source.getInt(position - backtrack)
+                val shiftAmount = 8 * backtrack + numBytes
+                (data ushr shiftAmount)
+            }
+            5 -> {
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 3) ushr 3
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                (data shl 3) + (firstByte.toInt() ushr 5)
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+        return (value.toLong() shl 8) or numBytes.toLong()
+    }
+
+
+    /**
      * Returns the length of the flexuint + the value of the flexuint. Useful for skipping length-prefixed values.
      */
     @JvmStatic
@@ -258,6 +319,33 @@ object IntHelper {
         }
     }
 
+    /**
+     * Returns the length of the flexuint + the value of the flexuint. Useful for skipping length-prefixed values.
+     */
+    @JvmStatic
+    fun getLengthPlusValueOfFlexUIntAt(source: ByteArray, position: Int): Int {
+        val firstByte = source.get(position)
+        val numBytes = firstByte.countTrailingZeroBits() + 1
+        when (numBytes) {
+            1 -> {
+                return ((firstByte.toInt() and 0xFF) ushr 1) + numBytes
+            }
+            2, 3, 4 -> {
+                // TODO: We could probably simplify some of these calculations.
+                val backtrack = 4 - numBytes
+                val data = source.getInt(position - backtrack)
+                val shiftAmount = 8 * backtrack + numBytes
+                return (data ushr shiftAmount) + numBytes
+            }
+            5 -> {
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 3) ushr 3
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                return (data shl 3) + (firstByte.toInt() ushr 5) + numBytes
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+    }
 
     @JvmStatic
     fun skipFlexUInt(source: ByteBuffer) {
@@ -286,6 +374,17 @@ object IntHelper {
         var i = 0
         while (firstByte == 0.toByte()) {
             firstByte = source.get(position + i)
+            i++
+        }
+        return firstByte.countTrailingZeroBits() + 1 + (i * 8)
+    }
+
+    @JvmStatic
+    fun lengthOfFlexUIntAt(source: ByteArray, position: Int): Int {
+        var firstByte = source[position]
+        var i = 0
+        while (firstByte == 0.toByte()) {
+            firstByte = source[position + i]
             i++
         }
         return firstByte.countTrailingZeroBits() + 1 + (i * 8)
@@ -321,7 +420,63 @@ object IntHelper {
     }
 
     @JvmStatic
+    fun readFlexUIntWithLengthAt(source: ByteArray, position: Int, length: Int): Int {
+        when (length) {
+            1 -> {
+                return ((source.get(position).toInt() and 0xFF) ushr 1)
+            }
+            2 -> {
+                return ((source.getShort(position).toInt() and 0xFFFF) ushr 2)
+            }
+            3 -> {
+                return ((source.getInt(position - 1) and 0xFFFFFF ) ushr 3)
+            }
+            4 -> {
+                val data = source.getInt(position)
+                return data ushr 4
+            }
+            5 -> {
+                // FIXME:
+                val firstByte = source.get(position)
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 3) shr 3
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                // return (data shl 3) + (firstByte.toInt() ushr 5)
+                TODO()
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+    }
+
+    @JvmStatic
     fun readFlexIntWithLengthAt(source: ByteBuffer, position: Int, length: Int): Int {
+        when (length) {
+            1 -> {
+                return (source.get(position).toInt() shr 1)
+            }
+            2 -> {
+                return (source.getShort(position).toInt() shr 2)
+            }
+            3 -> {
+                return (source.getInt(position - 1) shr 3) and 0xFFFFFF
+            }
+            4 -> {
+                val data = source.getInt(position)
+                return data shr 4
+            }
+            5 -> {
+                val firstByte = source.get(position)
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 3) shr 3
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                return (data shl 3) + (firstByte.toInt() shr 5)
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+    }
+
+    @JvmStatic
+    fun readFlexIntWithLengthAt(source: ByteArray, position: Int, length: Int): Int {
         when (length) {
             1 -> {
                 return (source.get(position).toInt() shr 1)
@@ -378,6 +533,31 @@ object IntHelper {
                 val data = source.getInt(position + 1)
                 val data1 = (data shl 4) shr 4
                 if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
+                return (data shl 3) + (firstByte.toInt() ushr 5)
+            }
+            else -> throw IonException("FlexUInt value too large to find in an Int")
+        }
+    }
+
+    @JvmStatic
+    fun readFlexIntAt(source: ByteArray, position: Int): Int {
+        val firstByte = source.get(position)
+        val numBytes = firstByte.countTrailingZeroBits() + 1
+        when (numBytes) {
+            1 -> {
+                return (firstByte.toInt() shr 1)
+            }
+            2, 3, 4 -> {
+                // TODO: We could probably simplify some of these calculations.
+                val backtrack = 4 - numBytes
+                val data = source.getInt(position - backtrack)
+                val shiftAmount = 8 * backtrack + numBytes
+                return (data shr shiftAmount)
+            }
+            5 -> {
+                val data = source.getInt(position + 1)
+                val data1 = (data shl 4) shr 4
+                if (data != data1) throw IonException("FlexUInt value too large to find in an Int at $position")
                 return (data shl 3) + (firstByte.toInt() ushr 5)
             }
             else -> throw IonException("FlexUInt value too large to find in an Int")

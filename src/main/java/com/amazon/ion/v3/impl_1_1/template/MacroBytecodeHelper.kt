@@ -9,11 +9,12 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitNullValue(bytecode: IntList, nullType: IonType) {
-        if (nullType == IonType.NULL) {
-            bytecode.add(MacroBytecode.OP_NULL_NULL.opToInstruction())
+        val instruction = if (nullType == IonType.NULL) {
+            MacroBytecode.OP_NULL_NULL.opToInstruction()
         } else {
-            bytecode.add(MacroBytecode.OP_NULL_TYPED.opToInstruction(nullType.ordinal))
+            MacroBytecode.OP_NULL_TYPED.opToInstruction(nullType.ordinal)
         }
+        bytecode.add(instruction)
     }
 
     @JvmStatic
@@ -111,7 +112,7 @@ object MacroBytecodeHelper {
 
     @JvmStatic
     fun emitSystemSymbolId(bytecode: IntList, sid: Int) {
-        bytecode.add(MacroBytecode.OP_SYSTEM_SYMBOL_SID.opToInstruction(sid))
+        bytecode.add(MacroBytecode.OP_SYMBOL_SYSTEM_SID.opToInstruction(sid))
     }
 
     // TODO: BLOB

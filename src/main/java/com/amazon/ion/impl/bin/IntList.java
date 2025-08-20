@@ -174,23 +174,9 @@ public class IntList {
         return data;
     }
 
-//    /**
-//     * Reallocates the backing array to accommodate storing more ints.
-//     */
-//    private void grow() {
-//        // grow(0);
-//    }
-//
-//    /**
-//     * Reallocates the backing array to accommodate storing more ints.
-//     */
-//    private void grow(int minCapacity) {
-//        int newCapacity = Math.max(capacity, minCapacity) * GROWTH_MULTIPLIER;
-//        int[] newData = new int[newCapacity];
-//        capacity = newCapacity;
-//        System.arraycopy(data, 0, newData, 0, data.length);
-//        data = newData;
-//    }
+    public int[] unsafeGetArray() {
+        return data;
+    }
 
     @Override
     public String toString() {

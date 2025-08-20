@@ -1,6 +1,7 @@
 package com.amazon.ion.v3
 
 import com.amazon.ion.*
+import com.amazon.ion.v3.ion_reader.*
 import com.amazon.ion.v3.ion_reader.ReaderManager
 import java.nio.ByteBuffer
 import org.junit.jupiter.api.Assertions.assertEquals

@@ -8,7 +8,6 @@ import com.amazon.ion.v3.impl_1_1.template.MacroBytecode.opToInstruction
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
@@ -201,7 +200,7 @@ class TemplateReaderImplTest {
             assertEquals("ABC", symbolValue())
         },
         testCase(
-            MacroBytecode.OP_SYSTEM_SYMBOL_SID.opToInstruction(1),
+            MacroBytecode.OP_SYMBOL_SYSTEM_SID.opToInstruction(1),
         ) {
             assertEquals(TokenTypeConst.SYMBOL, nextToken())
             assertEquals(1, i)
@@ -211,7 +210,7 @@ class TemplateReaderImplTest {
         testCase(
             "using symbolValueSid(), unknown symbol text",
             instructionsToTest = instructions(
-                MacroBytecode.OP_SYSTEM_SYMBOL_SID.opToInstruction(0),
+                MacroBytecode.OP_SYMBOL_SYSTEM_SID.opToInstruction(0),
             )
         ) {
             assertEquals(TokenTypeConst.SYMBOL, nextToken())
@@ -525,7 +524,7 @@ class TemplateReaderImplTest {
 
         testCase(
             instructionsToTest = instructions(
-                MacroBytecode.OP_ANN_SYSTEM_SID.opToInstruction(1),
+                MacroBytecode.OP_ANNOTATION_SYSTEM_SID.opToInstruction(1),
                 MacroBytecode.OP_BOOL.opToInstruction(0),
             )
         ) {
