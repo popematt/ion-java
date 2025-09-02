@@ -52,6 +52,11 @@ class BytecodeIonReader(
         internal var macroTableBytecode = IntList()
         @JvmField
         internal var macroBytecodeOffsets = IntList()
+
+        @JvmField
+        internal var currentSymbolTable = UnsafeStringList()
+        @JvmField
+        internal var availableSymbolTable = UnsafeStringList()
     }
 
     @JvmField internal val context = Context()
@@ -238,11 +243,11 @@ class BytecodeIonReader(
         var i = position
         when (instruction.instructionToOp()) {
             Bytecode.DIRECTIVE_SET_SYMBOLS -> {
-                // There's an expression group of symbol texts
-                // But this is bytecode, so there's no presence bits to read.
-                // Instead, there's an OP_ARG_START instruction, that we will skip.
-                val newSymbols = ArrayList<String?>()
+                val context = context
+                val newSymbols = context.availableSymbolTable
+                newSymbols.clear()
                 newSymbols.add(null)
+                val constantPool = constantPool
                 while (true) {
                     val instruction0 = bytecode[i++]
                     val s = when (instruction0.instructionToOp()) {
@@ -259,11 +264,13 @@ class BytecodeIonReader(
                     }
                     newSymbols.add(s)
                 }
-                this.symbolTable = newSymbols.toTypedArray()
+                context.availableSymbolTable = context.currentSymbolTable
+                context.currentSymbolTable = newSymbols
+                this.symbolTable = newSymbols.unsafeGetArray()
             }
             Bytecode.DIRECTIVE_ADD_SYMBOLS -> {
                 // TODO: Just add to the existing symbol table object.
-                val newSymbols = UnsafeArrayList<String?>()
+                val newSymbols = context.currentSymbolTable
                 while (true) {
                     val instruction0 = bytecode[i++]
                     val s = when (instruction0.instructionToOp()) {
@@ -282,13 +289,7 @@ class BytecodeIonReader(
                     newSymbols.add(s)
                 }
 
-                val symbolTable = symbolTable
-                val newSymbolTable = arrayOfNulls<String>(symbolTable.size + newSymbols.size)
-                symbolTable.copyInto(newSymbolTable)
-
-                System.arraycopy(newSymbols.unsafeGetArray(), 0, newSymbolTable, symbolTable.size, newSymbols.size)
-
-                this.symbolTable = newSymbolTable
+                this.symbolTable = newSymbols.unsafeGetArray()
             }
             Bytecode.DIRECTIVE_SET_MACROS -> {
                 val newMacroNames = UnsafeArrayList<String?>()

@@ -14,6 +14,8 @@ import java.nio.ByteBuffer
  *
  * This class provides ByteArray equivalents of the methods in TimestampHelper,
  * modified to read directly from byte arrays instead of ByteBuffers.
+ *
+ * TODO: Update all methods to avoid auto-boxing the offset integer.
  */
 object TimestampByteArrayHelper {
 
@@ -99,7 +101,6 @@ object TimestampByteArrayHelper {
     }
 
 
-    private val offsets = arrayOf(null, 0)
     @JvmStatic
     private fun readTimestamp0x85(source: ByteArray, position: Int): Timestamp {
         val data = readBytesAt(6, source, position)
@@ -108,15 +109,14 @@ object TimestampByteArrayHelper {
         val day = (data.toInt() and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
         val hour = (data.toInt() and S_TIMESTAMP_HOUR_MASK) ushr S_TIMESTAMP_HOUR_BIT_OFFSET
         val minute = (data.toInt() and S_TIMESTAMP_MINUTE_MASK) ushr S_TIMESTAMP_MINUTE_BIT_OFFSET
-//        val offset = offsets[data.toInt() and S_U_TIMESTAMP_UTC_FLAG]
-        val offset = if ((data.toInt() and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
+        val isOffsetKnown = (data.toInt() and S_U_TIMESTAMP_UTC_FLAG) != 0
         val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_U_TIMESTAMP_MILLISECOND_MASK) ushr S_U_TIMESTAMP_FRACTION_BIT_OFFSET
         if (unscaledValue > MAX_MILLISECONDS) {
             throw IonException("Timestamp fraction must be between 0 and 1.")
         }
         val fractionalSecond = BigDecimal.valueOf(unscaledValue, MILLISECOND_SCALE)
-        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
+        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, 0, isOffsetKnown)
     }
 
     @JvmStatic

@@ -144,7 +144,12 @@ private fun evalMacro(
             Bytecode.OP_REF_SEXP,
             Bytecode.OP_REF_SID_STRUCT,
             Bytecode.OP_REF_FIELD_NAME_TEXT,
-            Bytecode.OP_REF_ANNOTATION -> dest.add2(instruction, macSrc[i++])
+            Bytecode.OP_REF_ANNOTATION,
+
+            Bytecode.OP_INLINE_FLOAT,
+            Bytecode.OP_INLINE_INT, -> {
+                dest.add2(instruction, macSrc[i++])
+            }
 
             Bytecode.OP_CP_BIG_INT,
             Bytecode.OP_CP_DECIMAL,
@@ -154,22 +159,16 @@ private fun evalMacro(
             Bytecode.OP_CP_CLOB,
             Bytecode.OP_CP_BLOB,
             Bytecode.OP_CP_FIELD_NAME,
-            Bytecode.OP_CP_ANNOTATION -> dest.add(instruction)
-
-            Bytecode.OP_INLINE_FLOAT,
-            Bytecode.OP_INLINE_INT -> dest.add2(instruction, macSrc[i++])
-
-            Bytecode.OP_INLINE_DOUBLE,
-            Bytecode.OP_INLINE_LONG -> dest.add3(instruction, macSrc[i++], macSrc[i++])
+            Bytecode.OP_CP_ANNOTATION,
 
             Bytecode.OP_SYMBOL_SYSTEM_SID,
             Bytecode.OP_SYMBOL_SID,
             Bytecode.OP_FIELD_NAME_SID,
-            Bytecode.OP_ANNOTATION_SID -> dest.add(instruction)
+            Bytecode.OP_ANNOTATION_SID,
 
             Bytecode.OP_BOOL,
             Bytecode.OP_SYMBOL_CHAR,
-            Bytecode.OP_SMALL_INT -> dest.add(instruction)
+            Bytecode.OP_SMALL_INT,
 
             Bytecode.OP_NULL_NULL,
             Bytecode.OP_NULL_BOOL,
@@ -183,7 +182,14 @@ private fun evalMacro(
             Bytecode.OP_NULL_BLOB,
             Bytecode.OP_NULL_LIST,
             Bytecode.OP_NULL_SEXP,
-            Bytecode.OP_NULL_STRUCT -> dest.add(instruction)
+            Bytecode.OP_NULL_STRUCT -> {
+                dest.add(instruction)
+            }
+
+            Bytecode.OP_INLINE_DOUBLE,
+            Bytecode.OP_INLINE_LONG -> {
+                dest.add3(instruction, macSrc[i++], macSrc[i++])
+            }
 
             Bytecode.OP_LIST_START,
             Bytecode.OP_SEXP_START,
@@ -193,11 +199,7 @@ private fun evalMacro(
             }
 
             Bytecode.OP_CONTAINER_END -> {
-                val containerStartIndex = try {
-                    containerPositions[--containerStackSize]
-                } catch (e: Exception) {
-                    containerPositions[--containerStackSize]
-                }
+                val containerStartIndex = containerPositions[--containerStackSize]
                 val start = containerStartIndex + 1
                 dest.add(instruction)
                 val containerEndIndex = dest.size()
@@ -343,13 +345,16 @@ private val VAR_PREFIXED_LIST = WriteBytecode { src, pos, op, dest, cp, macSrc, 
 
 private val DELIMITED_LIST = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
     var p = pos
-    BytecodeHelper.emitInlineList(dest) {
-        while (true) {
-            val childOp = src[p++].toInt() and 0xFF
-            if (childOp == 0xF0) break
-            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
-        }
+    val containerStartIndex = dest.reserve()
+    val start = containerStartIndex + 1
+    while (true) {
+        val childOp = src[p++].toInt() and 0xFF
+        if (childOp == 0xF0) break
+        p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
     }
+    dest.add(Bytecode.OP_CONTAINER_END.opToInstruction())
+    val end = dest.size()
+    dest[containerStartIndex] = Bytecode.OP_LIST_START.opToInstruction(end - start)
     p - pos
 }
 
@@ -453,31 +458,30 @@ private val VAR_PREFIXED_STRUCT = WriteBytecode { src, pos, op, dest, cp, macSrc
 
 private val DELIMITED_STRUCT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
     var p = pos
-    BytecodeHelper.emitInlineStruct(dest) {
-        while (true) {
-            val fieldNameLengthAndValue = try {
-                IntHelper.readFlexIntValueAndLengthAt(src, p)
-            } catch (e: Exception) {
-                IntHelper.readFlexIntValueAndLengthAt(src, p)
-            }
-            val fieldNameLength = fieldNameLengthAndValue.toInt() and 0xFF
-            val fieldNameValue = (fieldNameLengthAndValue ushr 8).toInt()
-            p += fieldNameLength
+    val containerStartIndex = dest.reserve()
+    val start = containerStartIndex + 1
+    while (true) {
+        val fieldNameLengthAndValue = IntHelper.readFlexIntValueAndLengthAt(src, p)
+        val fieldNameLength = fieldNameLengthAndValue.toInt() and 0xFF
+        val fieldNameValue = (fieldNameLengthAndValue ushr 8).toInt()
+        p += fieldNameLength
 
-            if (fieldNameValue < 0) {
-                val textLength = -1 - fieldNameLength
-                dest.add(Bytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(textLength))
-                dest.add(p)
-                p += textLength
-            } else {
-                dest.add(Bytecode.OP_FIELD_NAME_SID.opToInstruction(fieldNameValue))
-            }
-
-            val childOp = src[p++].toInt() and 0xFF
-            if (childOp == 0xF0) break
-            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        if (fieldNameValue < 0) {
+            val textLength = -1 - fieldNameLength
+            dest.add(Bytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(textLength))
+            dest.add(p)
+            p += textLength
+        } else {
+            dest.add(Bytecode.OP_FIELD_NAME_SID.opToInstruction(fieldNameValue))
         }
+
+        val childOp = src[p++].toInt() and 0xFF
+        if (childOp == 0xF0) break
+        p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
     }
+    dest.add(Bytecode.OP_CONTAINER_END.opToInstruction())
+    val end = dest.size()
+    dest[containerStartIndex] = Bytecode.OP_STRUCT_START.opToInstruction(end - start)
     p - pos
 }
 
