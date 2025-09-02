@@ -25,7 +25,7 @@ fun compileTopLevel(
      */
     macIdx: IntArray,
     symTab: Array<String?>,
-    limit: Int = src.size
+    limit: Int
 ): Int {
     var p = pos
     var opcode = 0

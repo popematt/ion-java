@@ -600,7 +600,7 @@ class ToBytecodeTest {
     ) {
         val data = toByteArray(ionBinary)
         val dest = IntList()
-        compileTopLevel(data, pos, dest, cp, macTab, macOffsets, symTab)
+        compileTopLevel(data, pos, dest, cp, macTab, macOffsets, symTab, data.size)
         val bytecode = Bytecode.toDebugString(dest.toArray(), useIndent = false, useNumbers = false, lax = true).split("\n").joinToString("\n") { it.trim() }.trim()
         val expected = expectedBytecode.replace(";", "\n").split("\n").joinToString("\n") { it.trim() }.trim()
         assertEquals(expected, bytecode)

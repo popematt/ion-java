@@ -55,6 +55,7 @@ class BytecodeIonReader(
 
         @JvmField
         internal var currentSymbolTable = UnsafeStringList()
+
         @JvmField
         internal var availableSymbolTable = UnsafeStringList()
     }
@@ -64,11 +65,11 @@ class BytecodeIonReader(
     @JvmField internal var symbolTable: Array<String?> = arrayOf(null)
 
 
-
     // TODO: Make operations in BytecodeIonReader access the underlying array instead.
-    @JvmField internal var bytecode = IntList().also {
+    @JvmField internal var bytecodeIntList = IntList().also {
         it.add(Bytecode.REFILL.opToInstruction())
     }
+    @JvmField internal var bytecode = bytecodeIntList.unsafeGetArray()
 
     @JvmField internal var constantPool = UnsafeArrayList<Any?>(256)
     @JvmField internal var firstLocalConstant = 0
@@ -114,17 +115,17 @@ class BytecodeIonReader(
         val source = source
         var i = sourceI
 
-        val bytecode = bytecode
-        bytecode.clear()
+        val bytecodeIntList = bytecodeIntList
+        bytecodeIntList.clear()
         val constantPool = constantPool
         constantPool.truncate(firstLocalConstant)
         val context = context
 
-        i += compileTopLevel(source, i, bytecode, constantPool, context.macroTableBytecode.unsafeGetArray(), context.macroBytecodeOffsets.unsafeGetArray(), symbolTable)
+        i += compileTopLevel(source, i, bytecodeIntList, constantPool, context.macroTableBytecode.unsafeGetArray(), context.macroBytecodeOffsets.unsafeGetArray(), symbolTable, source.size)
         sourceI = i
 
-        val bytecodeArray = bytecode.unsafeGetArray()
-        this.bytecode = bytecode
+        val bytecodeArray = bytecodeIntList.unsafeGetArray()
+        this.bytecode = bytecodeArray
 
         return bytecodeArray
     }
@@ -141,7 +142,7 @@ class BytecodeIonReader(
             return type
         }
 
-        var bytecode = bytecode.unsafeGetArray()
+        var bytecode = bytecode
         var i = bytecodeI
         var instruction = instruction
         var op = instruction.instructionToOp()

@@ -83,8 +83,8 @@ object TimestampByteArrayHelper {
         val day = (data and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
         val hour = (data and S_TIMESTAMP_HOUR_MASK) ushr S_TIMESTAMP_HOUR_BIT_OFFSET
         val minute = (data and S_TIMESTAMP_MINUTE_MASK) ushr S_TIMESTAMP_MINUTE_BIT_OFFSET
-        val offset = if ((data and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
-        return uncheckedNewTimestamp(Precision.MINUTE, year, month, day, hour, minute, 0, null, offset)
+        val isOffsetKnown = (data.toInt() and S_U_TIMESTAMP_UTC_FLAG) != 0
+        return uncheckedNewTimestamp(Precision.MINUTE, year, month, day, hour, minute, 0, null, 0, isOffsetKnown)
     }
 
     @JvmStatic
@@ -95,9 +95,9 @@ object TimestampByteArrayHelper {
         val day = (data.toInt() and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
         val hour = (data.toInt() and S_TIMESTAMP_HOUR_MASK) ushr S_TIMESTAMP_HOUR_BIT_OFFSET
         val minute = (data.toInt() and S_TIMESTAMP_MINUTE_MASK) ushr S_TIMESTAMP_MINUTE_BIT_OFFSET
-        val offset = if ((data.toInt() and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
+        val isOffsetKnown = (data.toInt() and S_U_TIMESTAMP_UTC_FLAG) != 0
         val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
-        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, null, offset)
+        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, null, 0, isOffsetKnown)
     }
 
 
@@ -127,14 +127,14 @@ object TimestampByteArrayHelper {
         val day = (data.toInt() and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
         val hour = (data.toInt() and S_TIMESTAMP_HOUR_MASK) ushr S_TIMESTAMP_HOUR_BIT_OFFSET
         val minute = (data.toInt() and S_TIMESTAMP_MINUTE_MASK) ushr S_TIMESTAMP_MINUTE_BIT_OFFSET
-        val offset = if ((data.toInt() and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
+        val isOffsetKnown = (data.toInt() and S_U_TIMESTAMP_UTC_FLAG) != 0
         val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_U_TIMESTAMP_MICROSECOND_MASK) ushr S_U_TIMESTAMP_FRACTION_BIT_OFFSET
         if (unscaledValue > MAX_MICROSECONDS) {
             throw IonException("Timestamp fraction must be between 0 and 1.")
         }
         val fractionalSecond = BigDecimal.valueOf(unscaledValue, MICROSECOND_SCALE)
-        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
+        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, 0, isOffsetKnown)
     }
 
     @JvmStatic
@@ -145,14 +145,14 @@ object TimestampByteArrayHelper {
         val day = (data.toInt() and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
         val hour = (data.toInt() and S_TIMESTAMP_HOUR_MASK) ushr S_TIMESTAMP_HOUR_BIT_OFFSET
         val minute = (data.toInt() and S_TIMESTAMP_MINUTE_MASK) ushr S_TIMESTAMP_MINUTE_BIT_OFFSET
-        val offset = if ((data.toInt() and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
+        val isOffsetKnown = (data.toInt() and S_U_TIMESTAMP_UTC_FLAG) != 0
         val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_U_TIMESTAMP_NANOSECOND_MASK) ushr S_U_TIMESTAMP_FRACTION_BIT_OFFSET
         if (unscaledValue > MAX_NANOSECONDS) {
             throw IonException("Timestamp fraction must be between 0 and 1.")
         }
         val fractionalSecond = BigDecimal.valueOf(unscaledValue, NANOSECOND_SCALE)
-        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
+        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, 0, isOffsetKnown)
     }
 
     @JvmStatic
