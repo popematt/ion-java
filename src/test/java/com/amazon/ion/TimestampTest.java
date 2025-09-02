@@ -21,7 +21,6 @@ import static com.amazon.ion.Timestamp.DEFAULT_MAXIMUM_DIGITS_TEXT;
 import static com.amazon.ion.Timestamp.MAXIMUM_ALLOWED_TIMESTAMP_IN_MILLIS_DECIMAL;
 import static com.amazon.ion.Timestamp.MINIMUM_TIMESTAMP_IN_MILLIS;
 import static com.amazon.ion.Timestamp.MINIMUM_TIMESTAMP_IN_MILLIS_DECIMAL;
-import static com.amazon.ion.Timestamp.UNKNOWN_OFFSET;
 import static com.amazon.ion.Timestamp.UTC_OFFSET;
 import static com.amazon.ion.Timestamp.createFromUtcFields;
 import static com.amazon.ion.Timestamp.Precision.DAY;
@@ -71,6 +70,8 @@ public class TimestampTest
 
     private static final Timestamp UNIX_EPOCH_TIMESTAMP =
         Timestamp.valueOf("1970-01-01T00:00:00.000Z");
+
+    private static final Integer UNKNOWN_OFFSET = null;
 
     /**
      * PST = -08:00 = -480
@@ -568,7 +569,7 @@ public class TimestampTest
         IonTimestamp value = (IonTimestamp) oneValue("2007-05-08T05:17-00:00");
         assertEquals(null, value.getLocalOffset());
 
-        checkTime(2007, 5, 8, 5, 17, 0, null, Timestamp.UNKNOWN_OFFSET,
+        checkTime(2007, 5, 8, 5, 17, 0, null, UNKNOWN_OFFSET,
                   "2007-05-08T05:17-00:00");
     }
 
@@ -614,9 +615,9 @@ public class TimestampTest
     @Test
     public void testYearOne()
     {
-        checkTime(1, 1, 1, 0, 0, 0, null, Timestamp.UNKNOWN_OFFSET,
+        checkTime(1, 1, 1, 0, 0, 0, null, UNKNOWN_OFFSET,
                   "0001-01-01");
-        checkTime(1, 12, 31, 0, 0, 0, null, Timestamp.UNKNOWN_OFFSET,
+        checkTime(1, 12, 31, 0, 0, 0, null, UNKNOWN_OFFSET,
                   "0001-12-31");
     }
 

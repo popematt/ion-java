@@ -1,22 +1,35 @@
-package com.amazon.ion.impl.bin;
+package com.amazon.ion.v8;
+
+import kotlin.jvm.internal.markers.KMutableList;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.ListIterator;
 
 /**
+ * Based off of IntList, this is actually just an ArrayList that allows unsafe access to the underlying Array.
+ *
+ *
+ *
  * A list of integer values that grows as necessary.
  *
  * Unlike {@link java.util.List}, IntList does not require each int to be boxed. This makes it helpful in use cases
  * where storing {@link Integer} leads to excessive time spent in garbage collection.
  */
-public class IntList {
+public class UnsafeArrayList<T> implements List<T> {
     public static final int DEFAULT_INITIAL_CAPACITY = 8;
     private static final int GROWTH_MULTIPLIER = 2;
-    private int[] data;
+    private T[] data;
     private int numberOfValues;
 //    private int capacity;
 
     /**
-     * Constructs a new IntList with a capacity of {@link IntList#DEFAULT_INITIAL_CAPACITY}.
+     * Constructs a new IntList with a capacity of {@link UnsafeArrayList#DEFAULT_INITIAL_CAPACITY}.
      */
-    public IntList() {
+    public UnsafeArrayList() {
         this(DEFAULT_INITIAL_CAPACITY);
     }
 
@@ -25,19 +38,23 @@ public class IntList {
      * @param initialCapacity   The number of ints that can be stored in this IntList before it will need to be
      *                          reallocated.
      */
-    public IntList(final int initialCapacity) {
-        data = new int[initialCapacity];
+    public UnsafeArrayList(final int initialCapacity) {
+        data = newT(initialCapacity);
 //        capacity = initialCapacity;
         numberOfValues = 0;
+    }
+
+    private static <T> T[] newT(final int capacity) {
+        return (T[]) new Object[capacity];
     }
 
     /**
      * Constructs a new IntList that contains all the elements of the given IntList.
      * @param other the IntList to copy.
      */
-    public IntList(final IntList other) {
+    public UnsafeArrayList(final UnsafeArrayList<T> other) {
         this.numberOfValues = other.numberOfValues;
-        this.data = new int[other.data.length];
+        this.data = newT(other.data.length);
 //        capacity = data.length;
         System.arraycopy(other.data, 0, this.data, 0, numberOfValues);
     }
@@ -73,7 +90,7 @@ public class IntList {
      * @throws IndexOutOfBoundsException    if the index is negative or greater than the number of ints stored in the
      *                                      list.
      */
-    public int get(int index) {
+    public T get(int index) {
         if (index < 0 || index >= numberOfValues) {
             throw new IndexOutOfBoundsException(
                     "Invalid index " + index + " requested from IntList with " + numberOfValues + " values."
@@ -94,27 +111,28 @@ public class IntList {
      * Appends an int to the end of the list, growing the list if necessary.
      * @param value     The int to add to the end of the list.
      */
-    public void add(int value) {
+    public boolean add(T value) {
         int n = numberOfValues;
         int newNumberOfValues = n + 1;
-        int[] data = ensureCapacity(newNumberOfValues);
+        T[] data = ensureCapacity(newNumberOfValues);
         data[n] = value;
         numberOfValues = newNumberOfValues;
+        return true;
     }
 
-    public void add2(int value0, int value1) {
+    public void add2(T value0, T value1) {
         int n = numberOfValues;
         int newNumberOfValues = n + 2;
-        int[] data = ensureCapacity(newNumberOfValues);
+        T[] data = ensureCapacity(newNumberOfValues);
         data[n] = value0;
         data[n + 1] = value1;
         numberOfValues = newNumberOfValues;
     }
 
-    public void add3(int value0, int value1, int value2) {
+    public void add3(T value0, T value1, T value2) {
         int n = numberOfValues;
         int newNumberOfValues = n + 3;
-        int[] data = ensureCapacity(newNumberOfValues);
+        T[] data = ensureCapacity(newNumberOfValues);
         data[n] = value0;
         data[n + 1] = value1;
         data[n + 2] = value2;
@@ -125,60 +143,53 @@ public class IntList {
         int valuesLength = values.length;
         int thisNumberOfValues = numberOfValues;
         int newNumberOfValues = valuesLength + thisNumberOfValues;
-        int[] data = ensureCapacity(newNumberOfValues);
+        T[] data = ensureCapacity(newNumberOfValues);
         System.arraycopy(values, 0, data, thisNumberOfValues, valuesLength);
         this.numberOfValues = newNumberOfValues;
     }
 
-    public void addAll(IntList values) {
+    public void addAll(UnsafeArrayList<T> values) {
         int thisNumberOfValues = this.numberOfValues;
         int otherNumberOfValues = values.numberOfValues;
         int newNumberOfValues =  thisNumberOfValues + otherNumberOfValues;
-        int[] data = ensureCapacity(newNumberOfValues);
+        T[] data = ensureCapacity(newNumberOfValues);
         System.arraycopy(values.data, 0, data, thisNumberOfValues, otherNumberOfValues);
         this.numberOfValues = newNumberOfValues;
     }
 
-    public void addSlice(IntList values, int startInclusive, int length) {
+    public void addSlice(UnsafeArrayList<T> values, int startInclusive, int length) {
         int thisNumberOfValues = this.numberOfValues;
         int newNumberOfValues = thisNumberOfValues + length;
-        int[] data = ensureCapacity(newNumberOfValues);
+        T[] data = ensureCapacity(newNumberOfValues);
         System.arraycopy(values.data, startInclusive, data, thisNumberOfValues, length);
         this.numberOfValues = newNumberOfValues;
     }
 
-    public void addSlice(int[] values, int startInclusive, int length) {
-        int thisNumberOfValues = this.numberOfValues;
-        int newNumberOfValues = thisNumberOfValues + length;
-        int[] data = ensureCapacity(newNumberOfValues);
-        System.arraycopy(values, startInclusive, data, thisNumberOfValues, length);
-        this.numberOfValues = newNumberOfValues;
-    }
-
     public void truncate(int length) {
-        this.numberOfValues = Math.min(length, numberOfValues);
+        numberOfValues = length;
     }
 
-    public void set(int index, int value) {
+    public T set(int index, T value) {
         if (index < 0 || index >= numberOfValues) {
             throw new IndexOutOfBoundsException();
         }
         data[index] = value;
+        return null;
     }
 
-    public int[] toArray() {
+    public T[] toArray() {
         int thisNumberOfValues = this.numberOfValues;
-        int[] copy = new int[thisNumberOfValues];
+        Object[] copy = new Object[thisNumberOfValues];
         System.arraycopy(data, 0, copy, 0, thisNumberOfValues);
-        return copy;
+        return (T[]) copy;
     }
 
-    private int[] ensureCapacity(int minCapacity) {
-        int[] data = this.data;
+    private T[] ensureCapacity(int minCapacity) {
+        T[] data = this.data;
         int capacity = data.length;
         if (minCapacity > capacity) {
             int newCapacity = minCapacity * GROWTH_MULTIPLIER;
-            int[] newData = new int[newCapacity];
+            T[] newData = newT(newCapacity);
             System.arraycopy(data, 0, newData, 0, capacity);
             this.data = newData;
             return newData;
@@ -186,7 +197,7 @@ public class IntList {
         return data;
     }
 
-    public int[] unsafeGetArray() {
+    public T[] unsafeGetArray() {
         return data;
     }
 
@@ -201,5 +212,91 @@ public class IntList {
         }
         builder.append("]}");
         return builder.toString();
+    }
+
+
+    @Override
+    public boolean contains(Object o) {
+        return false;
+    }
+
+    @NotNull
+    @Override
+    public Iterator<T> iterator() {
+        return null;
+    }
+
+    @NotNull
+    @Override
+    public <T1> T1[] toArray(@NotNull T1[] a) {
+        return null;
+    }
+
+    @Override
+    public boolean remove(Object o) {
+        return false;
+    }
+
+    @Override
+    public boolean containsAll(@NotNull Collection<?> c) {
+        return false;
+    }
+
+    @Override
+    public boolean addAll(@NotNull Collection<? extends T> c) {
+        return false;
+    }
+
+    @Override
+    public boolean removeAll(@NotNull Collection<?> c) {
+        return false;
+    }
+
+    @Override
+    public boolean retainAll(@NotNull Collection<?> c) {
+        return false;
+    }
+
+    @Override
+    public boolean addAll(int index, @NotNull Collection<? extends T> c) {
+        return false;
+    }
+
+    @Override
+    public void add(int index, T element) {
+
+    }
+
+    @Override
+    public T remove(int index) {
+        return null;
+    }
+
+    @Override
+    public int indexOf(Object o) {
+        return 0;
+    }
+
+    @Override
+    public int lastIndexOf(Object o) {
+        return 0;
+    }
+
+    @NotNull
+    @Override
+    public ListIterator<T> listIterator() {
+        return null;
+    }
+
+    @NotNull
+    @Override
+    public ListIterator<T> listIterator(int index) {
+        return null;
+    }
+
+    @NotNull
+    @Override
+    public List<T> subList(int fromIndex, int toIndex) {
+        return null;
     }
 }

@@ -1,0 +1,1209 @@
+package com.amazon.ion.v8
+
+import com.amazon.ion.*
+import com.amazon.ion.impl.bin.*
+import com.amazon.ion.v3.impl_1_1.binary.*
+//import com.amazon.ion.v3.impl_1_1.template.*
+import com.amazon.ion.v8.Bytecode.OPERATION_SHIFT_AMOUNT
+import com.amazon.ion.v8.Bytecode.instructionToOp
+import com.amazon.ion.v8.Bytecode.opToInstruction
+import java.nio.charset.StandardCharsets
+import kotlin.Exception
+import kotlin.math.min
+
+@OptIn(ExperimentalStdlibApi::class)
+fun compileTopLevel(
+    src: ByteArray,
+    pos: Int,
+    dest: IntList,
+    cp: MutableList<Any?>,
+    macSrc: IntArray,
+    /**
+     * A lookup table indicating the start position of each macro within the macroSource array.
+     * This is always one larger than the number of macros so that `macroIndices[macroId + 1]` can be used to
+     * find the end of the macro bytecode.
+     */
+    macIdx: IntArray,
+    symTab: Array<String?>,
+    limit: Int = src.size
+): Int {
+    var p = pos
+    var opcode = 0
+    val end = min(pos + limit, src.size)
+    while (p < end && (opcode or 0x7 != 0XE7)) {
+        opcode = src[p++].toInt() and 0xFF
+        val handler = OP_HANDLERS[opcode]
+//        val checkpoint = dest.size()
+//        println("Reading opcode: ${opcode.toHexString()} at ${p - 1}")
+        p += handler.writeBytecode(src, p, opcode, dest, cp, macSrc, macIdx, symTab)
+
+//        try {
+//            p += handler.writeBytecode(src, p, opcode, dest, cp, macSrc, macIdx, symTab)
+//        } catch (e: ArrayIndexOutOfBoundsException) {
+//            // Basically, if we get an index-out-of-bounds error or something like that...
+//
+//            // Reset the output to the last known good position.
+//            dest.truncate(checkpoint)
+//            // Reset the position to the last known good position
+//            p--
+//
+//            // And then exit normally to produce either EOF or REFILL.
+//            break
+//            // FIXME—this has the potential to cause an infinite loop for incomplete data.
+//            //       We should try to detect whether the situation is actually refillable or not. E.g.:
+//            // val finalBytecodeOperation = if (source.isRefillable) Bytecode.REFILL else Bytecode.ERROR
+//            // But also, if it's not refillable, we may want to expose as much data as possible rather than
+//            // truncating to the last-known, good, top-level value.
+//        }
+    }
+    val finalBytecodeOperation = if (p >= src.size) Bytecode.EOF else Bytecode.REFILL
+    dest.add(finalBytecodeOperation.opToInstruction())
+    return p - pos
+}
+
+internal fun testCompileValue(
+    src: ByteArray,
+    pos: Int,
+    op: Int,
+    dest: IntList,
+    cp: MutableList<Any?>,
+    macSrc: IntArray,
+    macIdx: IntArray,
+    symTab: Array<String?>,
+) = compileValue(src, pos, op, dest, cp, macSrc, macIdx, symTab)
+
+private fun compileValue(
+    src: ByteArray,
+    pos: Int,
+    op: Int,
+    dest: IntList,
+    cp: MutableList<Any?>,
+    macSrc: IntArray,
+    /**
+     * A lookup table indicating the start position of each macro within the macroSource array.
+     * This is always one larger than the number of macros so that `macroIndices[macroId + 1]` can be used to
+     * find the end of the macro bytecode.
+     */
+    macIdx: IntArray,
+    symTab: Array<String?>,
+): Int {
+    val handler = OP_HANDLERS[op]
+    return handler.writeBytecode(src, pos, op, dest, cp, macSrc, macIdx, symTab)
+}
+
+
+
+private fun interface WriteBytecode {
+    fun writeBytecode(
+        src: ByteArray,
+        pos: Int,
+        op: Int,
+        dest: IntList,
+        cp: MutableList<Any?>,
+        macSrc: IntArray,
+        macIdx: IntArray,
+        symTab: Array<String?>,
+    ): Int
+}
+
+
+private fun evalMacro(
+    macSrcStart: Int,
+    src: ByteArray,
+    pos: Int,
+    dest: IntList,
+    cp: MutableList<Any?>,
+    macSrc: IntArray,
+    macIdx: IntArray,
+    symTab: Array<String?>,
+): Int {
+    var p = pos
+
+    val containerPositions = IntArray(32)
+    var containerStackSize = 0
+
+    var i = macSrcStart
+
+    while (true) {
+        val instruction = macSrc[i++]
+        val op = instruction ushr OPERATION_SHIFT_AMOUNT
+
+        // TODO: See if this performs better using array lookups.
+        when (op) {
+            // Data model operations
+
+            Bytecode.OP_REF_INT,
+            Bytecode.OP_REF_DECIMAL,
+            Bytecode.OP_REF_TIMESTAMP_SHORT,
+            Bytecode.OP_REF_TIMESTAMP_LONG,
+            Bytecode.OP_REF_STRING,
+            Bytecode.OP_REF_SYMBOL_TEXT,
+            Bytecode.OP_REF_CLOB,
+            Bytecode.OP_REF_BLOB,
+            Bytecode.OP_REF_LIST,
+            Bytecode.OP_REF_SEXP,
+            Bytecode.OP_REF_SID_STRUCT,
+            Bytecode.OP_REF_FIELD_NAME_TEXT,
+            Bytecode.OP_REF_ANNOTATION -> dest.add2(instruction, macSrc[i++])
+
+            Bytecode.OP_CP_BIG_INT,
+            Bytecode.OP_CP_DECIMAL,
+            Bytecode.OP_CP_TIMESTAMP,
+            Bytecode.OP_CP_STRING,
+            Bytecode.OP_CP_SYMBOL_TEXT,
+            Bytecode.OP_CP_CLOB,
+            Bytecode.OP_CP_BLOB,
+            Bytecode.OP_CP_FIELD_NAME,
+            Bytecode.OP_CP_ANNOTATION -> dest.add(instruction)
+
+            Bytecode.OP_INLINE_FLOAT,
+            Bytecode.OP_INLINE_INT -> dest.add2(instruction, macSrc[i++])
+
+            Bytecode.OP_INLINE_DOUBLE,
+            Bytecode.OP_INLINE_LONG -> dest.add3(instruction, macSrc[i++], macSrc[i++])
+
+            Bytecode.OP_SYMBOL_SYSTEM_SID,
+            Bytecode.OP_SYMBOL_SID,
+            Bytecode.OP_FIELD_NAME_SID,
+            Bytecode.OP_ANNOTATION_SID -> dest.add(instruction)
+
+            Bytecode.OP_BOOL,
+            Bytecode.OP_SYMBOL_CHAR,
+            Bytecode.OP_SMALL_INT -> dest.add(instruction)
+
+            Bytecode.OP_NULL_NULL,
+            Bytecode.OP_NULL_BOOL,
+            Bytecode.OP_NULL_INT,
+            Bytecode.OP_NULL_FLOAT,
+            Bytecode.OP_NULL_DECIMAL,
+            Bytecode.OP_NULL_TIMESTAMP,
+            Bytecode.OP_NULL_STRING,
+            Bytecode.OP_NULL_SYMBOL,
+            Bytecode.OP_NULL_CLOB,
+            Bytecode.OP_NULL_BLOB,
+            Bytecode.OP_NULL_LIST,
+            Bytecode.OP_NULL_SEXP,
+            Bytecode.OP_NULL_STRUCT -> dest.add(instruction)
+
+            Bytecode.OP_LIST_START,
+            Bytecode.OP_SEXP_START,
+            Bytecode.OP_STRUCT_START -> {
+                containerPositions[containerStackSize++] = dest.size()
+                dest.add(instruction)
+            }
+
+            Bytecode.OP_CONTAINER_END -> {
+                val containerStartIndex = try {
+                    containerPositions[--containerStackSize]
+                } catch (e: Exception) {
+                    containerPositions[--containerStackSize]
+                }
+                val start = containerStartIndex + 1
+                dest.add(instruction)
+                val containerEndIndex = dest.size()
+                val startInstruction = dest[containerStartIndex]
+                dest[containerStartIndex] = startInstruction.instructionToOp().opToInstruction(containerEndIndex - start)
+            }
+
+            Bytecode.OP_PARAMETER -> {
+                val destSize = dest.size()
+                val argOpcode = src[p++].toInt() and 0xFF
+                p += compileValue(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
+                val substitutionSize = dest.size() - destSize
+                // hasValue will be all 1s if substitution size is non-zero, causing the default value to be skipped over.
+                val hasValue = ((substitutionSize * -1) shr 32)
+                i += hasValue and instruction and Bytecode.DATA_MASK
+            }
+            Bytecode.OP_TAGLESS_PARAMETER -> {
+                // TODO: handle macros with 1 and 2 additional address bytes. Perhaps add a `MACRO_SHAPED_PARAM` bytecode.
+                val argOpcode = (instruction and Bytecode.DATA_MASK) shl 16
+                p += compileValue(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
+            }
+            Bytecode.OP_MACRO_SHAPED_PARAMETER -> {
+                val macroId = instruction and Bytecode.DATA_MASK
+                p += evalMacro(macIdx[macroId], src, p, dest, cp, macSrc, macIdx, symTab)
+            }
+            Bytecode.EOF -> break
+            Bytecode.REFILL -> TODO("Unreachable: ${Bytecode(instruction)}")
+            else -> {
+                TODO("${Bytecode(instruction)} at i_macro = ${i - 1}; i_source = $pos")
+            }
+        }
+    }
+    return p - pos
+}
+
+
+private val OPCODE_IS_MAC_ID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    evalMacro(macIdx[op], src, pos, dest, cp, macSrc, macIdx, symTab)
+}
+
+private val TWELVE_BIT_MAC_ID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val bias = (op and 0xF) * 256 + 64
+    val unbiasedId = src.get(pos).toInt() and 0xFF
+    val macAddr = unbiasedId + bias
+    1 + evalMacro(macIdx[macAddr], src, pos + 1, dest, cp, macSrc, macIdx, symTab)
+}
+
+private val TWENTY_BIT_MAC_ID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    println(pos)
+    val bias = (op and 0xF) * 65536 + 4160
+    val unbiasedId = src.getShort(pos).toInt() and 0xFFFF
+    val macAddr = unbiasedId + bias
+    2 + evalMacro(macIdx[macAddr], src, pos + 2, dest, cp, macSrc, macIdx, symTab)
+}
+
+private val TX_INT_ZERO = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt16Value(dest, 0); 0}
+private val TX_INT_8 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt16Value(dest, src.get(pos).toShort()); 1 }
+private val TX_INT_16 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt16Value(dest, src.getShort(pos)); 2 }
+private val TX_INT_24 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt32Value(dest, src.get3Bytes(pos)); 3 }
+private val TX_INT_32 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt32Value(dest, src.getInt(pos)); 4 }
+private val TX_INT_40 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt64Value(dest, src.get5Bytes(pos)); 5 }
+private val TX_INT_48 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt64Value(dest, src.get6Bytes(pos)); 6 }
+private val TX_INT_56 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt64Value(dest, src.get7Bytes(pos)); 7 }
+private val TX_INT_64 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt64Value(dest, src.getLong(pos)); 8 }
+private val TX_FLOAT_ZERO = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitFloatValue(dest, 0.0f); 0 }
+private val TX_FLOAT_16 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitFloatValue(dest, toFloat(src.getShort(pos))); 2 }
+private val TX_FLOAT_32 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitFloatValue(dest, src.getFloat(pos)); 4 }
+private val TX_FLOAT_64 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitDoubleValue(dest, src.getDouble(pos)); 8 }
+private val TX_BOOL_TRUE = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitBooleanValue(dest, true); 0 }
+private val TX_BOOL_FALSE = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitBooleanValue(dest, false); 0 }
+private val DECIMAL_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitDecimalReference(dest, pos, op and 0xF); op and 0xF }
+private val SHORT_TIMESTAMPS = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitShortTimestampReference(dest, op, pos); TimestampHelper.lengthOfShortTimestamp(op) }
+private val VAR_TIMESTAMP_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    BytecodeHelper.emitLongTimestampReference(dest, pos + lengthOfLength, lengthOfValue)
+    lengthOfLength + lengthOfValue
+
+}
+private val STRING_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitStringReference(dest, pos, op and 0xF); op and 0xF }
+private val VAR_STRING_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    BytecodeHelper.emitStringReference(dest, pos + lengthOfLength, lengthOfValue)
+    lengthOfValue + lengthOfLength
+}
+private val SYMBOL_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitSymbolTextReference(dest, pos, op and 0xF); op and 0xF }
+private val VAR_SYMBOL_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    BytecodeHelper.emitSymbolTextReference(dest, pos + lengthOfLength, lengthOfValue)
+    lengthOfValue + lengthOfLength
+}
+
+private fun symbolSid(src: ByteArray, pos: Int, op: Int, dest: IntList, cp: MutableList<Any?>, macSrc: IntArray, macIdx: IntArray, symTab: Array<String?>, ): Int {
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val length = valueAndLength.toInt() and 0xFF
+    val sid = (valueAndLength ushr 8).toInt()
+    dest.add(Bytecode.OP_SYMBOL_SID.opToInstruction(sid))
+    return length
+}
+
+private val SYMBOL_SID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val length = valueAndLength.toInt() and 0xFF
+    val sid = (valueAndLength ushr 8).toInt()
+    dest.add(Bytecode.OP_SYMBOL_SID.opToInstruction(sid))
+    length
+}
+
+
+
+private val SHORT_PREFIXED_LIST = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    val length = op and 0xF
+    val end = pos + length
+    BytecodeHelper.emitInlineList(dest) {
+        while (p < end) {
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    length
+}
+
+private val VAR_PREFIXED_LIST = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    var p = pos + lengthOfLength
+    val end = p + lengthOfValue
+    BytecodeHelper.emitInlineList(dest) {
+        while (p < end) {
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    lengthOfValue + lengthOfLength
+}
+
+private val DELIMITED_LIST = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    BytecodeHelper.emitInlineList(dest) {
+        while (true) {
+            val childOp = src[p++].toInt() and 0xFF
+            if (childOp == 0xF0) break
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    p - pos
+}
+
+
+private val SHORT_PREFIXED_SEXP = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    val length = op and 0xF
+    val end = pos + length
+    BytecodeHelper.emitInlineSexp(dest) {
+        while (p < end) {
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    length
+}
+
+private val VAR_PREFIXED_SEXP = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    var p = pos + lengthOfLength
+    val end = p + lengthOfValue
+    BytecodeHelper.emitInlineSexp(dest) {
+        while (p < end) {
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    lengthOfValue + lengthOfLength
+}
+
+private val DELIMITED_SEXP = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    BytecodeHelper.emitInlineSexp(dest) {
+        while (true) {
+            val childOp = src[p++].toInt() and 0xFF
+            if (childOp == 0xF0) break
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    p - pos
+}
+
+private val SHORT_PREFIXED_STRUCT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    val length = op and 0xF
+    val end = pos + length
+    BytecodeHelper.emitInlineStruct(dest) {
+        while (p < end) {
+            val fieldNameLengthAndValue = IntHelper.readFlexIntValueAndLengthAt(src, p)
+            val fieldNameLength = fieldNameLengthAndValue.toInt() and 0xFF
+            val fieldNameValue = (fieldNameLengthAndValue ushr 8).toInt()
+            p += fieldNameLength
+
+            if (fieldNameValue < 0) {
+                val textLength = -1 - fieldNameValue
+                dest.add(Bytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(textLength))
+                dest.add(p)
+                p += textLength
+            } else {
+                dest.add(Bytecode.OP_FIELD_NAME_SID.opToInstruction(fieldNameValue))
+            }
+
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    length
+}
+
+
+private val VAR_PREFIXED_STRUCT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    var p = pos + lengthOfLength
+    val end = p + lengthOfValue
+    BytecodeHelper.emitInlineStruct(dest) {
+        while (p < end) {
+            val fieldNameLengthAndValue = IntHelper.readFlexIntValueAndLengthAt(src, p)
+            val fieldNameLength = fieldNameLengthAndValue.toInt() and 0xFF
+            val fieldNameValue = (fieldNameLengthAndValue ushr 8).toInt()
+            p += fieldNameLength
+
+            if (fieldNameValue < 0) {
+                val textLength = -1 - fieldNameLength
+                dest.add(Bytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(textLength))
+                dest.add(p)
+                p += textLength
+            } else {
+                dest.add(Bytecode.OP_FIELD_NAME_SID.opToInstruction(fieldNameValue))
+            }
+
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    lengthOfValue + lengthOfLength
+}
+
+private val DELIMITED_STRUCT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    BytecodeHelper.emitInlineStruct(dest) {
+        while (true) {
+            val fieldNameLengthAndValue = try {
+                IntHelper.readFlexIntValueAndLengthAt(src, p)
+            } catch (e: Exception) {
+                IntHelper.readFlexIntValueAndLengthAt(src, p)
+            }
+            val fieldNameLength = fieldNameLengthAndValue.toInt() and 0xFF
+            val fieldNameValue = (fieldNameLengthAndValue ushr 8).toInt()
+            p += fieldNameLength
+
+            if (fieldNameValue < 0) {
+                val textLength = -1 - fieldNameLength
+                dest.add(Bytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(textLength))
+                dest.add(p)
+                p += textLength
+            } else {
+                dest.add(Bytecode.OP_FIELD_NAME_SID.opToInstruction(fieldNameValue))
+            }
+
+            val childOp = src[p++].toInt() and 0xFF
+            if (childOp == 0xF0) break
+            p += compileValue(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    p - pos
+}
+
+private val VAR_BLOB_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    dest.add2(Bytecode.OP_REF_BLOB.opToInstruction(lengthOfValue), pos + lengthOfLength)
+    lengthOfValue + lengthOfLength
+}
+
+private val VAR_CLOB_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    dest.add2(Bytecode.OP_REF_CLOB.opToInstruction(lengthOfValue), pos + lengthOfLength)
+    lengthOfValue + lengthOfLength
+}
+
+private val TAGGED_PARAM = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    dest.add(Bytecode.OP_PARAMETER.opToInstruction()); 0
+}
+
+private val TAGGED_PARAM_WITH_DEFAULT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    val pIndex = dest.reserve()
+    val start = pIndex + 1
+    // Compile the default value.
+    val defaultValueOp = src[p++].toInt() and 0xFF
+    p += compileValueWithFullPooling(src, p, defaultValueOp, dest, cp, macSrc, macIdx, symTab)
+    val end = dest.size()
+    dest[pIndex] = Bytecode.OP_PARAMETER.opToInstruction(end - start)
+    p - pos
+}
+
+
+private val TAGLESS_PARAM = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val typeOp = src[pos].toInt() and 0xFF
+    when (typeOp shr 4) {
+        0x0, 0x1, 0x2, 0x3 -> { dest.add(Bytecode.OP_MACRO_SHAPED_PARAMETER.opToInstruction(typeOp)); 1 }
+        0x4 -> {
+            val bias = (typeOp and 0xF) * 256 + 64
+            val unbiasedId = src.get(pos).toInt() and 0xFF
+            val macAddr = unbiasedId + bias
+            dest.add(Bytecode.OP_MACRO_SHAPED_PARAMETER.opToInstruction(macAddr))
+            2
+        }
+        0x5 -> {
+            val bias = (typeOp and 0xF) * 65536 + 4160
+            val unbiasedId = src.getShort(pos).toInt() and 0xFFFF
+            val macAddr = unbiasedId + bias
+            dest.add(Bytecode.OP_MACRO_SHAPED_PARAMETER.opToInstruction(macAddr))
+            3
+        }
+        0xE -> {
+            // TODO: Tagless homogeneous list parameter probably needs its own bytecode.
+            TODO()
+        }
+        else -> { dest.add(Bytecode.OP_TAGLESS_PARAMETER.opToInstruction(typeOp shl 16)); 1 }
+    }
+}
+
+// TODO: Confirm that we don't ever need to add a `Bytecode.NOTHING` here.
+private val NOTHING_ARG = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->  0 }
+
+private val IVM = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> dest.add(Bytecode.IVM.opToInstruction(src.getShort(pos).toInt() and 0xFFFF)); 3 }
+
+private val TYPED_NULL_INSTRUCTIONS = intArrayOf(
+    Bytecode.OP_NULL_BOOL.opToInstruction(),
+    Bytecode.OP_NULL_INT.opToInstruction(),
+    Bytecode.OP_NULL_FLOAT.opToInstruction(),
+    Bytecode.OP_NULL_DECIMAL.opToInstruction(),
+    Bytecode.OP_NULL_TIMESTAMP.opToInstruction(),
+    Bytecode.OP_NULL_STRING.opToInstruction(),
+    Bytecode.OP_NULL_SYMBOL.opToInstruction(),
+    Bytecode.OP_NULL_BLOB.opToInstruction(),
+    Bytecode.OP_NULL_CLOB.opToInstruction(),
+    Bytecode.OP_NULL_LIST.opToInstruction(),
+    Bytecode.OP_NULL_SEXP.opToInstruction(),
+    Bytecode.OP_NULL_STRUCT.opToInstruction(),
+)
+
+
+@OptIn(ExperimentalStdlibApi::class)
+private val OP_TODO = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> TODO("${op.toHexString()} at $pos") }
+
+@OptIn(ExperimentalStdlibApi::class)
+private val OP_INVALID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> throw IonException("Encountered invalid opcode: ${op.toHexString()}") }
+
+private val DIRECTIVE_OPCODE_TO_BYTECODE_OP = intArrayOf(
+    0,
+    Bytecode.DIRECTIVE_SET_SYMBOLS,
+    Bytecode.DIRECTIVE_ADD_SYMBOLS,
+    Bytecode.DIRECTIVE_SET_MACROS,
+    Bytecode.DIRECTIVE_ADD_MACROS,
+    Bytecode.DIRECTIVE_USE,
+    Bytecode.DIRECTIVE_MODULE,
+    Bytecode.DIRECTIVE_ENCODING,
+)
+private val DIRECTIVE = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    val bytecodeOp = DIRECTIVE_OPCODE_TO_BYTECODE_OP[op and 0xF]
+    dest.add(bytecodeOp.opToInstruction())
+    while (true) {
+        val childOp = src[p++].toInt() and 0xFF
+        if (childOp == 0xF0) break
+        p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+    }
+    dest.add(Bytecode.OP_CONTAINER_END.opToInstruction())
+    p - pos
+}
+
+
+private val OP_HANDLERS = Array<WriteBytecode>(256) { op ->
+    when (op) {
+        in 0x00..0x3F -> OPCODE_IS_MAC_ID
+        in 0x40..0x4F -> TWELVE_BIT_MAC_ID
+        in 0x50..0x5F -> TWENTY_BIT_MAC_ID
+        0x60 -> TX_INT_ZERO
+        0x61 -> TX_INT_8
+        0x62 -> TX_INT_16
+        0x63 -> TX_INT_24
+        0x64 -> TX_INT_32
+        0x65 -> TX_INT_40
+        0x66 -> TX_INT_48
+        0x67 -> TX_INT_56
+        0x69 -> OP_INVALID
+        0x68 -> TX_INT_64
+        0x6A -> TX_FLOAT_ZERO
+        0x6B -> TX_FLOAT_16
+        0x6C -> TX_FLOAT_32
+        0x6D -> TX_FLOAT_64
+        0x6E -> TX_BOOL_TRUE
+        0x6F -> TX_BOOL_FALSE
+
+        in 0x70..0x7F -> DECIMAL_REF
+
+        in 0x80..0x8C -> SHORT_TIMESTAMPS
+        0x8D -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+            val sidAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+            val length = sidAndLength.toInt() and 0xFF
+            val sid = (sidAndLength ushr 8).toInt()
+            dest.add(Bytecode.OP_ANNOTATION_SID.opToInstruction(sid))
+            length
+        }
+        0x8E -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+            val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+            val lengthOfLength = valueAndLength.toInt() and 0xFF
+            val lengthOfText = (valueAndLength ushr 8).toInt()
+            dest.add2(Bytecode.OP_REF_ANNOTATION.opToInstruction(lengthOfText), pos + lengthOfLength)
+            lengthOfLength + lengthOfText
+        }
+
+
+        // Nulls
+        0x8F -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> dest.add(Bytecode.OP_NULL_NULL.opToInstruction()); 0}
+        0x90 -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> dest.add(TYPED_NULL_INSTRUCTIONS[src[pos].toInt()]); 1 }
+
+
+        in 0x91..0x9F -> STRING_REF
+
+        0xA0 -> SYMBOL_SID
+        in 0xA1..0xAF -> SYMBOL_REF
+
+        in 0xB0 .. 0xBF -> SHORT_PREFIXED_LIST
+
+        in 0xC0 .. 0xCF -> SHORT_PREFIXED_SEXP
+
+        0xD1 -> OP_INVALID
+        in 0xD0 .. 0xDF -> SHORT_PREFIXED_STRUCT
+
+        0xE0 -> IVM
+        in 0xE1 .. 0xE7 -> DIRECTIVE
+        0xE8 -> NOTHING_ARG
+
+        // These should be unreachable.
+//        0xE9 -> TAGGED_PARAM
+//        0xEA -> TAGGED_PARAM_WITH_DEFAULT
+//        0xEB -> TAGLESS_PARAM
+
+        0xEC -> OP_TODO // reserved
+
+        0xED -> OP_TODO // Homogeneous list
+
+
+        // NOPs
+        0xEE -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> 0 }
+        0xEF -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> IntHelper.getLengthPlusValueOfFlexUIntAt(src, pos) }
+
+        0xF0 -> OP_TODO
+        0xF1 -> DELIMITED_LIST
+        0xF2 -> DELIMITED_SEXP
+        0xF3 -> DELIMITED_STRUCT
+
+        0xF8 -> VAR_TIMESTAMP_REF
+
+        0xF9 -> VAR_STRING_REF
+        0xFA -> VAR_SYMBOL_REF
+        0xFB -> VAR_PREFIXED_LIST
+        0xFC -> VAR_PREFIXED_SEXP
+        0xFD -> VAR_PREFIXED_STRUCT
+        0xFE -> VAR_BLOB_REF
+        0xFF -> VAR_CLOB_REF
+
+        in 0..255 -> OP_TODO
+        else -> TODO("unreachable")
+    }
+}
+
+
+fun compileValueWithFullPooling(
+    src: ByteArray,
+    pos: Int,
+    op: Int,
+    dest: IntList,
+    cp: MutableList<Any?>,
+    macSrc: IntArray,
+    /**
+     * A lookup table indicating the start position of each macro within the macroSource array.
+     * This is always one larger than the number of macros so that `macroIndices[macroId + 1]` can be used to
+     * find the end of the macro bytecode.
+     */
+    macIdx: IntArray,
+    symTab: Array<String?>,
+): Int {
+    val handler = OP_HANDLERS_WITH_FULL_POOLING[op]
+    return handler.writeBytecode(src, pos, op, dest, cp, macSrc, macIdx, symTab)
+}
+
+private fun evalMacroWithFullPooling(
+    macSrcStart: Int,
+    src: ByteArray,
+    pos: Int,
+    dest: IntList,
+    cp: MutableList<Any?>,
+    macSrc: IntArray,
+    macIdx: IntArray,
+    symTab: Array<String?>,
+): Int {
+    var p = pos
+
+    val containerPositions = IntArray(32)
+    var containerStackSize = 0
+
+    var i = macSrcStart
+
+    while (true) {
+        val instruction = macSrc[i++]
+        val op = instruction ushr OPERATION_SHIFT_AMOUNT
+
+        // TODO: See if this performs better using array lookups.
+        when (op) {
+            // Data model operations
+
+            Bytecode.OP_REF_INT,
+            Bytecode.OP_REF_DECIMAL,
+            Bytecode.OP_REF_TIMESTAMP_SHORT,
+            Bytecode.OP_REF_TIMESTAMP_LONG,
+            Bytecode.OP_REF_STRING,
+            Bytecode.OP_REF_SYMBOL_TEXT,
+            Bytecode.OP_REF_CLOB,
+            Bytecode.OP_REF_BLOB,
+            Bytecode.OP_REF_LIST,
+            Bytecode.OP_REF_SEXP,
+            Bytecode.OP_REF_SID_STRUCT,
+            Bytecode.OP_REF_FIELD_NAME_TEXT,
+            Bytecode.OP_REF_ANNOTATION -> dest.add2(instruction, macSrc[i++])
+
+            Bytecode.OP_CP_BIG_INT,
+            Bytecode.OP_CP_DECIMAL,
+            Bytecode.OP_CP_TIMESTAMP,
+            Bytecode.OP_CP_STRING,
+            Bytecode.OP_CP_SYMBOL_TEXT,
+            Bytecode.OP_CP_CLOB,
+            Bytecode.OP_CP_BLOB,
+            Bytecode.OP_CP_FIELD_NAME,
+            Bytecode.OP_CP_ANNOTATION -> dest.add(instruction)
+
+            Bytecode.OP_INLINE_FLOAT,
+            Bytecode.OP_INLINE_INT -> dest.add2(instruction, macSrc[i++])
+
+            Bytecode.OP_INLINE_DOUBLE,
+            Bytecode.OP_INLINE_LONG -> dest.add3(instruction, macSrc[i++], macSrc[i++])
+
+            Bytecode.OP_SYMBOL_SYSTEM_SID,
+            Bytecode.OP_SYMBOL_SID,
+            Bytecode.OP_FIELD_NAME_SID,
+            Bytecode.OP_ANNOTATION_SID -> dest.add(instruction)
+
+            Bytecode.OP_BOOL,
+            Bytecode.OP_SYMBOL_CHAR,
+            Bytecode.OP_SMALL_INT -> dest.add(instruction)
+
+            Bytecode.OP_NULL_NULL,
+            Bytecode.OP_NULL_BOOL,
+            Bytecode.OP_NULL_INT,
+            Bytecode.OP_NULL_FLOAT,
+            Bytecode.OP_NULL_DECIMAL,
+            Bytecode.OP_NULL_TIMESTAMP,
+            Bytecode.OP_NULL_STRING,
+            Bytecode.OP_NULL_SYMBOL,
+            Bytecode.OP_NULL_CLOB,
+            Bytecode.OP_NULL_BLOB,
+            Bytecode.OP_NULL_LIST,
+            Bytecode.OP_NULL_SEXP,
+            Bytecode.OP_NULL_STRUCT -> dest.add(instruction)
+
+            Bytecode.OP_LIST_START,
+            Bytecode.OP_SEXP_START,
+            Bytecode.OP_STRUCT_START -> {
+                containerPositions[containerStackSize++] = dest.size()
+                dest.add(instruction)
+            }
+
+            Bytecode.OP_CONTAINER_END -> {
+                val containerStartIndex = containerPositions[--containerStackSize]
+                val start = containerStartIndex + 1
+                dest.add(instruction)
+                val containerEndIndex = dest.size()
+                val startInstruction = dest[containerStartIndex]
+                dest[containerStartIndex] = startInstruction.instructionToOp().opToInstruction(containerEndIndex - start)
+            }
+
+            Bytecode.OP_PARAMETER -> {
+                val destSize = dest.size()
+                val argOpcode = src[p++].toInt() and 0xFF
+                p += compileValueWithFullPooling(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
+                val substitutionSize = dest.size() - destSize
+                // hasValue will be all 1s if substitution size is non-zero, causing the default value to be skipped over.
+                val hasValue = ((substitutionSize * -1) shr 32)
+                i += hasValue and instruction and Bytecode.DATA_MASK
+            }
+            Bytecode.OP_TAGLESS_PARAMETER -> {
+                // TODO: handle macros with 1 and 2 additional address bytes. Perhaps add a `MACRO_SHAPED_PARAM` bytecode.
+                val argOpcode = (instruction and Bytecode.DATA_MASK) shl 16
+                p += compileValueWithFullPooling(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
+            }
+            Bytecode.OP_MACRO_SHAPED_PARAMETER -> {
+                val macroId = instruction and Bytecode.DATA_MASK
+                p += evalMacroWithFullPooling(macIdx[macroId], src, p, dest, cp, macSrc, macIdx, symTab)
+            }
+            Bytecode.EOF -> break
+            Bytecode.REFILL -> TODO("Unreachable: ${Bytecode(instruction)}")
+            else -> TODO("${Bytecode(instruction)} at ${i - 1}")
+        }
+    }
+    return p - pos
+}
+
+
+private val OPCODE_IS_MAC_ID_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    evalMacroWithFullPooling(macIdx[op], src, pos, dest, cp, macSrc, macIdx, symTab)
+}
+
+private val TWELVE_BIT_MAC_ID_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val bias = (op and 0xF) * 256 + 64
+    val unbiasedId = src.get(pos).toInt() and 0xFF
+    val macAddr = unbiasedId + bias
+    1 + evalMacroWithFullPooling(macIdx[macAddr], src, pos + 1, dest, cp, macSrc, macIdx, symTab)
+}
+
+private val TWENTY_BIT_MAC_ID_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val bias = (op and 0xF) * 65536 + 4160
+    val unbiasedId = src.getShort(pos).toInt() and 0xFFFF
+    val macAddr = unbiasedId + bias
+    2 + evalMacroWithFullPooling(macIdx[macAddr], src, pos + 2, dest, cp, macSrc, macIdx, symTab)
+}
+
+private val DECIMAL_REF_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val cpIndex = cp.size
+    cp.add(DecimalHelper.readDecimal(src, pos, op and 0xF))
+    dest.add(Bytecode.OP_CP_DECIMAL.opToInstruction(cpIndex))
+    op and 0xF
+}
+private val SHORT_TIMESTAMPS_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val cpIndex = cp.size
+    cp.add(TimestampByteArrayHelper.readShortTimestampAt(op, src, pos))
+    dest.add(Bytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
+    TimestampHelper.lengthOfShortTimestamp(op)
+}
+private val STRING_REF_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val length = op and 0xF
+    val s = String(src, pos, length, StandardCharsets.UTF_8)
+    val cpIndex = cp.size
+    cp.add(s)
+    dest.add(Bytecode.OP_CP_STRING.opToInstruction(cpIndex))
+    length
+}
+private val VAR_STRING_REF_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    val s = String(src, pos + lengthOfLength, lengthOfValue, StandardCharsets.UTF_8)
+    val cpIndex = cp.size
+    cp.add(s)
+    dest.add(Bytecode.OP_CP_STRING.opToInstruction(cpIndex))
+    lengthOfValue + lengthOfLength
+}
+private val SYMBOL_REF_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val s = String(src, pos, op and 0xF, StandardCharsets.UTF_8)
+    val cpIndex = cp.size
+    cp.add(s)
+    dest.add(Bytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
+    op and 0xF
+}
+private val VAR_SYMBOL_REF_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    val s = String(src, pos + lengthOfLength, lengthOfValue, StandardCharsets.UTF_8)
+    val cpIndex = cp.size
+    cp.add(s)
+    dest.add(Bytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
+    lengthOfValue + lengthOfLength
+}
+private val SYMBOL_SID_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val length = valueAndLength.toInt() and 0xFF
+    val sid = (valueAndLength ushr 8).toInt()
+    val cpIndex = cp.size
+    cp.add(symTab[sid])
+    dest.add(Bytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
+    length
+}
+
+private val SHORT_PREFIXED_LIST_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    val length = op and 0xF
+    val end = pos + length
+    BytecodeHelper.emitInlineList(dest) {
+        while (p < end) {
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    length
+}
+
+private val VAR_PREFIXED_LIST_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    var p = pos + lengthOfLength
+    val end = p + lengthOfValue
+    BytecodeHelper.emitInlineList(dest) {
+        while (p < end) {
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    lengthOfValue + lengthOfLength
+}
+
+private val DELIMITED_LIST_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    BytecodeHelper.emitInlineList(dest) {
+        while (true) {
+            val childOp = src[p++].toInt() and 0xFF
+            if (childOp == 0xF0) break
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    p - pos
+}
+
+
+private val SHORT_PREFIXED_SEXP_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    val length = op and 0xF
+    val end = pos + length
+    BytecodeHelper.emitInlineSexp(dest) {
+        while (p < end) {
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    length
+}
+
+private val VAR_PREFIXED_SEXP_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    var p = pos + lengthOfLength
+    val end = p + lengthOfValue
+    BytecodeHelper.emitInlineSexp(dest) {
+        while (p < end) {
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    lengthOfValue + lengthOfLength
+}
+
+private val DELIMITED_SEXP_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    BytecodeHelper.emitInlineSexp(dest) {
+        while (true) {
+            val childOp = src[p++].toInt() and 0xFF
+            if (childOp == 0xF0) break
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    p - pos
+}
+
+private val SHORT_PREFIXED_STRUCT_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    val length = op and 0xF
+    val end = pos + length
+    BytecodeHelper.emitInlineStruct(dest) {
+        while (p < end) {
+            val fieldNameLengthAndValue = IntHelper.readFlexIntValueAndLengthAt(src, p)
+            val fieldNameLength = fieldNameLengthAndValue.toInt() and 0xFF
+            val fieldNameValue = (fieldNameLengthAndValue ushr 8).toInt()
+            p += fieldNameLength
+
+            val text = if (fieldNameValue < 0) {
+                // TODO: try the decoder pool, as in IonContinuableCoreBinary
+                val textLength = -1 - fieldNameValue
+                val s = String(src, p, textLength, StandardCharsets.UTF_8)
+                p += textLength
+                s
+            } else {
+                symTab[fieldNameValue]
+            }
+            val cpIndex = cp.size
+            cp.add(text)
+            dest.add(Bytecode.OP_CP_FIELD_NAME.opToInstruction(cpIndex))
+
+
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    length
+}
+
+
+private val VAR_PREFIXED_STRUCT_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    var p = pos + lengthOfLength
+    val end = p + lengthOfValue
+    BytecodeHelper.emitInlineStruct(dest) {
+        while (p < end) {
+            val fieldNameLengthAndValue = IntHelper.readFlexIntValueAndLengthAt(src, p)
+            val fieldNameLength = fieldNameLengthAndValue.toInt() and 0xFF
+            val fieldNameValue = (fieldNameLengthAndValue ushr 8).toInt()
+            p += fieldNameLength
+
+            val text = if (fieldNameValue < 0) {
+                // TODO: try the decoder pool, as in IonContinuableCoreBinary
+                val textLength = -1 - fieldNameValue
+                val s = String(src, p, textLength, StandardCharsets.UTF_8)
+                p += textLength
+                s
+            } else {
+                symTab[fieldNameValue]
+            }
+            val cpIndex = cp.size
+            cp.add(text)
+            dest.add(Bytecode.OP_CP_FIELD_NAME.opToInstruction(cpIndex))
+
+
+            val childOp = src[p++].toInt() and 0xFF
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    lengthOfValue + lengthOfLength
+}
+
+private val DELIMITED_STRUCT_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    var p = pos
+    BytecodeHelper.emitInlineStruct(dest) {
+        while (true) {
+            val fieldNameLengthAndValue = IntHelper.readFlexIntValueAndLengthAt(src, p)
+            val fieldNameLength = fieldNameLengthAndValue.toInt() and 0xFF
+            val fieldNameValue = (fieldNameLengthAndValue ushr 8).toInt()
+            p += fieldNameLength
+
+            val text = if (fieldNameValue < 0) {
+                // TODO: try the decoder pool, as in IonContinuableCoreBinary
+                val textLength = -1 - fieldNameValue
+                val s = String(src, p, textLength, StandardCharsets.UTF_8)
+                p += textLength
+                s
+            } else {
+                symTab[fieldNameValue]
+            }
+//            println(text)
+            val cpIndex = cp.size
+            cp.add(text)
+            dest.add(Bytecode.OP_CP_FIELD_NAME.opToInstruction(cpIndex))
+
+            val childOp = src[p++].toInt() and 0xFF
+            if (childOp == 0xF0) {
+                // TODO: We could trim the last field name.
+                break
+            }
+            p += compileValueWithFullPooling(src, p, childOp, dest, cp, macSrc, macIdx, symTab)
+        }
+    }
+    p - pos
+}
+
+private val VAR_BLOB_REF_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    val slice = ByteArraySlice(src, pos + lengthOfLength, pos + lengthOfLength + lengthOfValue)
+    val cpIndex = cp.size
+    cp.add(slice)
+    dest.add(Bytecode.OP_CP_BLOB.opToInstruction(cpIndex))
+    lengthOfValue + lengthOfLength
+}
+
+private val VAR_CLOB_REF_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+    val lengthOfLength = valueAndLength.toInt() and 0xFF
+    val lengthOfValue = (valueAndLength ushr 8).toInt()
+    val slice = ByteArraySlice(src, pos + lengthOfLength, pos + lengthOfLength + lengthOfValue)
+    val cpIndex = cp.size
+    cp.add(slice)
+    dest.add(Bytecode.OP_CP_CLOB.opToInstruction(cpIndex))
+    lengthOfValue + lengthOfLength
+}
+
+private val OP_HANDLERS_WITH_FULL_POOLING = Array<WriteBytecode>(256) { op ->
+    when (op) {
+        in 0x00..0x3F -> OPCODE_IS_MAC_ID_WITH_FULL_POOLING
+        in 0x40..0x4F -> TWELVE_BIT_MAC_ID_WITH_FULL_POOLING
+        in 0x50..0x5F -> TWENTY_BIT_MAC_ID_WITH_FULL_POOLING
+        0x60 -> TX_INT_ZERO
+        0x61 -> TX_INT_8
+        0x62 -> TX_INT_16
+        0x63 -> TX_INT_24
+        0x64 -> TX_INT_32
+        0x65 -> TX_INT_40
+        0x66 -> TX_INT_48
+        0x67 -> TX_INT_56
+        0x69 -> OP_INVALID
+        0x68 -> TX_INT_64
+        0x6A -> TX_FLOAT_ZERO
+        0x6B -> TX_FLOAT_16
+        0x6C -> TX_FLOAT_32
+        0x6D -> TX_FLOAT_64
+        0x6E -> TX_BOOL_TRUE
+        0x6F -> TX_BOOL_FALSE
+
+        in 0x70..0x7F -> DECIMAL_REF_WITH_FULL_POOLING
+
+        in 0x80..0x8C -> SHORT_TIMESTAMPS_WITH_FULL_POOLING
+
+        0x8D -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+            val sidAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+            val length = sidAndLength.toInt() and 0xFF
+            val sid = (sidAndLength ushr 8).toInt()
+            val cpIndex = cp.size
+            cp.add(symTab[sid])
+            dest.add(Bytecode.OP_CP_ANNOTATION.opToInstruction(cpIndex))
+            length
+        }
+        0x8E -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+            val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(src, pos)
+            val lengthOfLength = valueAndLength.toInt() and 0xFF
+            val lengthOfText = (valueAndLength ushr 8).toInt()
+            val s = String(src, pos + lengthOfLength, lengthOfText, StandardCharsets.UTF_8)
+            val cpIndex = cp.size
+            cp.add(s)
+            dest.add(Bytecode.OP_CP_ANNOTATION.opToInstruction(cpIndex))
+            lengthOfLength + lengthOfText
+        }
+
+        // Nulls
+        0x8F -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> dest.add(Bytecode.OP_NULL_NULL.opToInstruction()); 0}
+        0x90 -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> dest.add(TYPED_NULL_INSTRUCTIONS[src[pos].toInt()]); 1 }
+
+        in 0x91..0x9F -> STRING_REF_WITH_FULL_POOLING
+        0xA0 -> SYMBOL_SID_WITH_FULL_POOLING
+        in 0xA1..0xAF -> SYMBOL_REF_WITH_FULL_POOLING
+        in 0xB0 .. 0xBF -> SHORT_PREFIXED_LIST_WITH_FULL_POOLING
+        in 0xC0 .. 0xCF -> SHORT_PREFIXED_SEXP_WITH_FULL_POOLING
+        0xD1 -> OP_INVALID
+        in 0xD0 .. 0xDF -> SHORT_PREFIXED_STRUCT_WITH_FULL_POOLING
+
+        0xE0 -> IVM
+        in 0xE1 .. 0xE7 -> DIRECTIVE
+        0xE8 -> NOTHING_ARG
+        0xE9 -> TAGGED_PARAM
+        0xEA -> TAGGED_PARAM_WITH_DEFAULT
+        0xEB -> TAGLESS_PARAM
+
+        0xEC -> OP_INVALID // Reserved?
+
+        0xED -> OP_TODO // Homogeneous list
+
+        0xEE -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> 0 }
+        0xEF -> WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> IntHelper.getLengthPlusValueOfFlexUIntAt(src, pos) }
+
+        0xF0 -> OP_TODO
+        0xF1 -> DELIMITED_LIST_WITH_FULL_POOLING
+        0xF2 -> DELIMITED_SEXP_WITH_FULL_POOLING
+        0xF3 -> DELIMITED_STRUCT_WITH_FULL_POOLING
+        // Maybe TODO:
+        //  0xF4 -> Macro with flex uint address
+        //  0xF5 -> Macro with flex uint address and flexuint length prefix
+        // TODO:
+        //  0xF6 -> BigInteger
+        //  0xF7 -> Var Decimal
+        //  0xF8 -> Long Timestamp
+        0xF9 -> VAR_STRING_REF_WITH_FULL_POOLING
+        0xFA -> VAR_SYMBOL_REF_WITH_FULL_POOLING
+        0xFB -> VAR_PREFIXED_LIST_WITH_FULL_POOLING
+        0xFC -> VAR_PREFIXED_SEXP_WITH_FULL_POOLING
+        0xFD -> VAR_PREFIXED_STRUCT_WITH_FULL_POOLING
+        0xFE -> VAR_BLOB_REF_WITH_FULL_POOLING
+        0xFF -> VAR_CLOB_REF_WITH_FULL_POOLING
+
+        in 0..255 -> OP_TODO
+        else -> TODO("unreachable")
+    }
+}
+
+
+
+
+

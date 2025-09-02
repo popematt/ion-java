@@ -3,6 +3,7 @@
 package com.amazon.ion.impl.bin
 
 import java.math.BigInteger
+import java.nio.ByteBuffer
 
 /**
  * Functions for encoding FlexInts and FlexUInts.
@@ -160,6 +161,29 @@ object FlexInt {
             }
         }
     }
+
+    @JvmStatic
+    inline fun writeFlexIntOrUIntInto(data: ByteBuffer, value: Long) {
+
+        val numBytes = flexIntLength(value)
+
+        when (numBytes) {
+            1 -> {
+                data.put((0x01L or (value shl 1)).toByte())
+            }
+            2 -> {
+                data.put((0x02L or (value shl 2)).toByte())
+                data.put((value shr 6).toByte())
+            }
+            3 -> {
+                data.put((0x04L or (value shl 3)).toByte())
+                data.put((value shr 5).toByte())
+                data.put((value shr 13).toByte())
+            }
+            else -> TODO()
+        }
+    }
+
 
     /** Determine the length of FlexUInt for the provided value.  */
     @JvmStatic

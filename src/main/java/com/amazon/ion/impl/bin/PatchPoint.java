@@ -6,7 +6,7 @@ package com.amazon.ion.impl.bin;
  * Represents a slice of bytes that need to be overwritten by a variable length, unsigned integer that is too large
  * to fit into the specified slice.
  */
-class PatchPoint {
+public class PatchPoint {
     /**
      * position of the data being patched out.
      */

@@ -106,14 +106,9 @@ public final class Timestamp
     static final long MAXIMUM_TIMESTAMP_IN_EPOCH_SECONDS = MAXIMUM_TIMESTAMP_IN_MILLIS / 1000;
 
     /**
-     * Unknown local offset from UTC.
-     */
-    public static final Integer UNKNOWN_OFFSET = null;
-
-    /**
      * Local offset of zero hours from UTC.
      */
-    public static final Integer UTC_OFFSET = Integer.valueOf(0);
+    public static final Integer UTC_OFFSET = 0;
 
     private static final int FLAG_YEAR      = 0x01;
     private static final int FLAG_MONTH     = 0x02;
@@ -209,10 +204,9 @@ public final class Timestamp
 
     /**
      * Minutes offset from UTC; zero means UTC proper,
-     * <code>null</code> means that the offset is unknown.
      */
-    private Integer     _offset;
-
+    private int     _offset_minutes;
+    private boolean     _offset_is_known;
                                                       //   jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec
                                                       // the first 0 is to make these arrays 1 based (since month values are 1-12)
     private static final int[] LEAP_DAYS_IN_MONTH   = { 0,  31,  29,  31,  30,  31,  30,  31,  31,  30,  31,  30,  31 };
@@ -380,7 +374,8 @@ public final class Timestamp
                                           boolean setLocalOffset)
     {
         _precision = precision;
-        _offset = UNKNOWN_OFFSET;
+        _offset_minutes = 0;
+        _offset_is_known = false;
         boolean dayPrecision = false;
         boolean calendarHasMilliseconds = cal.isSet(Calendar.MILLISECOND);
 
@@ -408,7 +403,8 @@ public final class Timestamp
                     }
 
                     // convert ms to minutes
-                    _offset = offset / (1000*60);
+                    _offset_minutes = offset / (1000*60);
+                    _offset_is_known = true;
                 }
             }
             case DAY:
@@ -433,9 +429,9 @@ public final class Timestamp
             this._day = checkAndCastDay(cal.get(Calendar.DAY_OF_MONTH), _year, _month);
         }
 
-        if (_offset != UNKNOWN_OFFSET) {
+        if (_offset_is_known) {
             // Transform our members from local time to Zulu
-            this.apply_offset(_offset);
+            this.apply_offset(_offset_minutes);
         }
     }
 
@@ -446,7 +442,7 @@ public final class Timestamp
      */
     private Timestamp(int zyear)
     {
-        this(Precision.YEAR, zyear, NO_MONTH, NO_DAY, NO_HOURS, NO_MINUTES, NO_SECONDS, NO_FRACTIONAL_SECONDS, UNKNOWN_OFFSET, APPLY_OFFSET_NO, CHECK_FRACTION_NO);
+        this(Precision.YEAR, zyear, NO_MONTH, NO_DAY, NO_HOURS, NO_MINUTES, NO_SECONDS, NO_FRACTIONAL_SECONDS, 0, false, APPLY_OFFSET_NO, CHECK_FRACTION_NO);
     }
 
     /**
@@ -456,7 +452,7 @@ public final class Timestamp
      */
     private Timestamp(int zyear, int zmonth)
     {
-        this(Precision.MONTH, zyear, zmonth, NO_DAY, NO_HOURS, NO_MINUTES, NO_SECONDS, NO_FRACTIONAL_SECONDS, UNKNOWN_OFFSET, APPLY_OFFSET_NO, CHECK_FRACTION_NO);
+        this(Precision.MONTH, zyear, zmonth, NO_DAY, NO_HOURS, NO_MINUTES, NO_SECONDS, NO_FRACTIONAL_SECONDS, 0, false, APPLY_OFFSET_NO, CHECK_FRACTION_NO);
     }
 
     /**
@@ -469,7 +465,7 @@ public final class Timestamp
     @Deprecated
     public Timestamp(int zyear, int zmonth, int zday)
     {
-        this(Precision.DAY, zyear, zmonth, zday, NO_HOURS, NO_MINUTES, NO_SECONDS, NO_FRACTIONAL_SECONDS, UNKNOWN_OFFSET, APPLY_OFFSET_NO, CHECK_FRACTION_NO);
+        this(Precision.DAY, zyear, zmonth, zday, NO_HOURS, NO_MINUTES, NO_SECONDS, NO_FRACTIONAL_SECONDS, 0, false, APPLY_OFFSET_NO, CHECK_FRACTION_NO);
     }
 
 
@@ -566,7 +562,13 @@ public final class Timestamp
      */
     private Timestamp(Precision p, int zyear, int zmonth, int zday,
                       int zhour, int zminute, int zsecond, BigDecimal frac,
-                      Integer offset, boolean shouldApplyOffset, boolean shouldCheckFraction)
+                      Integer offset, boolean shouldApplyOffset, boolean shouldCheckFraction) {
+        this(p, zyear, zmonth, zday, zhour, zminute, zsecond, frac, offset != null ? offset : 0, offset != null, shouldApplyOffset, shouldCheckFraction);
+    }
+
+    private Timestamp(Precision p, int zyear, int zmonth, int zday,
+                      int zhour, int zminute, int zsecond, BigDecimal frac,
+                      int offsetMinutes, boolean offsetIsKnown, boolean shouldApplyOffset, boolean shouldCheckFraction)
     {
         boolean dayPrecision = false;
 
@@ -596,7 +598,8 @@ public final class Timestamp
         case MINUTE:
             _minute = checkAndCastMinute(zminute);
             _hour   = checkAndCastHour(zhour);
-            _offset = offset;      // offset must be null for years/months/days
+            _offset_minutes = offsetMinutes;      // offset must be unknown for years/months/days
+            _offset_is_known = offsetIsKnown;
         case DAY:
              dayPrecision = true;
         case MONTH:
@@ -612,8 +615,8 @@ public final class Timestamp
 
         _precision = p;
 
-        if (shouldApplyOffset && offset != null) {
-            apply_offset(offset);
+        if (shouldApplyOffset && offsetIsKnown) {
+            apply_offset(offsetMinutes);
         }
     }
 
@@ -690,6 +693,19 @@ public final class Timestamp
     }
 
     /**
+     * @return a new Timestamp from the given components in local time, without validating the fractional seconds.
+     */
+    @Deprecated
+    public static Timestamp _private_createFromLocalTimeFieldsUnchecked(Precision p, int year, int month, int day,
+                                                                        int hour, int minute, int second,
+                                                                        BigDecimal frac, int offset, boolean offsetIsKnown)
+    {
+        return new Timestamp(p, year, month, day,
+            hour, minute, second, frac,
+            offset, offsetIsKnown, APPLY_OFFSET_YES, CHECK_FRACTION_NO);
+    }
+
+    /**
      * Creates a new Timestamp from a {@link Calendar}, preserving the
      * {@link Calendar}'s precision and local offset from UTC.
      * <p>
@@ -740,19 +756,20 @@ public final class Timestamp
 
 
     private Timestamp(Calendar cal, Precision precision, BigDecimal fraction,
-                      Integer offset)
+                      int offset, boolean offsetIsKnown)
     {
         set_fields_from_calendar(cal, precision, false);
         _fraction = fraction;
-        if (offset != null)
+        _offset_is_known = offsetIsKnown;
+        if (offsetIsKnown)
         {
-            _offset = offset;
+            _offset_minutes = offset;
             apply_offset(offset);
         }
     }
 
 
-    private Timestamp(BigDecimal millis, Precision precision, Integer localOffset)
+    private Timestamp(BigDecimal millis, Precision precision, int localOffset, boolean offsetIsKnown)
     {
         // check bounds to avoid hanging when calling longValue() on decimals with large positive exponents,
         // e.g. 1e10000000
@@ -779,7 +796,8 @@ public final class Timestamp
             case FRACTION:
         }
 
-        _offset = localOffset;
+        _offset_minutes = localOffset;
+        _offset_is_known = offsetIsKnown;
         // The given BigDecimal may contain greater than milliseconds precision, which is the maximum precision that
         // a Calendar can handle. Set the _fraction here so that extra precision (if any) is not lost.
         // However, don't set the fraction if the given BigDecimal does not have precision at least to the tenth of
@@ -832,6 +850,11 @@ public final class Timestamp
     @Deprecated
     public Timestamp(BigDecimal millis, Integer localOffset)
     {
+        this(millis, localOffset == null ? 0 : localOffset, localOffset != null);
+    }
+
+    private Timestamp(BigDecimal millis, int localOffset, boolean offsetIsKnown)
+    {
         if (millis == null) throw new NullPointerException("millis is null");
 
         // check bounds to avoid hanging when calling longValue() on decimals with large positive exponents,
@@ -857,7 +880,10 @@ public final class Timestamp
             this._fraction = secs.subtract(secsDown);
             this._precision = checkFraction(Precision.SECOND, _fraction);
         }
-        this._offset = localOffset;
+        _offset_is_known = offsetIsKnown;
+        if (offsetIsKnown) {
+            _offset_minutes = localOffset;
+        }
     }
 
     private BigDecimal fastRoundZeroFloor(final BigDecimal decimal) {
@@ -911,7 +937,10 @@ public final class Timestamp
         this._fraction = secs.subtract(secsDown);
         this._precision = checkFraction(Precision.SECOND, _fraction);
 
-        this._offset = localOffset;
+        this._offset_is_known = localOffset != null;
+        if (_offset_is_known) {
+            _offset_minutes = localOffset;
+        }
     }
 
 
@@ -1221,7 +1250,8 @@ public final class Timestamp
                              _minute,
                              _second,
                              _fraction,
-                             _offset,
+                             _offset_minutes,
+                             _offset_is_known,
                              APPLY_OFFSET_NO,
                              CHECK_FRACTION_NO);
     }
@@ -1235,9 +1265,7 @@ public final class Timestamp
      */
     private Timestamp make_localtime()
     {
-        int offset = _offset != null
-            ? _offset.intValue()
-            : 0;
+        int offset = _offset_is_known ? _offset_minutes : 0;
 
         // We use a Copy-Constructor that expects the time parameters to be in
         // UTC, as that's what we're supposed to have.
@@ -1253,13 +1281,15 @@ public final class Timestamp
                                             _minute,
                                             _second,
                                             _fraction,
-                                            _offset,
+                                            _offset_minutes,
+                                            _offset_is_known,
                                             APPLY_OFFSET_NO,
                                             CHECK_FRACTION_NO);
         // explicitly apply the local offset to the time field values
         localtime.apply_offset(-offset);
 
-        assert localtime._offset == _offset;
+        assert localtime._offset_minutes == _offset_minutes;
+        assert localtime._offset_is_known == _offset_is_known;
 
         return localtime;
     }
@@ -1417,7 +1447,9 @@ public final class Timestamp
      */
     public static Timestamp forMillis(BigDecimal millis, Integer localOffset)
     {
-        return new Timestamp(millis, localOffset);
+        boolean offsetIsKnown = localOffset != null;
+        int offsetMinutes = offsetIsKnown ? localOffset : 0;
+        return new Timestamp(millis, offsetMinutes, offsetIsKnown);
     }
 
 
@@ -1534,7 +1566,7 @@ public final class Timestamp
     public static Timestamp now()
     {
         long millis = System.currentTimeMillis();
-        return new Timestamp(millis, UNKNOWN_OFFSET);
+        return new Timestamp(millis, null);
     }
 
     /**
@@ -1591,8 +1623,8 @@ public final class Timestamp
         Calendar cal = new GregorianCalendar(_Private_Utils.UTC);
 
         long millis = getMillis();
-        Integer offset = _offset;
-        if (offset != null && offset != 0)
+        int offset = _offset_minutes;
+        if (_offset_is_known && offset != 0)
         {
             int offsetMillis = offset * 60 * 1000;
             millis += offsetMillis;
@@ -1710,7 +1742,7 @@ public final class Timestamp
      */
     public Integer getLocalOffset()
     {
-        return _offset;
+        return _offset_is_known ? _offset_minutes : null;
     }
 
 
@@ -1724,8 +1756,8 @@ public final class Timestamp
     {
         Timestamp adjusted = this;
 
-        if (this._offset != null) {
-            if (this._offset.intValue() != 0) {
+        if (this._offset_is_known) {
+            if (this._offset_minutes != 0) {
                 adjusted = make_localtime();
             }
         }
@@ -1746,8 +1778,8 @@ public final class Timestamp
     {
         Timestamp adjusted = this;
 
-        if (this._offset != null) {
-            if (this._offset.intValue() != 0) {
+        if (this._offset_is_known) {
+            if (this._offset_minutes != 0) {
                 adjusted = make_localtime();
             }
         }
@@ -1766,8 +1798,8 @@ public final class Timestamp
     public int getDay()
     {
         Timestamp adjusted = this;
-        if (this._offset != null) {
-            if (this._offset.intValue() != 0) {
+        if (this._offset_is_known) {
+            if (this._offset_minutes != 0) {
                 adjusted = make_localtime();
             }
         }
@@ -1786,8 +1818,8 @@ public final class Timestamp
     public int getHour()
     {
         Timestamp adjusted = this;
-        if (this._offset != null) {
-            if (this._offset.intValue() != 0) {
+        if (this._offset_is_known) {
+            if (this._offset_minutes != 0) {
                 adjusted = make_localtime();
             }
         }
@@ -1806,8 +1838,8 @@ public final class Timestamp
     public int getMinute()
     {
         Timestamp adjusted = this;
-        if (this._offset != null) {
-            if (this._offset.intValue() != 0) {
+        if (this._offset_is_known) {
+            if (this._offset_minutes != 0) {
                 adjusted = make_localtime();
             }
         }
@@ -2155,7 +2187,7 @@ public final class Timestamp
         Timestamp adjusted = this;
 
         // Adjust UTC time back to local time
-        if (this._offset != null && this._offset.intValue() != 0) {
+        if (this._offset_is_known && this._offset_minutes != 0) {
             adjusted = make_localtime();
         }
 
@@ -2186,7 +2218,7 @@ public final class Timestamp
             case MONTH:
             case DAY:
             {
-                assert _offset == UNKNOWN_OFFSET;
+                assert !_offset_is_known;
                 // No need to adjust offset, we won't be using it.
                 print(out);
                 break;
@@ -2196,7 +2228,8 @@ public final class Timestamp
             case FRACTION:
             {
                 Timestamp ztime = this.clone();
-                ztime._offset = UTC_OFFSET;
+                ztime._offset_minutes = UTC_OFFSET;
+                ztime._offset_is_known = true;
                 ztime.print(out);
                 break;
             }
@@ -2280,9 +2313,9 @@ public final class Timestamp
             }
         }
 
-        if (adjusted._offset != null) {
+        if (adjusted._offset_is_known) {
             int min, hour;
-            min = adjusted._offset;
+            min = adjusted._offset_minutes;
             if (min == 0) {
                 out.append('Z');
             }
@@ -2416,7 +2449,7 @@ public final class Timestamp
         Precision newPrecision = _precision.includes(precision) ? _precision : precision;
 
 
-        Timestamp ts = new Timestamp(millis, newPrecision, _offset);
+        Timestamp ts = new Timestamp(millis, newPrecision, _offset_minutes, _offset_is_known);
         // Anything with courser-than-millis precision will have been extended
         // to 3 decimal places due to use of getDecimalMillis(). Compensate for
         // that by setting the scale such that it is never extended unless
@@ -2429,9 +2462,9 @@ public final class Timestamp
         if (ts._fraction != null) {
             ts._fraction = newScale == 0 ? null : ts._fraction.setScale(newScale, RoundingMode.FLOOR);
         }
-        if (_offset != null && _offset != 0)
+        if (_offset_is_known && _offset_minutes != 0)
         {
-            ts.apply_offset(_offset);
+            ts.apply_offset(_offset_minutes);
         }
         return ts;
     }
@@ -2619,7 +2652,7 @@ public final class Timestamp
     private Timestamp addMonthForPrecision(int amount, Precision precision) {
         Calendar cal = calendarValue();
         cal.add(Calendar.MONTH, amount);
-        return new Timestamp(cal, precision, _fraction, _offset);
+        return new Timestamp(cal, precision, _fraction, _offset_minutes, _offset_is_known);
     }
 
     /**
@@ -2664,7 +2697,7 @@ public final class Timestamp
 
         Calendar cal = calendarValue();
         cal.add(Calendar.YEAR, amount);
-        return new Timestamp(cal, _precision, _fraction, _offset);
+        return new Timestamp(cal, _precision, _fraction, _offset_minutes, _offset_is_known);
     }
 
 
@@ -2705,7 +2738,7 @@ public final class Timestamp
 
         result ^= (result << 19) ^ (result >> 13);
 
-        result = prime * result + (_offset == null ? 0 : _offset.hashCode());
+        result = prime * result + (_offset_is_known ? Integer.hashCode(_offset_minutes) : 0);
 
         result ^= (result << 19) ^ (result >> 13);
 
@@ -2853,12 +2886,7 @@ public final class Timestamp
         if (thisPrecision != thatPrecision) return false;
 
         // if the local offset are not the same the values are not
-        if (this._offset == null) {
-            if (t._offset != null)  return false;
-        }
-        else {
-            if (t._offset == null) return false;
-        }
+        if (this._offset_is_known != t._offset_is_known) return false;
 
         // so now we check the actual time value
         if (this._year   != t._year)    return false;
@@ -2869,8 +2897,8 @@ public final class Timestamp
         if (this._second != t._second)  return false;
 
         // and if we have a local offset, check the value here
-        if (this._offset != null) {
-            if (this._offset.intValue() != t._offset.intValue()) return false;
+        if (_offset_is_known) {
+            if (this._offset_minutes != t._offset_minutes) return false;
         }
 
         // we only look at the fraction if we know that it's actually there

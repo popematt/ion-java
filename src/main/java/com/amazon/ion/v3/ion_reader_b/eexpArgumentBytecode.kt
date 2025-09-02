@@ -174,7 +174,6 @@ private fun noBytecodeTransformer(opcode: Int): ToBytecodeTransformer {
 
 
 private val TX_INT_ZERO = ToBytecodeTransformer { dest, _, _, _, _, -> MacroBytecodeHelper.emitInt16Value(dest, 0); 0}
-@OptIn(ExperimentalStdlibApi::class)
 private val TX_INT_8 = ToBytecodeTransformer { dest, _, src, pos, _ -> MacroBytecodeHelper.emitInt16Value(dest, src.get(pos).toShort()); 1 }
 private val TX_INT_16 = ToBytecodeTransformer { dest, _, src, pos, _ -> MacroBytecodeHelper.emitInt16Value(dest, src.getShort(pos)); 2 }
 private val TX_INT_24 = ToBytecodeTransformer { dest, _, src, pos, _ -> MacroBytecodeHelper.emitInt32Value(dest, src.getInt(pos - 1) shr 8); 3 }

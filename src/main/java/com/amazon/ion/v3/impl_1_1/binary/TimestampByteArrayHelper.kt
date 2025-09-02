@@ -23,6 +23,9 @@ object TimestampByteArrayHelper {
     @JvmStatic
     fun lengthOfShortTimestamp(opcode: Int): Int = SHORT_TS_LENGTHS[opcode and 0xF].toInt()
 
+    /**
+     * Position should point to the first byte of the data, not the opcode.
+     */
     @JvmStatic
     fun readShortTimestampAt(opcode: Int, source: ByteArray, position: Int): Timestamp {
         return when (opcode) {
@@ -95,6 +98,8 @@ object TimestampByteArrayHelper {
         return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, null, offset)
     }
 
+
+    private val offsets = arrayOf(null, 0)
     @JvmStatic
     private fun readTimestamp0x85(source: ByteArray, position: Int): Timestamp {
         val data = readBytesAt(6, source, position)
@@ -103,6 +108,7 @@ object TimestampByteArrayHelper {
         val day = (data.toInt() and S_TIMESTAMP_DAY_MASK) ushr S_TIMESTAMP_DAY_BIT_OFFSET
         val hour = (data.toInt() and S_TIMESTAMP_HOUR_MASK) ushr S_TIMESTAMP_HOUR_BIT_OFFSET
         val minute = (data.toInt() and S_TIMESTAMP_MINUTE_MASK) ushr S_TIMESTAMP_MINUTE_BIT_OFFSET
+//        val offset = offsets[data.toInt() and S_U_TIMESTAMP_UTC_FLAG]
         val offset = if ((data.toInt() and S_U_TIMESTAMP_UTC_FLAG) == 0) null else 0
         val second = ((data and S_U_TIMESTAMP_SECOND_MASK) ushr S_U_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
         val unscaledValue = (data and S_U_TIMESTAMP_MILLISECOND_MASK) ushr S_U_TIMESTAMP_FRACTION_BIT_OFFSET
@@ -305,7 +311,9 @@ object TimestampByteArrayHelper {
         val day = (data.toInt() and L_TIMESTAMP_DAY_MASK) ushr L_TIMESTAMP_DAY_BIT_OFFSET
         val hour = (data.toInt() and L_TIMESTAMP_HOUR_MASK) ushr L_TIMESTAMP_HOUR_BIT_OFFSET
         val minute = ((data and L_TIMESTAMP_MINUTE_MASK) ushr L_TIMESTAMP_MINUTE_BIT_OFFSET).toInt()
-        val offset = readLongOffset(data)
+        var offset = ((data and L_TIMESTAMP_OFFSET_MASK) ushr L_TIMESTAMP_OFFSET_BIT_OFFSET).toInt()
+        val isOffsetKnown = offset != L_TIMESTAMP_UNKNOWN_OFFSET_VALUE
+        offset -= L_TIMESTAMP_OFFSET_BIAS
         val second = ((data and L_TIMESTAMP_SECOND_MASK) ushr L_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
 
         val lengthOfScale = IntHelper.lengthOfFlexUIntAt(ByteBuffer.wrap(source), start + 7)
@@ -314,15 +322,6 @@ object TimestampByteArrayHelper {
         val fractionalSecondCoefficient = readFixedUIntAt(source, start + 7 + lengthOfScale, coefficientLength)
         val fractionalSecond = BigDecimal.valueOf(fractionalSecondCoefficient.toLong(), fractionalSecondScale)
 
-        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset)
-    }
-
-    @JvmStatic
-    private fun readLongOffset(data: Long): Int? {
-        val offset = ((data and L_TIMESTAMP_OFFSET_MASK) ushr L_TIMESTAMP_OFFSET_BIT_OFFSET).toInt()
-        if (offset == L_TIMESTAMP_UNKNOWN_OFFSET_VALUE) {
-            return null
-        }
-        return offset - L_TIMESTAMP_OFFSET_BIAS
+        return uncheckedNewTimestamp(Precision.SECOND, year, month, day, hour, minute, second, fractionalSecond, offset, isOffsetKnown)
     }
 }

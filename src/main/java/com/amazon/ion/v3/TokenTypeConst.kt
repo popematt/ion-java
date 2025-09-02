@@ -38,6 +38,7 @@ object TokenTypeConst {
 
     const val SYSTEM_VALUE = 24
     const val REFILL = 25
+    const val EOF = 26
 
     operator fun invoke(i: Int) : String {
         return when (i) {
