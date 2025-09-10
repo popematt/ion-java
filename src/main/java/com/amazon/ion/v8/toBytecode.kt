@@ -2,16 +2,17 @@ package com.amazon.ion.v8
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.bin.*
-import com.amazon.ion.v3.impl_1_1.binary.*
-//import com.amazon.ion.v3.impl_1_1.template.*
 import com.amazon.ion.v8.Bytecode.OPERATION_SHIFT_AMOUNT
 import com.amazon.ion.v8.Bytecode.instructionToOp
 import com.amazon.ion.v8.Bytecode.opToInstruction
 import java.nio.charset.StandardCharsets
-import kotlin.Exception
 import kotlin.math.min
 
-@OptIn(ExperimentalStdlibApi::class)
+/*
+ * This file contains functions for generating our intermediate bytecode from the source data.
+ */
+
+
 fun compileTopLevel(
     src: ByteArray,
     pos: Int,
@@ -33,10 +34,11 @@ fun compileTopLevel(
     while (p < end && (opcode or 0x7 != 0XE7)) {
         opcode = src[p++].toInt() and 0xFF
         val handler = OP_HANDLERS[opcode]
-//        val checkpoint = dest.size()
-//        println("Reading opcode: ${opcode.toHexString()} at ${p - 1}")
         p += handler.writeBytecode(src, p, opcode, dest, cp, macSrc, macIdx, symTab)
 
+        // Possible starting point for using a refillable source buffer.
+//        val checkpoint = dest.size()
+//        p += handler.writeBytecode(src, p, opcode, dest, cp, macSrc, macIdx, symTab)
 //        try {
 //            p += handler.writeBytecode(src, p, opcode, dest, cp, macSrc, macIdx, symTab)
 //        } catch (e: ArrayIndexOutOfBoundsException) {
@@ -87,8 +89,16 @@ private fun compileValue(
     macIdx: IntArray,
     symTab: Array<String?>,
 ): Int {
-    val handler = OP_HANDLERS[op]
-    return handler.writeBytecode(src, pos, op, dest, cp, macSrc, macIdx, symTab)
+    var handler = OP_HANDLERS[op]
+    var p = pos
+    var op = op
+    while (op == Ops.ANNOTATION_TEXT || op == Ops.ANNOTATION_SID) {
+        p += handler.writeBytecode(src, p, op, dest, cp, macSrc, macIdx, symTab)
+        op = src[p++].toInt() and 0xFF
+        handler = OP_HANDLERS[op]
+    }
+    p += handler.writeBytecode(src, p, op, dest, cp, macSrc, macIdx, symTab)
+    return p - pos
 }
 
 
@@ -265,7 +275,7 @@ private val TX_INT_48 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, 
 private val TX_INT_56 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt64Value(dest, src.get7Bytes(pos)); 7 }
 private val TX_INT_64 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitInt64Value(dest, src.getLong(pos)); 8 }
 private val TX_FLOAT_ZERO = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitFloatValue(dest, 0.0f); 0 }
-private val TX_FLOAT_16 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitFloatValue(dest, toFloat(src.getShort(pos))); 2 }
+private val TX_FLOAT_16 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> TODO("Read a half-precision float and emit it as single-precision float in bytecode"); 2 }
 private val TX_FLOAT_32 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitFloatValue(dest, src.getFloat(pos)); 4 }
 private val TX_FLOAT_64 = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitDoubleValue(dest, src.getDouble(pos)); 8 }
 private val TX_BOOL_TRUE = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> BytecodeHelper.emitBooleanValue(dest, true); 0 }
@@ -441,7 +451,7 @@ private val VAR_PREFIXED_STRUCT = WriteBytecode { src, pos, op, dest, cp, macSrc
             p += fieldNameLength
 
             if (fieldNameValue < 0) {
-                val textLength = -1 - fieldNameLength
+                val textLength = -1 - fieldNameValue
                 dest.add(Bytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(textLength))
                 dest.add(p)
                 p += textLength
@@ -467,7 +477,7 @@ private val DELIMITED_STRUCT = WriteBytecode { src, pos, op, dest, cp, macSrc, m
         p += fieldNameLength
 
         if (fieldNameValue < 0) {
-            val textLength = -1 - fieldNameLength
+            val textLength = -1 - fieldNameValue
             dest.add(Bytecode.OP_REF_FIELD_NAME_TEXT.opToInstruction(textLength))
             dest.add(p)
             p += textLength
@@ -566,7 +576,7 @@ private val TYPED_NULL_INSTRUCTIONS = intArrayOf(
 
 
 @OptIn(ExperimentalStdlibApi::class)
-private val OP_TODO = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> TODO("${op.toHexString()} at $pos") }
+private val OP_TODO = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> TODO("${op.toHexString()} at $pos\n${src.toHexString()}") }
 
 @OptIn(ExperimentalStdlibApi::class)
 private val OP_INVALID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> throw IonException("Encountered invalid opcode: ${op.toHexString()}") }
@@ -707,8 +717,16 @@ fun compileValueWithFullPooling(
     macIdx: IntArray,
     symTab: Array<String?>,
 ): Int {
-    val handler = OP_HANDLERS_WITH_FULL_POOLING[op]
-    return handler.writeBytecode(src, pos, op, dest, cp, macSrc, macIdx, symTab)
+    var handler = OP_HANDLERS_WITH_FULL_POOLING[op]
+    var p = pos
+    var op = op
+    while (op == Ops.ANNOTATION_TEXT || op == Ops.ANNOTATION_SID) {
+        p += handler.writeBytecode(src, p, op, dest, cp, macSrc, macIdx, symTab)
+        op = src[p++].toInt() and 0xFF
+        handler = OP_HANDLERS_WITH_FULL_POOLING[op]
+    }
+    p += handler.writeBytecode(src, p, op, dest, cp, macSrc, macIdx, symTab)
+    return p - pos
 }
 
 private fun evalMacroWithFullPooling(
@@ -858,7 +876,7 @@ private val DECIMAL_REF_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, 
 }
 private val SHORT_TIMESTAMPS_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
     val cpIndex = cp.size
-    cp.add(TimestampByteArrayHelper.readShortTimestampAt(op, src, pos))
+    cp.add(TimestampHelper.readShortTimestampAt(op, src, pos))
     dest.add(Bytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
     TimestampHelper.lengthOfShortTimestamp(op)
 }

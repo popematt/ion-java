@@ -29,6 +29,7 @@ public class _Private_IonBinaryWriterBuilder_1_1
     private int blockSize = DEFAULT_BLOCK_SIZE;
     private LengthPrefixStrategy lengthPrefixStrategy = LengthPrefixStrategy.ALWAYS_PREFIXED;
     private SymbolInliningStrategy symbolInliningStrategy = SymbolInliningStrategy.NEVER_INLINE;
+    private boolean simplified = false;
 
     /**
      * @return a new mutable builder.
@@ -47,6 +48,7 @@ public class _Private_IonBinaryWriterBuilder_1_1
         blockSize = that.blockSize;
         lengthPrefixStrategy = that.lengthPrefixStrategy;
         symbolInliningStrategy = that.symbolInliningStrategy;
+        simplified = that.simplified;
     }
 
     @Override
@@ -126,6 +128,13 @@ public class _Private_IonBinaryWriterBuilder_1_1
     }
 
     @Override
+    public IonBinaryWriterBuilder_1_1 withSimplifiedTemplates() {
+        _Private_IonBinaryWriterBuilder_1_1 b = mutable();
+        b.simplified = true;
+        return b;
+    }
+
+    @Override
     public IonBinaryWriterBuilder_1_1 withSymbolInliningStrategy(SymbolInliningStrategy symbolInliningStrategy) {
         _Private_IonBinaryWriterBuilder_1_1 b = mutable();
         b.setSymbolInliningStrategy(symbolInliningStrategy);
@@ -144,6 +153,9 @@ public class _Private_IonBinaryWriterBuilder_1_1
             lengthPrefixStrategy,
             ManagedWriterOptions_1_1.EExpressionIdentifierStrategy.BY_ADDRESS
         );
+        if (simplified) {
+            return com.amazon.ion.v8.IonManagedWriter_1_1.binaryWriter(out, options, this);
+        }
         return IonManagedWriter_1_1.binaryWriter(out, options, this);
     }
 

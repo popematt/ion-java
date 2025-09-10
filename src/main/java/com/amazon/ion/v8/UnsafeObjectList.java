@@ -1,35 +1,31 @@
 package com.amazon.ion.v8;
 
-import kotlin.jvm.internal.markers.KMutableList;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
 
 /**
  * Based off of IntList, this is actually just an ArrayList that allows unsafe access to the underlying Array.
  *
+ * WARNING: This class is incomplete. It implements `List`, but not all operations are supported. Given that
+ * this class is an internal implementation detail, it might be better to not implement `List`.
  *
- *
- * A list of integer values that grows as necessary.
- *
- * Unlike {@link java.util.List}, IntList does not require each int to be boxed. This makes it helpful in use cases
- * where storing {@link Integer} leads to excessive time spent in garbage collection.
+ * The reason both UnsafeStringList and UnsafeObjectList exist is to work around a runtime ClassCastException. The problem
+ * was probably some sort of user error on my part, but I never bothered to figure it out because it was faster to copy/paste a new class.
  */
-public class UnsafeArrayList<T> implements List<T> {
+public class UnsafeObjectList<T> implements List<T> {
     public static final int DEFAULT_INITIAL_CAPACITY = 8;
     private static final int GROWTH_MULTIPLIER = 2;
     private T[] data;
     private int numberOfValues;
-//    private int capacity;
 
     /**
-     * Constructs a new IntList with a capacity of {@link UnsafeArrayList#DEFAULT_INITIAL_CAPACITY}.
+     * Constructs a new IntList with a capacity of {@link UnsafeObjectList#DEFAULT_INITIAL_CAPACITY}.
      */
-    public UnsafeArrayList() {
+    public UnsafeObjectList() {
         this(DEFAULT_INITIAL_CAPACITY);
     }
 
@@ -38,7 +34,7 @@ public class UnsafeArrayList<T> implements List<T> {
      * @param initialCapacity   The number of ints that can be stored in this IntList before it will need to be
      *                          reallocated.
      */
-    public UnsafeArrayList(final int initialCapacity) {
+    public UnsafeObjectList(final int initialCapacity) {
         data = newT(initialCapacity);
 //        capacity = initialCapacity;
         numberOfValues = 0;
@@ -52,7 +48,7 @@ public class UnsafeArrayList<T> implements List<T> {
      * Constructs a new IntList that contains all the elements of the given IntList.
      * @param other the IntList to copy.
      */
-    public UnsafeArrayList(final UnsafeArrayList<T> other) {
+    public UnsafeObjectList(final UnsafeObjectList<T> other) {
         this.numberOfValues = other.numberOfValues;
         this.data = newT(other.data.length);
 //        capacity = data.length;
@@ -139,16 +135,7 @@ public class UnsafeArrayList<T> implements List<T> {
         numberOfValues = newNumberOfValues;
     }
 
-    public void addAll(int[] values) {
-        int valuesLength = values.length;
-        int thisNumberOfValues = numberOfValues;
-        int newNumberOfValues = valuesLength + thisNumberOfValues;
-        T[] data = ensureCapacity(newNumberOfValues);
-        System.arraycopy(values, 0, data, thisNumberOfValues, valuesLength);
-        this.numberOfValues = newNumberOfValues;
-    }
-
-    public void addAll(UnsafeArrayList<T> values) {
+    public void addAll(UnsafeObjectList<T> values) {
         int thisNumberOfValues = this.numberOfValues;
         int otherNumberOfValues = values.numberOfValues;
         int newNumberOfValues =  thisNumberOfValues + otherNumberOfValues;
@@ -157,7 +144,7 @@ public class UnsafeArrayList<T> implements List<T> {
         this.numberOfValues = newNumberOfValues;
     }
 
-    public void addSlice(UnsafeArrayList<T> values, int startInclusive, int length) {
+    public void addSlice(UnsafeObjectList<T> values, int startInclusive, int length) {
         int thisNumberOfValues = this.numberOfValues;
         int newNumberOfValues = thisNumberOfValues + length;
         T[] data = ensureCapacity(newNumberOfValues);
@@ -166,6 +153,7 @@ public class UnsafeArrayList<T> implements List<T> {
     }
 
     public void truncate(int length) {
+        if (length > numberOfValues) throw new IllegalArgumentException("length exceeds number of values");
         numberOfValues = length;
     }
 

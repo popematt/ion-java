@@ -1,6 +1,5 @@
 package com.amazon.ion.v8
 
-import com.amazon.ion.v3.TokenTypeConst
 import com.amazon.ion.v8.Bytecode.DataFormatters.AS_HEX_BYTE
 import com.amazon.ion.v8.Bytecode.DataFormatters.AS_HEX_INT
 import com.amazon.ion.v8.Bytecode.DataFormatters.AS_INT
@@ -15,7 +14,6 @@ import com.amazon.ion.v8.Bytecode.DataFormatters.SRC_INDEX
 /**
  * ```text
  * Instructions are formatted here as  OPERATION(data)[operands]
- * When a value does not require the full 24 bits, it is "right" aligned.
  *
  * E.g. Boolean true could be this:
  *
@@ -32,8 +30,8 @@ object Bytecode {
 
     // NOTE about ref opcodes
     // It seems that data locality is one of the most important concerns for performance.
-    // So, for many scalars, it will probably be cheaper to eagerly materialize them to be able to
-    // put them inline. Particularly for fixed-sized values.
+    // So, for fixed-sized scalars, it will probably be cheaper to eagerly materialize them to be able to
+    // put them inline.
 
 
     // TODO: Standardize the values of the instruction suffixes
@@ -51,7 +49,6 @@ object Bytecode {
     /** If DATA is 0, this should raise an error. All other values of DATA may be used for state tracking by reader implementations.  */
     const val UNSET = 0x00
 
-    /** No DATA */
     const val OP_NULL_NULL = (TokenTypeConst.NULL shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
     const val OP_NULL_BOOL = (TokenTypeConst.BOOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
     const val OP_NULL_INT = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
@@ -166,7 +163,6 @@ object Bytecode {
     /** DATA is macro id. */
     const val OP_MACRO_SHAPED_PARAMETER = (TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
-
     // Directives:
     // We should try to use the DATA for something useful, if possible, especially since these cannot be skipped.
     const val DIRECTIVE_SET_SYMBOLS = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT)
@@ -177,7 +173,7 @@ object Bytecode {
     const val DIRECTIVE_MODULE = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 5
     const val DIRECTIVE_ENCODING = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 6
 
-    const val NOTHING = (TokenTypeConst.ABSENT_ARGUMENT shl TOKEN_TYPE_SHIFT_AMOUNT)
+    const val ABSENT_ARGUMENT = (TokenTypeConst.ABSENT_ARGUMENT shl TOKEN_TYPE_SHIFT_AMOUNT)
 
     const val EOF = TokenTypeConst.EOF shl TOKEN_TYPE_SHIFT_AMOUNT
     const val OP_CONTAINER_END = TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT
@@ -204,7 +200,6 @@ object Bytecode {
         return sb.toString()
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
     @JvmStatic
     private fun line(n: Int): String {
         return "L$n".padEnd(6, ' ')
@@ -315,8 +310,10 @@ object Bytecode {
         val NO_DATA = { _: Int -> "" }
     }
 
-    // TokenTypes: NUL, BOO, INT, FLT, DCM, TIS, STI, SYM, BLB, CLB, LIS, SXP, STU, ANN, FN, ARG, MAC,
-    // "actions": INL, REF, CON, SRT, END, SID, SYS,
+    /**
+     * Information about the various bytecode operations. This is used exclusively (I think) for being able to dump the
+     * bytecode in a human-readable format for debugging and for testing.
+     */
     enum class Operations(val operation: Int, val dataFormatter: (Int) -> String, val numberOfOperands: Int = 0, val operandFormatter: (Int) -> String = { "" }) {
         NULL_NULL(OP_NULL_NULL, NO_DATA),
         NULL_BOOL(OP_NULL_BOOL, NO_DATA),
@@ -376,16 +373,15 @@ object Bytecode {
         REFILL(Bytecode.REFILL, NO_DATA),
         IVM(Bytecode.IVM, NO_DATA),
 
-        SET_SYMBOLS(Bytecode.DIRECTIVE_SET_SYMBOLS, NO_DATA),
-        ADD_SYMBOLS(Bytecode.DIRECTIVE_ADD_SYMBOLS, NO_DATA),
-        SET_MACROS(Bytecode.DIRECTIVE_SET_MACROS, NO_DATA),
-        ADD_MACROS(Bytecode.DIRECTIVE_ADD_MACROS, NO_DATA),
-        USE(Bytecode.DIRECTIVE_USE, NO_DATA),
-        MODULE(Bytecode.DIRECTIVE_MODULE, NO_DATA),
-        ENCODING(Bytecode.DIRECTIVE_ENCODING, NO_DATA),
+        SET_SYMBOLS(DIRECTIVE_SET_SYMBOLS, NO_DATA),
+        ADD_SYMBOLS(DIRECTIVE_ADD_SYMBOLS, NO_DATA),
+        SET_MACROS(DIRECTIVE_SET_MACROS, NO_DATA),
+        ADD_MACROS(DIRECTIVE_ADD_MACROS, NO_DATA),
+        USE(DIRECTIVE_USE, NO_DATA),
+        MODULE(DIRECTIVE_MODULE, NO_DATA),
+        ENCODING(DIRECTIVE_ENCODING, NO_DATA),
         ;
 
-        @OptIn(ExperimentalStdlibApi::class)
         companion object {
 
             @JvmField
@@ -406,29 +402,6 @@ object Bytecode {
                     }
                 }.toByte()
             }
-
-            @JvmField
-            internal val IS_CP_INDEX = BooleanArray(256) { i ->
-                val op = Operations.entries.singleOrNull { it.operation == i }
-                if (op == null) {
-                    false
-                } else {
-                    op.dataFormatter === DataFormatters.CP_INDEX
-                }
-            }
-
-            @JvmField
-            internal val IS_BYTECODE_LENGTH = BooleanArray(256) { i ->
-                val op = Operations.entries.singleOrNull { it.operation == i }
-                if (op == null) {
-                    false
-                } else {
-                    op.dataFormatter === DataFormatters.BYTECODE_LENGTH
-                }
-            }
-
-            @JvmField
-            internal val IS_VALUE = BooleanArray(256) { (it ushr TOKEN_TYPE_SHIFT_AMOUNT) in TokenTypeConst.NULL..TokenTypeConst.STRUCT }
 
             @JvmStatic
             operator fun get(i: Int): Operations? {

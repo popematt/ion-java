@@ -10,6 +10,7 @@ import com.amazon.ion.impl.bin.IonManagedWriter_1_1;
 import com.amazon.ion.impl.bin.ManagedWriterOptions_1_1;
 import com.amazon.ion.impl.bin.SymbolInliningStrategy;
 import com.amazon.ion.system.IonTextWriterBuilder_1_1;
+import com.amazon.ion.system._Private_IonBinaryWriterBuilder_1_1;
 
 import java.io.OutputStream;
 import java.nio.charset.Charset;
@@ -26,6 +27,7 @@ public class _Private_IonTextWriterBuilder_1_1
         return new _Private_IonTextWriterBuilder_1_1.Mutable();
     }
 
+    private boolean simplified = false;
     private SymbolInliningStrategy symbolInliningStrategy = SymbolInliningStrategy.ALWAYS_INLINE;
 
     private _Private_IonTextWriterBuilder_1_1() {
@@ -35,6 +37,7 @@ public class _Private_IonTextWriterBuilder_1_1
     private _Private_IonTextWriterBuilder_1_1(_Private_IonTextWriterBuilder_1_1 that) {
         super(that);
         symbolInliningStrategy = that.symbolInliningStrategy;
+        simplified = that.simplified;
     }
 
     @Override
@@ -142,6 +145,13 @@ public class _Private_IonTextWriterBuilder_1_1
     }
 
     @Override
+    public _Private_IonTextWriterBuilder_1_1 withSimplifiedTemplates() {
+        _Private_IonTextWriterBuilder_1_1 b = mutable();
+        b.simplified = true;
+        return b;
+    }
+
+    @Override
     public IonWriter build(Appendable out) {
         if (out == null) {
             throw new NullPointerException("Cannot construct a writer with a null Appendable.");
@@ -155,6 +165,9 @@ public class _Private_IonTextWriterBuilder_1_1
             // This could be made configurable.
             ManagedWriterOptions_1_1.EExpressionIdentifierStrategy.BY_NAME
         );
+        if (simplified) {
+            return com.amazon.ion.v8.IonManagedWriter_1_1.textWriter(out, options, b);
+        }
         return IonManagedWriter_1_1.textWriter(out, options, b);
     }
 
@@ -173,6 +186,9 @@ public class _Private_IonTextWriterBuilder_1_1
             // This could be made configurable.
             ManagedWriterOptions_1_1.EExpressionIdentifierStrategy.BY_NAME
         );
+        if (simplified) {
+            return com.amazon.ion.v8.IonManagedWriter_1_1.textWriter(out, options, b);
+        }
         return IonManagedWriter_1_1.textWriter(out, options, b);
     }
 

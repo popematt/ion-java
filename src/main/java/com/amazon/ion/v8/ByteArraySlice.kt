@@ -1,10 +1,16 @@
 package com.amazon.ion.v8
 
 /**
+ * Light-weight representation of a slice of a [ByteArray].
+ *
  * Positions are relative to `bytes`, not the underlying data stream.
  */
 class ByteArraySlice(
-    private val bytes: ByteArray,
-    private val startInclusive: Int,
-    private val endExclusive: Int
-)
+    val bytes: ByteArray,
+    val startInclusive: Int,
+    val endExclusive: Int
+) {
+    val length = endExclusive - startInclusive
+
+    fun newByteArray() = bytes.copyOfRange(startInclusive, endExclusive)
+}

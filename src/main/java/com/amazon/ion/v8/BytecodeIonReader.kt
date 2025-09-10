@@ -3,13 +3,6 @@ package com.amazon.ion.v8
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.IntList
-import com.amazon.ion.util.*
-import com.amazon.ion.util.confirm
-import com.amazon.ion.v3.*
-import com.amazon.ion.v3.impl_1_1.binary.*
-import com.amazon.ion.v3.impl_1_1.template.*
-import com.amazon.ion.v3.impl_1_1.template.TemplateReaderImpl.Companion.INSTRUCTION_NOT_SET
-import com.amazon.ion.v3.ion_reader.*
 import com.amazon.ion.v8.Bytecode.OPERATION_SHIFT_AMOUNT
 import com.amazon.ion.v8.Bytecode.TOKEN_TYPE_SHIFT_AMOUNT
 import com.amazon.ion.v8.Bytecode.instructionToOp
@@ -20,7 +13,6 @@ import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.charset.StandardCharsets
 import java.util.*
-import kotlin.collections.ArrayList
 
 
 /**
@@ -32,6 +24,8 @@ import kotlin.collections.ArrayList
  * - read some scalar references (for blobs, clobs, text, timestamps, decimals) from the input
  * - refill the bytecode from the input
  *
+ * TODO: Push the encoding context handling down to the binary-to-bytecode handler so that we can try to get better performance.
+ * TODO: See if we can implement an Ion 1.0 binary-to-bytecode handler so that this can handle both Ion versions.
  */
 class BytecodeIonReader(
     private val source: ByteArray,
@@ -43,6 +37,14 @@ class BytecodeIonReader(
 
     private var minorVersion: Byte = 1
 
+    // TODO: Implement proper encoding context management that supports multiple modules.
+    class ModuleManager {
+        class Module {
+            // TODO
+        }
+        val availableModules = mutableMapOf<String, Module>()
+        val activeModules = mutableListOf<Module>()
+    }
 
     class Context {
         // TODO: Consolidate some of the macro-related encoding context.
@@ -54,15 +56,16 @@ class BytecodeIonReader(
         internal var macroBytecodeOffsets = IntList()
 
         @JvmField
-        internal var currentSymbolTable = UnsafeStringList()
+        internal var currentSymbolTable = UnsafeStringList().apply { SYSTEM_SYMBOLS.forEach { add(it) } }
 
+        /* The unused symbol table, kept so that we can clear and re-use it later instead of re-allocating. */
         @JvmField
-        internal var availableSymbolTable = UnsafeStringList()
+        internal var availableSymbolTable = UnsafeStringList().apply { SYSTEM_SYMBOLS.forEach { add(it) } }
     }
 
     @JvmField internal val context = Context()
 
-    @JvmField internal var symbolTable: Array<String?> = arrayOf(null)
+    @JvmField internal var symbolTable: Array<String?> = context.currentSymbolTable.unsafeGetArray()
 
 
     // TODO: Make operations in BytecodeIonReader access the underlying array instead.
@@ -71,7 +74,7 @@ class BytecodeIonReader(
     }
     @JvmField internal var bytecode = bytecodeIntList.unsafeGetArray()
 
-    @JvmField internal var constantPool = UnsafeArrayList<Any?>(256)
+    @JvmField internal var constantPool = UnsafeObjectList<Any?>(256)
     @JvmField internal var firstLocalConstant = 0
 
     private var instruction = 0
@@ -86,26 +89,52 @@ class BytecodeIonReader(
 
     private val containerStack = _Private_RecyclingStack(10) { ContainerInfo() }
 
-
-    class EncodingContextV8 {
-        class Module {
-            // TODO
-        }
-        val availableModules = mutableMapOf<String, Module>()
-        val activeModules = mutableListOf<Module>()
-
-        // We need the `MacroV8` model for modules other than the default module because we may need to adjust the
-        // constant pool if the list of active modules changes.
-        val macroTable = UnsafeArrayList<MacroV8>()
-
-        val symbolTable = UnsafeArrayList<String?>().apply { add(null) }
-    }
-
-
     data class ContainerInfo(
         @JvmField var isInStruct: Boolean = false,
         @JvmField var bytecodeI: Int = -1,
     )
+
+    companion object {
+        const val INSTRUCTION_NOT_SET = 0
+
+        private val SYSTEM_SYMBOLS = arrayOf(
+            null,
+            "\$ion",
+            "\$ion_1_0",
+            "\$ion_symbol_table",
+            "name",
+            "version",
+            "imports",
+            "symbols",
+            "max_id",
+            "\$ion_shared_symbol_table",
+        )
+
+        @JvmField
+        val TOKEN_TO_ION_TYPES = arrayOf(
+            null,
+            IonType.NULL,
+            IonType.BOOL,
+            IonType.INT,
+            IonType.FLOAT,
+
+            IonType.DECIMAL,
+            IonType.TIMESTAMP,
+            IonType.STRING,
+            IonType.SYMBOL,
+            IonType.CLOB,
+
+            IonType.BLOB,
+            IonType.LIST,
+            IonType.SEXP,
+            IonType.STRUCT,
+            // Pad with extra nulls so that we don't get ArrayIndexOutOfBoundsException with some of the non-data model token types.
+            null,
+            null, null, null, null, null,
+            null, null, null, null, null,
+            null, null, null, null, null,
+        )
+    }
 
     override fun close() {}
 
@@ -126,6 +155,9 @@ class BytecodeIonReader(
 
         val bytecodeArray = bytecodeIntList.unsafeGetArray()
         this.bytecode = bytecodeArray
+
+//        Bytecode.debugString(bytecodeArray)
+//        println()
 
         return bytecodeArray
     }
@@ -209,10 +241,6 @@ class BytecodeIonReader(
             }
         } while (true)
 
-//        if (nTLV == 12 && fieldName == "Groups") {
-//            Bytecode.debugString(bytecode, constantPool = constantPool.unsafeGetArray(), symbolTable = symbolTable, start = i - 1, end = i + 100)
-//        }
-
         this.bytecodeI = i
         this.instruction = instruction
         this.annotationsIndex = annotationStart - 1
@@ -227,18 +255,20 @@ class BytecodeIonReader(
         when (minorVersion) {
             0 -> {
                 this.minorVersion = 0
-                this.symbolTable = EncodingContext.ION_1_0_SYMBOL_TABLE
+//                this.symbolTable = EncodingContext.ION_1_0_SYMBOL_TABLE
                 this.context.macroTable = emptyArray()
                 TODO()
             }
             1 -> {
                 this.minorVersion = 1
-                this.symbolTable = arrayOf(null)
+                this.symbolTable = SYSTEM_SYMBOLS
+                this.context.currentSymbolTable.truncate(10)
                 this.context.macroTable = emptyArray()
             }
         }
     }
 
+    // TODO: Push this into the bytecode compiler
     private fun handleSystemValue(instruction: Int, bytecode: IntArray, position: Int): Int {
         // TODO: We could probably make this more efficient, or re-use some of the existing code.
         var i = position
@@ -246,8 +276,8 @@ class BytecodeIonReader(
             Bytecode.DIRECTIVE_SET_SYMBOLS -> {
                 val context = context
                 val newSymbols = context.availableSymbolTable
-                newSymbols.clear()
-                newSymbols.add(null)
+                newSymbols.truncate(10)
+                // newSymbols.add(null)
                 val constantPool = constantPool
                 while (true) {
                     val instruction0 = bytecode[i++]
@@ -270,8 +300,8 @@ class BytecodeIonReader(
                 this.symbolTable = newSymbols.unsafeGetArray()
             }
             Bytecode.DIRECTIVE_ADD_SYMBOLS -> {
-                // TODO: Just add to the existing symbol table object.
                 val newSymbols = context.currentSymbolTable
+                val constantPool = constantPool
                 while (true) {
                     val instruction0 = bytecode[i++]
                     val s = when (instruction0.instructionToOp()) {
@@ -280,7 +310,6 @@ class BytecodeIonReader(
                         Bytecode.OP_REF_SYMBOL_TEXT,
                         Bytecode.OP_REF_STRING -> readText(position = bytecode[i++], length = instruction0 and Bytecode.DATA_MASK, source)
                         Bytecode.OP_SYMBOL_CHAR -> (instruction0 and Bytecode.DATA_MASK).toChar().toString()
-                        Bytecode.OP_SYMBOL_SYSTEM_SID -> EncodingContextManager.ION_1_1_SYSTEM_SYMBOLS_AS_SYMBOL_TABLE[instruction0 and Bytecode.DATA_MASK]
                         Bytecode.OP_SYMBOL_SID -> symbolTable[instruction0 and Bytecode.DATA_MASK]
                         Bytecode.OP_NULL_SYMBOL,
                         Bytecode.OP_NULL_STRING -> null
@@ -293,7 +322,7 @@ class BytecodeIonReader(
                 this.symbolTable = newSymbols.unsafeGetArray()
             }
             Bytecode.DIRECTIVE_SET_MACROS -> {
-                val newMacroNames = UnsafeArrayList<String?>()
+                val newMacroNames = UnsafeObjectList<String?>()
                 val newMacroBytecode = IntList()
                 val newMacroOffsets = IntList()
                 newMacroOffsets.add(0)
@@ -338,7 +367,7 @@ class BytecodeIonReader(
 //                Bytecode.debugString(macroTableBytecode.unsafeGetArray(), constantPool = constantPool.toArray())
             }
             Bytecode.DIRECTIVE_ADD_MACROS -> {
-                val newMacroNames = UnsafeArrayList<String?>()
+                val newMacroNames = UnsafeObjectList<String?>()
                 val context = this.context
                 val newMacroBytecode = context.macroTableBytecode
                 val newMacroOffsets = context.macroBytecodeOffsets
@@ -357,7 +386,6 @@ class BytecodeIonReader(
                                 Bytecode.OP_REF_SYMBOL_TEXT,
                                 Bytecode.OP_REF_STRING -> readText(position = bytecode[i++], length = nameInstruction and Bytecode.DATA_MASK, source)
                                 Bytecode.OP_SYMBOL_CHAR -> (nameInstruction and Bytecode.DATA_MASK).toChar().toString()
-                                Bytecode.OP_SYMBOL_SYSTEM_SID -> EncodingContextManager.ION_1_1_SYSTEM_SYMBOLS_AS_SYMBOL_TABLE[nameInstruction and Bytecode.DATA_MASK]
                                 Bytecode.OP_SYMBOL_SID -> symbolTable[nameInstruction and Bytecode.DATA_MASK]
                                 Bytecode.OP_NULL_NULL,
                                 Bytecode.OP_NULL_SYMBOL,
@@ -381,33 +409,6 @@ class BytecodeIonReader(
     }
 
     override fun getType(): IonType? = getType(instruction)
-
-    companion object {
-        @JvmField
-        val TOKEN_TO_ION_TYPES = arrayOf(
-            null,
-            IonType.NULL,
-            IonType.BOOL,
-            IonType.INT,
-            IonType.FLOAT,
-
-            IonType.DECIMAL,
-            IonType.TIMESTAMP,
-            IonType.STRING,
-            IonType.SYMBOL,
-            IonType.BLOB,
-
-            IonType.CLOB,
-            IonType.LIST,
-            IonType.SEXP,
-            IonType.STRUCT,
-            null,
-
-            null, null, null, null, null,
-            null, null, null, null, null,
-            null, null, null, null, null,
-        )
-    }
 
     fun getType(instruction: Int): IonType? {
         return TOKEN_TO_ION_TYPES[instruction ushr (OPERATION_SHIFT_AMOUNT + TOKEN_TYPE_SHIFT_AMOUNT)]
@@ -492,7 +493,7 @@ class BytecodeIonReader(
         var p = annotationsIndex
         val bytecode = this.bytecode
         for (i in 0 until nAnnotations) {
-            val instruction = bytecode[p]
+            val instruction = bytecode[p++]
             result[i] = when (instruction.instructionToOp()) {
                 Bytecode.OP_CP_ANNOTATION -> constantPool[instruction and Bytecode.DATA_MASK] as String?
                 Bytecode.OP_ANNOTATION_SID -> symbolTable[instruction and Bytecode.DATA_MASK]
@@ -501,7 +502,7 @@ class BytecodeIonReader(
                     val length = instruction and Bytecode.DATA_MASK
                     readText(position, length, source)
                 }
-                else -> throw IllegalStateException("Field name index does not point to a field name; was ${MacroBytecode(instruction)}")
+                else -> throw IllegalStateException("annotationsIndex does not point to an annotation; was ${Bytecode(instruction)}")
             }
         }
         return result
@@ -515,7 +516,7 @@ class BytecodeIonReader(
         var p = annotationsIndex
         val bytecode = this.bytecode
         val result = Array(nAnnotations) { i ->
-            val instruction = bytecode[p]
+            val instruction = bytecode[p++]
             when (instruction.instructionToOp()) {
                 Bytecode.OP_CP_ANNOTATION -> {
                     val text = constantPool[instruction and Bytecode.DATA_MASK] as String?
@@ -532,7 +533,7 @@ class BytecodeIonReader(
                     val text = readText(position, length, source)
                     createSymbolToken(text, -1)
                 }
-                else -> throw IllegalStateException("Annotation index does not point to an annotation; was ${MacroBytecode(instruction)}")
+                else -> throw IllegalStateException("Annotation index does not point to an annotation; was ${Bytecode(instruction)}")
             }
         }
         return result
@@ -549,7 +550,7 @@ class BytecodeIonReader(
             Bytecode.OP_CP_FIELD_NAME -> -1
             Bytecode.OP_FIELD_NAME_SID -> fieldInstruction and Bytecode.DATA_MASK
             Bytecode.OP_REF_FIELD_NAME_TEXT -> -1
-            else -> throw IllegalStateException("Field name index does not point to a field name; was ${MacroBytecode(fieldInstruction)}")
+            else -> throw IllegalStateException("Field name index does not point to a field name; was ${Bytecode(fieldInstruction)}")
         }
     }
 
@@ -565,7 +566,7 @@ class BytecodeIonReader(
                 val length = fieldInstruction and Bytecode.DATA_MASK
                 readText(position, length, source)
             }
-            else -> throw IllegalStateException("Field name index does not point to a field name; was ${MacroBytecode(fieldInstruction)}")
+            else -> throw IllegalStateException("Field name index does not point to a field name; was ${Bytecode(fieldInstruction)}")
         }
     }
 
@@ -589,7 +590,7 @@ class BytecodeIonReader(
                 val text = readText(position, length, source)
                 createSymbolToken(text, -1)
             }
-            else -> throw IllegalStateException("Field name index does not point to a field name; was ${MacroBytecode(fieldInstruction)}")
+            else -> throw IllegalStateException("Field name index does not point to a field name; was ${Bytecode(fieldInstruction)}")
         }
     }
 
@@ -602,7 +603,7 @@ class BytecodeIonReader(
     override fun isNullValue(): Boolean {
         val instruction = this.instruction
         val op = instruction.instructionToOp()
-        return op == op and 7
+        return 7 == (op and 7)
     }
 
     override fun booleanValue(): Boolean {
@@ -637,7 +638,7 @@ class BytecodeIonReader(
                 val bi = constantPool[cpIndex] as BigInteger
                 bi.longValueExact()
             }
-            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${Bytecode(instruction)}")
         }
         return long
     }
@@ -659,7 +660,7 @@ class BytecodeIonReader(
             Bytecode.OP_INLINE_FLOAT -> {
                 Float.fromBits(bytecode[i]).toDouble()
             }
-            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${Bytecode(instruction)}")
         }
         return double
     }
@@ -670,13 +671,16 @@ class BytecodeIonReader(
         val op = instruction.instructionToOp()
         when (op) {
             Bytecode.OP_REF_DECIMAL -> {
-                TODO("Decimal Refs")
+                val i = bytecodeI
+                val length = instruction and Bytecode.DATA_MASK
+                val position = bytecode[i]
+                return DecimalHelper.readDecimal(source, position, length)
             }
             Bytecode.OP_CP_DECIMAL -> {
                 val constantPoolIndex = (instruction and Bytecode.DATA_MASK)
                 return Decimal.valueOf(constantPool[constantPoolIndex] as BigDecimal)
             }
-            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${Bytecode(instruction)}")
         }
     }
 
@@ -694,18 +698,19 @@ class BytecodeIonReader(
             Bytecode.OP_REF_TIMESTAMP_SHORT -> {
                 val opcode = instruction and Bytecode.DATA_MASK
                 val position = bytecode[i]
-                return TimestampByteArrayHelper.readShortTimestampAt(opcode, source, position)
+                return TimestampHelper.readShortTimestampAt(opcode, source, position)
             }
             Bytecode.OP_REF_TIMESTAMP_LONG -> {
                 val length = instruction and Bytecode.DATA_MASK
                 val position = bytecode[i]
-                return TimestampByteArrayHelper.readLongTimestampAt(source, position, length)
+                return TimestampHelper.readLongTimestampAt(source, position, length)
             }
-            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${Bytecode(instruction)}")
         }
     }
 
 
+    @OptIn(ExperimentalStdlibApi::class)
     override fun stringValue(): String? {
         val i = bytecodeI
         return when (instruction.instructionToOp()) {
@@ -736,7 +741,7 @@ class BytecodeIonReader(
                 symbolTable[sid]
             }
 
-            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${MacroBytecode(instruction)}")
+            else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${Bytecode(instruction)}")
         }
     }
 
@@ -752,7 +757,7 @@ class BytecodeIonReader(
                 _Private_Utils.newSymbolToken(text)
             }
             Bytecode.OP_REF_SYMBOL_TEXT -> {
-                val position = bytecode[i + 1]
+                val position = bytecode[i]
                 val length = instruction and Bytecode.DATA_MASK
                 val text = readText(position, length, source)
                 _Private_Utils.newSymbolToken(text)
@@ -760,10 +765,6 @@ class BytecodeIonReader(
             Bytecode.OP_SYMBOL_CHAR -> {
                 val c = (instruction and Bytecode.DATA_MASK).toChar()
                 _Private_Utils.newSymbolToken(c.toString())
-            }
-            Bytecode.OP_SYMBOL_SYSTEM_SID -> {
-                val text = EncodingContextManager.ION_1_1_SYSTEM_SYMBOLS_AS_SYMBOL_TABLE[instruction and Bytecode.DATA_MASK]
-                _Private_Utils.newSymbolToken(text)
             }
             Bytecode.OP_SYMBOL_SID -> {
                 val sid = instruction and Bytecode.DATA_MASK
@@ -775,10 +776,46 @@ class BytecodeIonReader(
     }
 
 
-    override fun getSymbolTable(): SymbolTable = ArrayBackedLstSnapshot(symbolTable.copyOf())
+    override fun getSymbolTable(): SymbolTable = ArrayBackedLstSnapshot(context.currentSymbolTable.toArray())
 
-    override fun byteSize(): Int = TODO("Not yet implemented")
-    override fun newBytes(): ByteArray = TODO("Not yet implemented")
+    override fun byteSize(): Int {
+        val instruction = this.instruction
+        val op = instruction.instructionToOp()
+        return when (op) {
+            Bytecode.OP_CP_BLOB,
+            Bytecode.OP_CP_CLOB -> {
+                val slice = constantPool[instruction and Bytecode.DATA_MASK] as ByteArraySlice
+                slice.length
+            }
+            Bytecode.OP_REF_BLOB,
+            Bytecode.OP_REF_CLOB -> {
+                val length = instruction and Bytecode.DATA_MASK
+                length
+            }
+            else -> throw IonException("Not positioned on a lob value")
+        }
+    }
+
+    override fun newBytes(): ByteArray {
+        val instruction = this.instruction
+        val op = instruction.instructionToOp()
+        val i = bytecodeI
+        return when (op) {
+            Bytecode.OP_CP_BLOB,
+            Bytecode.OP_CP_CLOB -> {
+                val slice = constantPool[instruction and Bytecode.DATA_MASK] as ByteArraySlice
+                slice.newByteArray()
+            }
+            Bytecode.OP_REF_BLOB,
+            Bytecode.OP_REF_CLOB -> {
+                val length = instruction and Bytecode.DATA_MASK
+                val position = bytecode[i]
+                source.copyOfRange(position, position + length)
+            }
+            else -> throw IonException("Not positioned on a lob value")
+        }
+    }
+
     override fun getBytes(buffer: ByteArray?, offset: Int, len: Int): Int = TODO("Not yet implemented")
     override fun <T : Any?> asFacet(facetType: Class<T>?): T = TODO("Not yet implemented")
 }

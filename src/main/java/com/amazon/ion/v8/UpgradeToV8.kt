@@ -2,15 +2,16 @@ package com.amazon.ion.v8
 
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.*
-import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.binary.*
+import com.amazon.ion.impl.macro.*
 import java.nio.ByteBuffer
 
+/**
+ * Converts from current Ion 1.1 spec to simplified templates spec.
+ *
+ * WARNING, This was used for converting a specific piece of data. It is not yet suitable for general purpose use.
+ * However, it may be useful as the basis for a general purpose converter at some point.
+ */
 object UpgradeToV8 {
-
-
-    const val POI = -1550
-    val POI_RANGE = (POI - 200)..(POI + 200)
 
     private fun ByteBuffer.transferN(n: Int, to: ByteBuffer) { repeat(n) { to.put(get()) } }
 
@@ -25,9 +26,6 @@ object UpgradeToV8 {
 
         val byte = readBuffer.get()
 
-        if (writeBuffer.position() in POI_RANGE) {
-            println("Copying value for ${byte.toHexString()} at Ir=${readBuffer.position() - 1} to Iw=${writeBuffer.position()}")
-        }
         when (byte.toInt() and 0xFF) {
             // one
             0x00 -> writeBuffer.put(byte)
@@ -217,7 +215,7 @@ object UpgradeToV8 {
 
             in 0x80..0x8C -> {
                 writeBuffer.put(byte)
-                val n = TimestampByteArrayHelper.lengthOfShortTimestamp(byte.toInt() and 0xFF)
+                val n = TimestampHelper.lengthOfShortTimestamp(byte.toInt() and 0xFF)
                 copyBytes(n)
             }
 
@@ -335,7 +333,7 @@ object UpgradeToV8 {
             0xEF -> {
                 val macid = readBuffer.get().toInt() and 0xFF
                 when (macid) {
-                    SystemMacro.SET_SYMBOLS_ADDRESS -> {
+                    SystemMacro.SetSymbols.id.toInt() -> {
                         writeBuffer.put(0xE1.toByte())
                         val presenceBits = readBuffer.get().toInt() and 0xFF
                         when (presenceBits) {
@@ -362,7 +360,7 @@ object UpgradeToV8 {
                             }
                         }
                     }
-                    SystemMacro.ADD_SYMBOLS_ADDRESS -> {
+                    SystemMacro.AddSymbols.id.toInt() -> {
                         writeBuffer.put(0xE2.toByte())
                         val presenceBits = readBuffer.get().toInt() and 0xFF
                         when (presenceBits) {
@@ -389,7 +387,7 @@ object UpgradeToV8 {
                             }
                         }
                     }
-                    SystemMacro.NONE_ADDRESS -> {
+                    SystemMacro.None.id.toInt() -> {
                         writeBuffer.put(0xE8.toByte())
                     }
                     else -> TODO("System macro $macid")
@@ -442,10 +440,6 @@ object UpgradeToV8 {
         val p = readBuffer.position()
         val flexInt = IntHelper.readFlexInt(readBuffer)
 
-        if (writeBuffer.position() in POI_RANGE) {
-            println("Copying flexSymFieldName ($flexInt) at Ir=$p to Iw=${writeBuffer.position()}")
-        }
-
         if (flexInt == 0) {
             val sysSid = readBuffer.get().toInt() and 0xFF
             if (sysSid == 0xF0) {
@@ -483,7 +477,4 @@ object UpgradeToV8 {
             FlexInt.writeFlexIntOrUIntInto(writeBuffer, flexInt.toLong())
         }
     }
-
-
-
 }

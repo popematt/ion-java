@@ -1,12 +1,8 @@
 package com.amazon.ion.v8
 
 import com.amazon.ion.*
-import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.*
 import com.amazon.ion.system.*
-import com.amazon.ion.util.*
-import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.binary.*
 import com.amazon.ion.v8.Bytecode.opToInstruction
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -570,7 +566,7 @@ class ToBytecodeTest {
     fun checkIonBinaryCompilesToBytecode(
         ionBinary: String,
         expectedBytecode: String,
-        cp: UnsafeArrayList<Any?> = UnsafeArrayList<Any?>(),
+        cp: UnsafeObjectList<Any?> = UnsafeObjectList<Any?>(),
         symTab: Array<String?> = arrayOf<String?>(null),
         macTab: IntArray = IntArray(0),
         macOffsets: IntArray = intArrayOf(0),
@@ -592,7 +588,7 @@ class ToBytecodeTest {
     fun checkIonBinaryTopLevelCompilesToBytecode(
         ionBinary: String,
         expectedBytecode: String,
-        cp: UnsafeArrayList<Any?> = UnsafeArrayList<Any?>(),
+        cp: UnsafeObjectList<Any?> = UnsafeObjectList<Any?>(),
         symTab: Array<String?> = arrayOf<String?>(null),
         macTab: IntArray = IntArray(0),
         macOffsets: IntArray = intArrayOf(0),

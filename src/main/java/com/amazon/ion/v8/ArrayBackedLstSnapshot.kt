@@ -1,4 +1,4 @@
-package com.amazon.ion.v3.ion_reader
+package com.amazon.ion.v8
 
 import com.amazon.ion.*
 import com.amazon.ion.impl.*

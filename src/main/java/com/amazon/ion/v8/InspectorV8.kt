@@ -1,9 +1,11 @@
 package com.amazon.ion.v8
 
-import com.amazon.ion.v3.impl_1_1.binary.*
-import com.amazon.ion.v8.Bytecode.OP_PARAMETER
 import java.nio.charset.StandardCharsets
 
+/**
+ * WARNING, This was used for inspecting data with a specific set of known macros. It is not yet suitable for general purpose use.
+ * However, it may be useful as the basis for a general purpose inspector at some point.
+ */
 object InspectorV8 {
     // TODO: Get away from having this hardcoded, support tagless args
     val macroSignatures = intArrayOf(
@@ -122,7 +124,7 @@ object InspectorV8 {
                 }
 
                 in 0x40..0x5F -> TODO("Opcode ${opcode.toHexString()} at position=$position")
-                in 0x60..0x68 -> {
+                in Ops.INT_0..Ops.INT_64 -> {
                     val length = opcode and 0xF
                     val value = IntHelper.readFixedIntAt(source, p, length)
                     sink.writeRow(position, source.sliceArray(position until p + length), indent(depth, value))
@@ -130,28 +132,28 @@ object InspectorV8 {
                 }
 
                 0x69 -> TODO("Invalid")
-                0x6A -> {
+                Ops.FLOAT_0 -> {
                     sink.writeRow(position, byteArrayOf(0x6A), indent(depth, "0e0"))
                 }
 
-                0x6B -> TODO()
-                0x6C -> {
+                Ops.FLOAT_16 -> TODO()
+                Ops.FLOAT_32 -> {
                     val bits = IntHelper.readFixedIntAt(source, p, 4)
                     val float = Float.fromBits(bits.toInt())
                     sink.writeRow(position, source.sliceArray(position until p + 4), indent(depth, float))
                     p += 4
                 }
 
-                0x6D -> {
+                Ops.FLOAT_64 -> {
                     val bits = IntHelper.readFixedIntAt(source, p, 8)
                     val float = Double.fromBits(bits)
                     sink.writeRow(p - 1, source.sliceArray(position until p + 8), indent(depth, float))
                     p += 8
                 }
 
-                0x6E -> sink.writeRow(p - 1, byteArrayOf(0x6E), indent(depth, true))
-                0x6F -> sink.writeRow(p - 1, byteArrayOf(0x6F), indent(depth, false))
-                in 0x70..0x7F -> {
+                Ops.BOOL_TRUE -> sink.writeRow(p - 1, byteArrayOf(0x6E), indent(depth, true))
+                Ops.BOOL_FALSE -> sink.writeRow(p - 1, byteArrayOf(0x6F), indent(depth, false))
+                in Ops.DECIMAL_0..0x7F -> {
                     val length = opcode and 0xF
                     sink.writeRow(
                         position,
@@ -161,9 +163,9 @@ object InspectorV8 {
                     p += length
                 }
 
-                in 0x80..0x8C -> {
-                    val length = TimestampByteArrayHelper.lengthOfShortTimestamp(opcode)
-                    val ts = TimestampByteArrayHelper.readShortTimestampAt(opcode, source, p)
+                in Ops.TIMESTAMP_YEAR_PRECISION..Ops.TIMESTAMP_NANOS_PRECISION_WITH_OFFSET -> {
+                    val length = TimestampHelper.lengthOfShortTimestamp(opcode)
+                    val ts = TimestampHelper.readShortTimestampAt(opcode, source, p)
                     sink.writeRow(
                         position,
                         source.sliceArray(position until p + length),
@@ -172,13 +174,12 @@ object InspectorV8 {
                     p += length
                 }
 
+                Ops.ANNOTATION_SID -> {}
+                Ops.ANNOTATION_TEXT -> {}
+                Ops.NULL_NULL -> {}
+                Ops.TYPED_NULL -> {}
 
-                0x8D -> {}
-                0x8E -> {}
-                0x8F -> {}
-                0x90 -> {}
-
-                in 0x91..0x9F -> {
+                in (Ops.STRING_LENGTH_1)..(Ops.STRING_LENGTH_15) -> {
                     val length = opcode and 0xF
                     val text = String(source, p, length, StandardCharsets.UTF_8)
                     sink.writeRow(
@@ -189,7 +190,7 @@ object InspectorV8 {
                     p += length
                 }
 
-                0xA0 -> {
+                Ops.SYMBOL_VALUE_SID -> {
                     val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, p)
                     val length = valueAndLength.toInt().and(0xFF)
                     val sid = valueAndLength.ushr(8).toInt()
@@ -197,7 +198,7 @@ object InspectorV8 {
                     p += length
                 }
 
-                in 0xA1..0xAF -> {
+                in Ops.SYMBOL_VALUE_TEXT_ONE_LENGTH..Ops.SYMBOL_LENGTH_15 -> {
                     val length = opcode and 0xF
                     val text = String(source, p, length, StandardCharsets.UTF_8)
                     sink.writeRow(
@@ -208,7 +209,7 @@ object InspectorV8 {
                     p += length
                 }
 
-                in 0xB0..0xBF -> {
+                in Ops.LIST_ZERO_LENGTH..Ops.LIST_LENGTH_15 -> {
                     val length = opcode and 0xF
                     sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "["))
                     val end = p + length
@@ -219,7 +220,7 @@ object InspectorV8 {
                     p += length
                 }
 
-                in 0xC0..0xCF -> {
+                in Ops.SEXP_ZERO_LENGTH..Ops.SEXP_LENGTH_15 -> {
                     val length = opcode and 0xF
                     sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "("))
                     val end = p + length
@@ -231,7 +232,7 @@ object InspectorV8 {
                 }
 
                 0xD1 -> TODO("Invalid")
-                in 0xD0..0xDF -> {
+                in Ops.STRUCT_ZERO_LENGTH..Ops.STRUCT_LENGTH_15 -> {
                     val length = opcode and 0xF
                     sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "{"))
                     val end = p + length
@@ -243,12 +244,12 @@ object InspectorV8 {
                     p += length
                 }
 
-                0xE0 -> {
+                Ops.IVM -> {
                     sink.writeRow(position, source.sliceArray(position until position + 4), indent(depth, "< IVM >"))
                     p += 3
                 }
 
-                in 0xE1..0xE7 -> {
+                in Ops.SET_SYMBOLS ..Ops.ENCODING -> {
                     sink.writeRow(
                         position,
                         byteArrayOf(opcode.toByte()),
@@ -261,9 +262,9 @@ object InspectorV8 {
                     p++
                 }
 
-                0xE8 -> sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "(:)"))
-                0xE9 -> sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "(:?)"))
-                0xEA -> {
+                Ops.NOTHING_ARGUMENT -> sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "(:)"))
+                Ops.TAGGED_PLACEHOLDER -> sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "(:?)"))
+                Ops.TAGGED_PLACEHOLDER_WITH_DEFAULT -> {
                     sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "(:?"))
                     p += inspectValue(depth + 1, p, source, sink)
                     sink.writeRow(-1, byteArrayOf(), indent(depth, ")"))
@@ -272,10 +273,10 @@ object InspectorV8 {
                 0xEB -> TODO("Tagless parameters")
                 0xEC -> TODO("Invalid/Reserved")
                 0xED -> TODO("Homogeneous List")
-                0xEE -> sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "< NOP >"))
-                0xEF -> TODO("NOP with length")
-                0xF0 -> TODO("Handled elsewhere")
-                0xF1 -> {
+                Ops.NOP -> sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "< NOP >"))
+                Ops.NOP_L -> TODO("NOP with length")
+                Ops.DELIMITED_CONTAINER_END -> TODO("Handled elsewhere")
+                Ops.DELIMITED_LIST -> {
                     sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "["))
                     while (source[p].toInt().and(0xFF) != 0xF0) {
                         p += inspectValue(depth + 1, p, source, sink)
@@ -284,7 +285,7 @@ object InspectorV8 {
                     p++
                 }
 
-                0xF2 -> {
+                Ops.DELIMITED_SEXP -> {
                     sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "("))
                     while (source[p].toInt().and(0xFF) != 0xF0) {
                         p += inspectValue(depth + 1, p, source, sink)
@@ -293,7 +294,7 @@ object InspectorV8 {
                     p++
                 }
 
-                0xF3 -> {
+                Ops.DELIMITED_STRUCT -> {
                     sink.writeRow(position, byteArrayOf(opcode.toByte()), indent(depth, "{"))
                     p += inspectFieldName(depth + 1, p, source, sink)
                     while (source[p].toInt().and(0xFF) != 0xF0) {

@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-package com.amazon.ion.v3.impl_1_1.binary
+package com.amazon.ion.v8
 
 import com.amazon.ion.*
 import com.amazon.ion.Timestamp._private_createFromLocalTimeFieldsUnchecked as uncheckedNewTimestamp
@@ -17,10 +17,11 @@ import java.nio.ByteBuffer
  *
  * TODO: Update all methods to avoid auto-boxing the offset integer.
  */
-object TimestampByteArrayHelper {
+object TimestampHelper {
 
+    /** The number of data bytes for each short-form timestamp */
     @JvmField
-    internal val SHORT_TS_LENGTHS = TimestampHelper.SHORT_TS_LENGTHS
+    internal val SHORT_TS_LENGTHS = byteArrayOf(1, 2, 2, 4, 5, 6, 7, 8, 9, 5, 5, 7, 8, 9)
 
     @JvmStatic
     fun lengthOfShortTimestamp(opcode: Int): Int = SHORT_TS_LENGTHS[opcode and 0xF].toInt()
@@ -30,6 +31,11 @@ object TimestampByteArrayHelper {
      */
     @JvmStatic
     fun readShortTimestampAt(opcode: Int, source: ByteArray, position: Int): Timestamp {
+        // Often, the data for an application will use a lot of timestamps with similar precisions. For example, logging
+        // might use mostly millisecond-precision timestamps with UTC offsets, or a calendar application might use
+        // minute precision with an offset for representing calendar events.
+        // Because of this, each case is handled in a separate method so that the JVM can inline the cases that are most
+        // commonly used in any given application.
         return when (opcode) {
             0x80 -> readTimestamp0x80(source, position)
             0x81 -> readTimestamp0x81(source, position)

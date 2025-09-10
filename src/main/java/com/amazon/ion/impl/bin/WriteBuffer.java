@@ -162,6 +162,26 @@ public final class WriteBuffer implements Closeable
         block.limit++;
     }
 
+    /** Writes a single octet to the buffer, expanding if necessary. */
+    public void write2Bytes(final byte octet0, final byte octet1)
+    {
+        if (remaining() < 2)
+        {
+            if (index == blocks.size() - 1)
+            {
+                allocateNewBlock();
+            }
+            index++;
+            current = blocks.get(index);
+        }
+        final Block block = current;
+        final byte[] data = block.data;
+        int limit = block.limit;
+        data[limit++] = octet0;
+        data[limit++] = octet1;
+        block.limit = limit;
+    }
+
     // slow in the sense that we do all kind of block boundary checking
     private void writeBytesSlow(final byte[] bytes, int off, int len)
     {

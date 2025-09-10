@@ -124,12 +124,12 @@ public abstract class _Private_IonTextWriterBuilder<T extends _Private_IonTextWr
     }
 
 
-    final boolean isPrettyPrintOn()
+    public final boolean isPrettyPrintOn()
     {
         return _pretty_print;
     }
 
-    final CharSequence lineSeparator()
+    public final CharSequence lineSeparator()
     {
         if (_pretty_print) {
             return getNewLineType().getCharSequence();
@@ -139,7 +139,7 @@ public abstract class _Private_IonTextWriterBuilder<T extends _Private_IonTextWr
         }
     }
 
-    final CharSequence topLevelSeparator()
+    public final CharSequence topLevelSeparator()
     {
         return getWriteTopLevelValuesOnNewLines() ? getNewLineType().getCharSequence() : lineSeparator();
     }

@@ -167,6 +167,9 @@ public interface IonWriterBuilder_1_1<T extends IonWriterBuilder_1_1<T>> {
      */
     T mutable();
 
+
+    T withSimplifiedTemplates();
+
     /**
      * Builds a new writer based on this builder's configuration
      * properties.

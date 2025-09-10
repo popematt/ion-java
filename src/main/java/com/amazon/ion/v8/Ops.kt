@@ -1,9 +1,10 @@
 package com.amazon.ion.v8
 
 import com.amazon.ion.IonType
-import com.amazon.ion.v3.*
 
 object Ops {
+    const val MACRO_0 = 0x00
+    const val MACRO_3F = 0x3F
 
     const val BIASED_E_EXPRESSION_ONE_BYTE_FIXED_INT = 0x40
     const val BIASED_E_EXPRESSION_TWO_BYTE_FIXED_INT = 0x50
@@ -20,7 +21,7 @@ object Ops {
     const val RESERVED_0x69 = 0x69
 
     const val FLOAT_0 = 0x6A
-    const val FLOAT_8 = 0x6B
+    const val FLOAT_16 = 0x6B
     const val FLOAT_32 = 0x6C
     const val FLOAT_64 = 0x6D
 
@@ -28,6 +29,7 @@ object Ops {
     const val BOOL_FALSE = 0x6F
 
     const val DECIMAL_0 = 0x70
+    const val DECIMAL_LENGTH_15 = 0x7F
 
     const val TIMESTAMP_YEAR_PRECISION = 0x80
     const val TIMESTAMP_MONTH_PRECISION = 0x81
@@ -46,19 +48,26 @@ object Ops {
     const val ANNOTATION_SID = 0x8D
     const val ANNOTATION_TEXT = 0x8E
 
-    const val STRING_VALUE_ZERO_LENGTH = 0x90
+    const val NULL_NULL = 0x8F
+    const val TYPED_NULL = 0x90
+
+    const val STRING_LENGTH_1 = 0x91
+    const val STRING_LENGTH_15 = 0x9F
 
     const val SYMBOL_VALUE_SID = 0xA0
 
     const val SYMBOL_VALUE_TEXT_ONE_LENGTH = 0xA1
+    const val SYMBOL_LENGTH_15 = 0xAF
 
     const val LIST_ZERO_LENGTH = 0xB0
+    const val LIST_LENGTH_15 = 0xBF
 
     const val SEXP_ZERO_LENGTH = 0xC0
+    const val SEXP_LENGTH_15 = 0xCF
 
     const val STRUCT_ZERO_LENGTH = 0xD0
     const val RESERVED_0xD1 = 0xD1
-
+    const val STRUCT_LENGTH_15 = 0xDF
 
     const val IVM = 0xE0
     const val SET_SYMBOLS = 0xE1
@@ -68,15 +77,15 @@ object Ops {
     const val USE = 0xE5
     const val MODULE = 0xE6
     const val ENCODING = 0xE7
-    const val NOTHING = 0xE8
-    const val PLACEHOLDER = 0xE9
-    const val SYSTEM_SYMBOL = 0xEA
-    const val HOMOGENEOUS_LIST = 0xEB
-    const val NOP = 0xEC
-    const val NOP_L = 0xED
-    const val NULL_NULL = 0xEE
-    const val TYPED_NULL = 0xEF
+    const val NOTHING_ARGUMENT = 0xE8
+    const val TAGGED_PLACEHOLDER = 0xE9
+    const val TAGGED_PLACEHOLDER_WITH_DEFAULT = 0xEA
+    const val TAGLESS_PLACEHOLDER = 0xEB
 
+    const val HOMOGENEOUS_LIST = 0xED
+
+    const val NOP = 0xEE
+    const val NOP_L = 0xEF
 
     const val DELIMITED_CONTAINER_END = 0xF0
     const val DELIMITED_LIST = 0xF1
@@ -131,7 +140,7 @@ object Ops {
             in 0x60..0x68 -> Info(IonType.INT, (opcode and 0xF), TokenTypeConst.INT)
             0x69 -> Info(null, 0, TokenTypeConst.RESERVED)
             0x6A -> Info(IonType.FLOAT, 0, TokenTypeConst.FLOAT)
-            0x6B -> Info(IonType.FLOAT, 1, TokenTypeConst.FLOAT)
+            0x6B -> Info(IonType.FLOAT, 2, TokenTypeConst.FLOAT)
             0x6C -> Info(IonType.FLOAT, 4, TokenTypeConst.FLOAT)
             0x6D -> Info(IonType.FLOAT, 8, TokenTypeConst.FLOAT)
             0x6E,
@@ -153,9 +162,8 @@ object Ops {
 
             ANNOTATION_SID -> Info(null, -3, TokenTypeConst.ANNOTATIONS)
             ANNOTATION_TEXT -> Info(null, -1, TokenTypeConst.ANNOTATIONS)
-            0x8F -> Info(null, -2, TokenTypeConst.VARIABLE_REF)
 
-            in 0x90..0x9F -> Info(IonType.STRING, (opcode and 0xF), TokenTypeConst.STRING)
+            in 0x91..0x9F -> Info(IonType.STRING, (opcode and 0xF), TokenTypeConst.STRING)
             0xA0 -> Info(IonType.SYMBOL, -3, TokenTypeConst.SYMBOL)
             in 0xA1..0xAF -> Info(IonType.SYMBOL, (opcode and 0xF), TokenTypeConst.SYMBOL)
             in 0xB0..0xBF -> Info(IonType.LIST, (opcode and 0xF), TokenTypeConst.LIST)
@@ -171,9 +179,10 @@ object Ops {
             USE -> Info(null, -2, TokenTypeConst.SYSTEM_VALUE)
             MODULE -> Info(null, -2, TokenTypeConst.SYSTEM_VALUE)
             ENCODING -> Info(null, -2, TokenTypeConst.SYSTEM_VALUE)
-            NOTHING -> Info(null, -2, TokenTypeConst.ABSENT_ARGUMENT)
-            PLACEHOLDER -> Info(null, -2, TokenTypeConst.VARIABLE_REF)
-            SYSTEM_SYMBOL -> Info(null, 1, TokenTypeConst.SYMBOL)
+            NOTHING_ARGUMENT -> Info(null, -2, TokenTypeConst.ABSENT_ARGUMENT)
+            TAGGED_PLACEHOLDER -> Info(null, 0, TokenTypeConst.VARIABLE_REF)
+            TAGGED_PLACEHOLDER_WITH_DEFAULT -> Info(null, -2, TokenTypeConst.VARIABLE_REF)
+
             HOMOGENEOUS_LIST -> Info(IonType.LIST,-4, TokenTypeConst.LIST)
             NOP -> Info(null, 0, TokenTypeConst.NOP)
             NOP_L -> Info(null, -1, TokenTypeConst.NOP)

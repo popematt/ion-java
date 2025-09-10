@@ -111,11 +111,6 @@ object BytecodeHelper {
         bytecode.add(Bytecode.OP_SYMBOL_SID.opToInstruction(sid))
     }
 
-    @JvmStatic
-    fun emitSystemSymbolId(bytecode: IntList, sid: Int) {
-        bytecode.add(Bytecode.OP_SYMBOL_SYSTEM_SID.opToInstruction(sid))
-    }
-
     // TODO: BLOB
     // TODO: CLOB
 

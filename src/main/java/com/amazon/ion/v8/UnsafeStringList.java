@@ -8,21 +8,21 @@ import java.util.List;
 import java.util.ListIterator;
 
 /**
- * Based off of IntList, this is actually just an ArrayList that allows unsafe access to the underlying Array.
- *
- *
+ * Based off of IntList, this is essentially like an ArrayList that allows unsafe access to the underlying Array.
  *
  * A list of string values that grows as necessary.
  *
- * Unlike {@link List}, IntList does not require each int to be boxed. This makes it helpful in use cases
- * where storing {@link Integer} leads to excessive time spent in garbage collection.
+ * WARNING: This class is incomplete. It implements `List<String>`, but not all operations are supported. Given that
+ * this class is an internal implementation detail, it might be better to not implement `List`.
+ *
+ * The reason both UnsafeStringList and UnsafeObjectList exist is to work around a runtime ClassCastException. The problem
+ * was probably some sort of user error on my part, but I never bothered to figure it out because it was faster to copy/paste a new class.
  */
 public class UnsafeStringList implements List<String> {
     public static final int DEFAULT_INITIAL_CAPACITY = 8;
     private static final int GROWTH_MULTIPLIER = 2;
     private String[] data;
     private int numberOfValues;
-//    private int capacity;
 
     /**
      * Constructs a new IntList with a capacity of {@link UnsafeStringList#DEFAULT_INITIAL_CAPACITY}.
@@ -38,7 +38,6 @@ public class UnsafeStringList implements List<String> {
      */
     public UnsafeStringList(final int initialCapacity) {
         data = newT(initialCapacity);
-//        capacity = initialCapacity;
         numberOfValues = 0;
     }
 
@@ -137,15 +136,6 @@ public class UnsafeStringList implements List<String> {
         numberOfValues = newNumberOfValues;
     }
 
-    public void addAll(int[] values) {
-        int valuesLength = values.length;
-        int thisNumberOfValues = numberOfValues;
-        int newNumberOfValues = valuesLength + thisNumberOfValues;
-        String[] data = ensureCapacity(newNumberOfValues);
-        System.arraycopy(values, 0, data, thisNumberOfValues, valuesLength);
-        this.numberOfValues = newNumberOfValues;
-    }
-
     public void addAll(UnsafeStringList values) {
         int thisNumberOfValues = this.numberOfValues;
         int otherNumberOfValues = values.numberOfValues;
@@ -164,6 +154,7 @@ public class UnsafeStringList implements List<String> {
     }
 
     public void truncate(int length) {
+        if (length > numberOfValues) throw new IllegalArgumentException("length exceeds number of values");
         numberOfValues = length;
     }
 
@@ -175,11 +166,12 @@ public class UnsafeStringList implements List<String> {
         return null;
     }
 
+    @NotNull
     public String[] toArray() {
         int thisNumberOfValues = this.numberOfValues;
-        Object[] copy = new Object[thisNumberOfValues];
+        String[] copy = new String[thisNumberOfValues];
         System.arraycopy(data, 0, copy, 0, thisNumberOfValues);
-        return (String[]) copy;
+        return copy;
     }
 
     private String[] ensureCapacity(int minCapacity) {
@@ -202,7 +194,7 @@ public class UnsafeStringList implements List<String> {
     @Override
     public String toString() {
         StringBuilder builder = new StringBuilder();
-        builder.append("IntList{data=[");
+        builder.append("StringList{data=[");
         if (numberOfValues > 0) {
             for (int m = 0; m < numberOfValues; m++) {
                 builder.append(data[m]).append(",");
