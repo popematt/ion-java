@@ -33,7 +33,10 @@ object TokenTypeConst {
     const val IVM = 18
     /** Reader is positioned on a TypeId or Opcode that is reserved. This should be an error. */
     const val MACRO_INVOCATION = 19
-    // const val EXPRESSION_GROUP = 20
+
+    /** NOT USED IN SIMPLE TEMPLATES PROPOSAL */
+    const val EXPRESSION_GROUP = 20
+
     const val VARIABLE_REF = 21
 
     const val ABSENT_ARGUMENT = 22 // Try making this the same number as NOP

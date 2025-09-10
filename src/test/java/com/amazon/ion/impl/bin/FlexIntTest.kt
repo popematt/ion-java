@@ -3,8 +3,7 @@
 package com.amazon.ion.impl.bin
 
 import com.amazon.ion.TestUtils.*
-import com.amazon.ion.v3.impl_1_1.*
-import com.amazon.ion.v3.impl_1_1.binary.*
+import com.amazon.ion.v8.*
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -93,14 +92,16 @@ class FlexIntTest {
         Assertions.assertEquals(expectedBits, byteArrayToBitString(bytes))
         Assertions.assertEquals((expectedBits.length + 1) / 9, numBytes)
 
-        val rand = Random(2)
-        val context = rand.nextBytes(20)
-        bytes.copyInto(context, 5)
-        val buffer = ByteBuffer.wrap(context)
-        buffer.order(ByteOrder.LITTLE_ENDIAN)
-        buffer.limit(19)
-        buffer.position(5)
-        Assertions.assertEquals(value, IntHelper.readFlexIntAsLong(buffer))
+        if (value in Int.MIN_VALUE..Int.MAX_VALUE) {
+            val rand = Random(2)
+            val context = rand.nextBytes(20)
+            bytes.copyInto(context, 5)
+            val buffer = ByteBuffer.wrap(context)
+            buffer.order(ByteOrder.LITTLE_ENDIAN)
+            buffer.limit(19)
+            buffer.position(5)
+            Assertions.assertEquals(value.toInt(), IntHelper.readFlexInt(buffer))
+        }
     }
 
     @ParameterizedTest

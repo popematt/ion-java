@@ -1,6 +1,7 @@
 package com.amazon.ion.v8
 
 import com.amazon.ion.IonException
+import com.amazon.ion.v8.IntHelper.getInt
 import java.nio.ByteBuffer
 
 /**
@@ -326,68 +327,40 @@ object IntHelper {
             }
             5 -> {
                 val data = source.getInt(position + 1)
-                val data1 = (data shl 3) ushr 3
-                if (data != data1) throw IonException("FlexUInt value too large to find in an Int")
-                (data shl 3) + (firstByte.toInt() ushr 5)
+                val dataWithout3HighOrderBits = (data shl 3) shr 3
+                if (data != dataWithout3HighOrderBits) throw IonException("FlexUInt value too large to find in an Int")
+                (data shl 3) + (firstByte.toInt().and(0xFF) ushr 5)
             }
-            else -> throw IonException("FlexUInt value too large to find in an Int")
+            else -> throw IonException("FlexInt value too large to find in an Int")
         }
         return ((value.toLong() shl 32) shr 24) or numBytes.toLong()
     }
 
     @JvmStatic
     fun readFlexInt(source: ByteBuffer): Int {
-        // TODO: Consider writing a specialized implementation that is optimized for Ints.
-        val n = readFlexIntAsLong(source)
-        if (n < Int.MIN_VALUE || n > Int.MAX_VALUE) {
-            throw IonException("FlexInt value too large to fit in an int")
-        }
-        return n.toInt()
-    }
-
-    @OptIn(ExperimentalStdlibApi::class)
-    @JvmStatic
-    fun readFlexIntAsLong(source: ByteBuffer): Long {
         val position = source.position()
         val firstByte = source.get()
         val numBytes = firstByte.countTrailingZeroBits() + 1
-        if (source.remaining() < numBytes) {
-            throw IonException("Incomplete data. firstByte=${firstByte.toHexString()}, numBytes=$numBytes; remaining=${source.remaining()}")
-        }
+        if (source.remaining() < numBytes) { throw IonException("Incomplete data at $position") }
         source.position(position + numBytes)
-        when (numBytes) {
+        val value = when (numBytes) {
             1 -> {
-                return firstByte.toLong() shr 1
+                (firstByte.toInt() shr 1)
             }
-            2 -> {
-                val secondByte = source.get(position + 1).toInt()
-                return ((secondByte shl 6) or ((firstByte.toInt() and 0xFF) shr 2)).toLong()
-            }
-
-            3, 4 -> {
-                // TODO: We could probably simplify some of these calculations.
-                // FIXME: THis is broken for some reason.
+            2, 3, 4 -> {
                 val backtrack = 4 - numBytes
                 val data = source.getInt(position - backtrack)
                 val shiftAmount = 8 * backtrack + numBytes
-                return (data shr shiftAmount).toLong()
+                (data shr shiftAmount)
             }
-            5, 6, 7, 8 -> {
-                val backtrack = 8 - numBytes
-                val data = source.getLong(position - backtrack)
-                return data shr (8 * backtrack + numBytes)
+            5 -> {
+                val data = source.getInt(position + 1)
+                val dataWithout3HighOrderBits = (data shl 3) shr 3
+                if (data != dataWithout3HighOrderBits) throw IonException("FlexUInt value too large to find in an Int")
+                (data shl 3) + (firstByte.toInt().and(0xFF) ushr 5)
             }
-            9 -> {
-                // The first byte was entirely `0`. We'll assume that the least significant bit of the next byte is 1
-                // which would mean that the FlexUInt is 9 bytes long. In this case, we can read a long to get the
-                // remaining 8 bytes, and shift out the single bit.
-                val value = source.getLong(position + 1)
-                source.position(position + 9)
-                // Our assumption that it is a 9 byte flex uint is incorrect.
-                if (value and 0x1L == 0L) throw IonException("FlexInt value too large to find in a Long")
-                return value shr 1
-            }
-            else -> throw IonException("FlexInt value too large to find in a Long")
+            else -> throw IonException("FlexInt value too large to find in an Int")
         }
+        return value
     }
 }

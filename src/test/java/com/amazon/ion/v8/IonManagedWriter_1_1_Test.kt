@@ -166,44 +166,6 @@ internal class IonManagedWriter_1_1_Test {
     }
 
     @Test
-    @Disabled("""
-'symbol_table' is not a valid directive keyword
-com.amazon.ion.IonException: 'symbol_table' is not a valid directive keyword
-	at com.amazon.ion.impl.IonReaderContinuableCoreBinary${'$'}EncodingDirectiveReader.classifyDirective(IonReaderContinuableCoreBinary.java:1253)
-	at com.amazon.ion.impl.IonReaderContinuableCoreBinary${'$'}EncodingDirectiveReader.readEncodingDirective(IonReaderContinuableCoreBinary.java:1407)
-""")
-    fun `re-write a binary Ion 1-1 stream using a system reader`() {
-        val binary = TestUtils.hexStringToByteArray(
-            TestUtils.cleanCommentedHexBytes(
-                """
-            E0 01 01 EA | IVM
-            E7 01 61    | $ ion::
-            CA          | (
-            EE 0F       |    module
-            A1 5F       |    _
-            C5          |    (
-            EE 07       |       symbols
-            B2 91 61    |       ["a"]
-                        |    )
-                        | )
-            E1 01       | Symbol value 1 = "a"
-                """.trimIndent()
-            )
-        )
-        val systemReader = newSystemReader(binary)
-        val actual = writeBinary(symbolInliningStrategy = SymbolInliningStrategy.NEVER_INLINE) {
-            writeValues(systemReader)
-        }
-        systemReader.close()
-
-        val reader = IonReaderBuilder.standard().build(actual)
-        assertEquals(IonType.SYMBOL, reader.next())
-        assertEquals("a", reader.stringValue())
-        assertNull(reader.next())
-        reader.close()
-    }
-
-    @Test
     fun `write an encoding directive with a non-empty macro table`() {
         val expected = """
             $ion_1_1
