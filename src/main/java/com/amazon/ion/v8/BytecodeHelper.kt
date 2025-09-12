@@ -115,11 +115,6 @@ object BytecodeHelper {
     // TODO: CLOB
 
     @JvmStatic
-    fun emitListReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add2(Bytecode.OP_REF_LIST.opToInstruction(length), start)
-    }
-
-    @JvmStatic
     inline fun emitInlineList(bytecode: IntList, content: () -> Unit) {
         val containerStartIndex = bytecode.reserve()
         val start = containerStartIndex + 1
@@ -130,11 +125,6 @@ object BytecodeHelper {
     }
 
     @JvmStatic
-    fun emitSexpReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add2(Bytecode.OP_REF_SEXP.opToInstruction(length), start)
-    }
-
-    @JvmStatic
     inline fun emitInlineSexp(bytecode: IntList, content: () -> Unit) {
         val containerStartIndex = bytecode.reserve()
         val start = containerStartIndex + 1
@@ -142,11 +132,6 @@ object BytecodeHelper {
         bytecode.add(Bytecode.OP_CONTAINER_END.opToInstruction())
         val end = bytecode.size()
         bytecode[containerStartIndex] = Bytecode.OP_SEXP_START.opToInstruction(end - start)
-    }
-
-    @JvmStatic
-    fun emitStructReference(bytecode: IntList, start: Int, length: Int) {
-        bytecode.add2(Bytecode.OP_REF_SID_STRUCT.opToInstruction(length), start)
     }
 
     @JvmStatic

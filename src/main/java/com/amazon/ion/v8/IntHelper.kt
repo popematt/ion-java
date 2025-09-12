@@ -81,6 +81,17 @@ object IntHelper {
     }
 
     @JvmStatic
+    fun readFixedUIntAt(source: ByteArray, start: Int, length: Int): Long {
+        if (source.size < start + length) throw IonException("Incomplete data: start=$start, length=$length, limit=${source.size}")
+        if (length > 4) {
+            // TODO: See if we can simplify some of the calculations
+            return source.getLong(start - 8 + length) ushr ((8 - length) * 8)
+        } else {
+            return (source.getInt(start - 4 + length) ushr ((4 - length) * 8)).toLong()
+        }
+    }
+
+    @JvmStatic
     fun readFlexUIntAsLong(source: ByteBuffer): Long {
         val position = source.position()
         // TODO: Rewrite this as a relative get() so that we don't have to set the position

@@ -3,7 +3,6 @@
 package com.amazon.ion.impl.macro
 
 import com.amazon.ion.*
-import com.amazon.ion.v3.*
 import com.amazon.ion.v8.*
 import java.math.BigDecimal
 import java.math.BigInteger

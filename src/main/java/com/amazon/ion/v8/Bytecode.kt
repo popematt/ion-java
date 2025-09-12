@@ -3,6 +3,8 @@ package com.amazon.ion.v8
 import com.amazon.ion.v8.Bytecode.DataFormatters.AS_HEX_BYTE
 import com.amazon.ion.v8.Bytecode.DataFormatters.AS_HEX_INT
 import com.amazon.ion.v8.Bytecode.DataFormatters.AS_INT
+import com.amazon.ion.v8.Bytecode.DataFormatters.AS_SHORT
+import com.amazon.ion.v8.Bytecode.DataFormatters.BOOL_DATA
 import com.amazon.ion.v8.Bytecode.DataFormatters.BYTECODE_LENGTH
 import com.amazon.ion.v8.Bytecode.DataFormatters.CHAR
 import com.amazon.ion.v8.Bytecode.DataFormatters.CP_INDEX
@@ -12,35 +14,93 @@ import com.amazon.ion.v8.Bytecode.DataFormatters.SID
 import com.amazon.ion.v8.Bytecode.DataFormatters.SRC_INDEX
 
 /**
- * ```text
- * Instructions are formatted here as  OPERATION(data)[operands]
  *
- * E.g. Boolean true could be this:
+ * | Constant                    | Operation | Token Type Bits | Variant Bits | Data Field               | Operands | Description                     |
+ * |-----------------------------|-----------|----------------:|--------------|--------------------------|----------|---------------------------------|
+ * | `UNSET`                     | 0x00      |           00000 | 000          | Error if 0               | 0        | Uninitialized instruction       |
+ * | `OP_NULL_NULL`              | 0x0F      |           00001 | 111          | None                     | 0        | Null value of null type         |
+ * | `OP_BOOL`                   | 0x10      |           00010 | 000          | 0=false, 1=true          | 0        | Boolean value                   |
+ * | `OP_NULL_BOOL`              | 0x17      |           00010 | 111          | None                     | 0        | Null boolean                    |
+ * | `OP_SMALL_INT`              | 0x18      |           00011 | 000          | 16-bit signed int        | 0        | Small integer (-32768 to 32767) |
+ * | `OP_INLINE_INT`             | 0x19      |           00011 | 001          | None                     | 1        | 32-bit signed integer           |
+ * | `OP_INLINE_LONG`            | 0x1A      |           00011 | 010          | None                     | 2        | 64-bit signed integer           |
+ * | `OP_CP_BIG_INT`             | 0x1B      |           00011 | 011          | CP index (u24)           | 0        | Big integer from constant pool  |
+ * | `OP_REF_INT`                | 0x1C      |           00011 | 100          | Length                   | 1        | Integer reference (start_index) |
+ * | `OP_NULL_INT`               | 0x1F      |           00011 | 111          | None                     | 0        | Null integer                    |
+ * | `OP_INLINE_FLOAT`           | 0x20      |           00100 | 000          | None                     | 1        | 32-bit float                    |
+ * | `OP_INLINE_DOUBLE`          | 0x21      |           00100 | 001          | None                     | 2        | 64-bit double                   |
+ * | `OP_NULL_FLOAT`             | 0x27      |           00100 | 111          | None                     | 0        | Null float                      |
+ * | `OP_CP_DECIMAL`             | 0x28      |           00101 | 000          | CP index (u24)           | 0        | Decimal from constant pool      |
+ * | `OP_REF_DECIMAL`            | 0x29      |           00101 | 001          | Length                   | 1        | Decimal reference (start_index) |
+ * | `OP_NULL_DECIMAL`           | 0x2F      |           00101 | 111          | None                     | 0        | Null decimal                    |
+ * | `OP_CP_TIMESTAMP`           | 0x30      |           00110 | 000          | CP index (u24)           | 0        | Timestamp from constant pool    |
+ * | `OP_REF_TIMESTAMP_SHORT`    | 0x31      |           00110 | 001          | Opcode (implicit length) | 1        | Short timestamp reference       |
+ * | `OP_REF_TIMESTAMP_LONG`     | 0x32      |           00110 | 010          | Length                   | 1        | Long timestamp reference        |
+ * | `OP_NULL_TIMESTAMP`         | 0x37      |           00110 | 111          | None                     | 0        | Null timestamp                  |
+ * | `OP_CP_STRING`              | 0x38      |           00111 | 000          | CP index (u24)           | 0        | String from constant pool       |
+ * | `OP_REF_STRING`             | 0x39      |           00111 | 001          | Length                   | 1        | String reference (start_index)  |
+ * | `OP_NULL_STRING`            | 0x3F      |           00111 | 111          | None                     | 0        | Null string                     |
+ * | `OP_CP_SYMBOL_TEXT`         | 0x40      |           01000 | 000          | CP index (u24)           | 0        | Symbol text from constant pool  |
+ * | `OP_REF_SYMBOL_TEXT`        | 0x41      |           01000 | 001          | Length                   | 1        | Symbol text reference           |
+ * | `OP_SYMBOL_SID`             | 0x42      |           01000 | 010          | Symbol ID (u24)          | 0        | Symbol by ID                    |
+ * | `OP_SYMBOL_CHAR`            | 0x43      |           01000 | 011          | ASCII character          | 0        | Single character symbol         |
+ * | `OP_NULL_SYMBOL`            | 0x47      |           01000 | 111          | None                     | 0        | Null symbol                     |
+ * | `OP_CP_CLOB`                | 0x48      |           01001 | 000          | CP index (u24)           | 0        | Clob from constant pool         |
+ * | `OP_REF_CLOB`               | 0x49      |           01001 | 001          | Length                   | 1        | Clob reference (start_index)    |
+ * | `OP_NULL_CLOB`              | 0x4F      |           01001 | 111          | None                     | 0        | Null clob                       |
+ * | `OP_CP_BLOB`                | 0x50      |           01010 | 000          | CP index (u24)           | 0        | Blob from constant pool         |
+ * | `OP_REF_BLOB`               | 0x51      |           01010 | 001          | Length                   | 1        | Blob reference (start_index)    |
+ * | `OP_NULL_BLOB`              | 0x57      |           01010 | 111          | None                     | 0        | Null blob                       |
+ * | `OP_LIST_START`             | 0x58      |           01011 | 000          | Bytecode length          | 0        | Start of list container         |
+ * | `OP_REF_LIST`               | 0x59      |           01011 | 001          | Length                   | 1        | List reference (start_index)    |
+ * | `OP_NULL_LIST`              | 0x5F      |           01011 | 111          | None                     | 0        | Null list                       |
+ * | `OP_SEXP_START`             | 0x60      |           01100 | 000          | Bytecode length          | 0        | Start of s-expression           |
+ * | `OP_REF_SEXP`               | 0x61      |           01100 | 001          | Length                   | 1        | S-expression reference          |
+ * | `OP_NULL_SEXP`              | 0x67      |           01100 | 111          | None                     | 0        | Null s-expression               |
+ * | `OP_STRUCT_START`           | 0x68      |           01101 | 000          | Bytecode length          | 0        | Start of struct container       |
+ * | `OP_REF_SID_STRUCT`         | 0x69      |           01101 | 001          | Length                   | 1        | Struct reference                |
+ * | `OP_NULL_STRUCT`            | 0x6F      |           01101 | 111          | None                     | 0        | Null struct                     |
+ * | `OP_CP_ANNOTATION`          | 0x70      |           01110 | 000          | CP index (u24)           | 0        | Annotation from constant pool   |
+ * | `OP_REF_ANNOTATION`         | 0x71      |           01110 | 001          | Length (0=system SID)    | 1        | Annotation reference            |
+ * | `OP_ANNOTATION_SID`         | 0x72      |           01110 | 010          | Symbol ID (u24)          | 0        | Annotation by symbol ID         |
+ * | `OP_CP_FIELD_NAME`          | 0x78      |           01111 | 000          | CP index (u24)           | 0        | Field name from constant pool   |
+ * | `OP_REF_FIELD_NAME_TEXT`    | 0x79      |           01111 | 001          | Length                   | 1        | Field name text reference       |
+ * | `OP_FIELD_NAME_SID`         | 0x7A      |           01111 | 010          | Symbol ID (u24)          | 0        | Field name by symbol ID         |
+ * | `OP_CONTAINER_END`          | 0x88      |           10001 | 000          | None                     | 0        | End of container                |
+ * | `IVM`                       | 0x90      |           10010 | 000          | None                     | 0        | Ion Version Marker              |
+ * | `OP_PARAMETER`              | 0xA8      |           10101 | 000          | Default value length     | 0        | Macro parameter                 |
+ * | `OP_TAGLESS_PARAMETER`      | 0xA9      |           10101 | 001          | Tagless value opcode     | 0        | Tagless macro parameter         |
+ * | `OP_MACRO_SHAPED_PARAMETER` | 0xAA      |           10101 | 010          | Macro ID                 | 0        | Macro-shaped parameter          |
+ * | `ABSENT_ARGUMENT`           | 0xB0      |           10110 | 000          | TBD                      | 0        | Absent macro argument           |
+ * | `DIRECTIVE_SET_SYMBOLS`     | 0xC0      |           11000 | 000          | TBD                      | 0        | Set symbol table                |
+ * | `DIRECTIVE_ADD_SYMBOLS`     | 0xC1      |           11000 | 001          | TBD                      | 0        | Add to symbol table             |
+ * | `DIRECTIVE_SET_MACROS`      | 0xC2      |           11000 | 010          | TBD                      | 0        | Set macro table                 |
+ * | `DIRECTIVE_ADD_MACROS`      | 0xC3      |           11000 | 011          | TBD                      | 0        | Add to macro table              |
+ * | `DIRECTIVE_USE`             | 0xC4      |           11000 | 100          | TBD                      | 0        | Use directive                   |
+ * | `DIRECTIVE_MODULE`          | 0xC5      |           11000 | 101          | TBD                      | 0        | Module directive                |
+ * | `DIRECTIVE_ENCODING`        | 0xC6      |           11000 | 110          | TBD                      | 0        | Encoding directive              |
+ * | `REFILL`                    | 0xC8      |           11001 | 000          | None                     | 0        | Refill bytecode buffer          |
+ * | `EOF`                       | 0xD0      |           11010 | 000          | None                     | 0        | End of file                     |
  *
- *     Operation | Data
- *      00000001   00000000 00000000 00000001
  *
+ * Notes:
+ *  - It seems that data locality is one of the most important concerns for performance. So, for fixed-sized scalars,
+ *    it will probably be cheaper to eagerly materialize them to be able to put them inline. We have done this for all
+ *    floats, integers that are 64 bits or fewer, booleans, and single-character symbols.
  *
- *
- *
- * TODO: Currently, the 0x00 operation is reserved for "unset", but consider using it for Ion Binary opcodes instead.
- *       That might allow us to unify the macro reader and the raw binary reader. Will it improve performance? I'm not sure.
+ * Potential Improvements:
+ *  - Currently, the 0x00 operation is reserved for "unset", but consider using it for Ion Binary opcodes instead.
+ *    That might allow us to unify the macro reader and the raw binary reader. Will it improve performance? I'm not sure.
+ *  - If we need to support data streams more than 4GB in length, add "Long Ref" variants of all ref types that have a uint64 start_index.
+ *  - For directive operations, we could try to use the DATA for something useful. They are container-like, but there's
+ *    no need to store a length since they cannot be skipped.
+ *  - If directive handling can be pushed into a lower layer, we might be able to remove those instructions entirely.
+ *  - Figure out some way to encode the operands into the variant so that we don't have to use a lookup table to determine
+ *    the number of operands. INT is the only type that might someday need two 2-operand instructions.
+ *    If we're willing to go to only 22 bits for DATA, we could encode the number of arguments right after the token type and variant.
+ *    Furthermore, if we can mark some as having "child values", then it's even better. That's 4 states... it could work.
  */
 object Bytecode {
-
-    // NOTE about ref opcodes
-    // It seems that data locality is one of the most important concerns for performance.
-    // So, for fixed-sized scalars, it will probably be cheaper to eagerly materialize them to be able to
-    // put them inline.
-
-
-    // TODO: Standardize the values of the instruction suffixes
-    //       Suffixes:
-    //         * SID = ?  (symbol, fieldname, annotation)
-    //         * REF = ?  (fieldname, annotation, int, decimal, timestamp, string, symbol, blob, clob, list, sexp, struct)
-    //         * CP = ?   (fieldname, annotation, int, decimal, timestamp, string, symbol, blob, clob)
-    //         * INLINE_VALUE = ?
-    //         * NULL = 7 (all types)
 
     const val TOKEN_TYPE_SHIFT_AMOUNT = 3
     const val OPERATION_SHIFT_AMOUNT = 24
@@ -62,109 +122,54 @@ object Bytecode {
     const val OP_NULL_LIST = (TokenTypeConst.LIST shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
     const val OP_NULL_SEXP = (TokenTypeConst.SEXP shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
     const val OP_NULL_STRUCT = (TokenTypeConst.STRUCT shl TOKEN_TYPE_SHIFT_AMOUNT) + 7
-
-    /** DATA is 0 for false; 1 for true */
     const val OP_BOOL = TokenTypeConst.BOOL shl TOKEN_TYPE_SHIFT_AMOUNT
-
-    /** DATA is a 16-bit signed int */
     const val OP_SMALL_INT = TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT
-    /** OPERAND is 32-bit signed int */
     const val OP_INLINE_INT = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-    /** OPERAND is 64-bit signed int. `(op0 shl 32) or op1` */
     const val OP_INLINE_LONG = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
-    /** DATA is u24 index into constant pool */
     const val OP_CP_BIG_INT = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
-    /** DATA is length; OPERAND is start_index */
     const val OP_REF_INT = (TokenTypeConst.INT shl TOKEN_TYPE_SHIFT_AMOUNT) + 4
-
-    /** OPERAND is 32-bit float. `Int.fromBits(operand)` */
     const val OP_INLINE_FLOAT = (TokenTypeConst.FLOAT shl TOKEN_TYPE_SHIFT_AMOUNT)
-    /** OPERAND is 64-bit float. `Double.fromBits((op0 shl 32) or op1)` */
     const val OP_INLINE_DOUBLE = (TokenTypeConst.FLOAT shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-
-    /** DATA is u24 index into constant pool */
     const val OP_CP_DECIMAL = (TokenTypeConst.DECIMAL shl TOKEN_TYPE_SHIFT_AMOUNT)
-    /** DATA is length; OPERAND is start_index */
     const val OP_REF_DECIMAL = (TokenTypeConst.DECIMAL shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-
-    /** DATA is u24 index into constant pool */
     const val OP_CP_TIMESTAMP = (TokenTypeConst.TIMESTAMP shl TOKEN_TYPE_SHIFT_AMOUNT)
-    /** DATA is opcode, length is implicit; OPERAND is start_index */
     const val OP_REF_TIMESTAMP_SHORT = (TokenTypeConst.TIMESTAMP shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-    /** DATA is length; OPERAND is start_index */
     const val OP_REF_TIMESTAMP_LONG = (TokenTypeConst.TIMESTAMP shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
-
-    /** DATA is u24 index into constant pool */
     const val OP_CP_STRING = (TokenTypeConst.STRING shl TOKEN_TYPE_SHIFT_AMOUNT)
-    /** DATA is length; OPERAND is start_index */
     const val OP_REF_STRING = (TokenTypeConst.STRING shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-
-    /** DATA is u24 index into constant pool */
     const val OP_CP_SYMBOL_TEXT = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT)
-    /** DATA is length; OPERAND is start_index */
     const val OP_REF_SYMBOL_TEXT = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-    /** DATA is SID as u24 */
     const val OP_SYMBOL_SID = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
-    /** DATA is 1 ascii character; TODO: or up to 3 bytes of utf8? */
     const val OP_SYMBOL_CHAR = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 3
-    /** DATA is SID as u24 */
-    const val OP_SYMBOL_SYSTEM_SID = (TokenTypeConst.SYMBOL shl TOKEN_TYPE_SHIFT_AMOUNT) + 4
-
-    /** DATA is u24 index into constant pool */
     const val OP_CP_BLOB = (TokenTypeConst.BLOB shl TOKEN_TYPE_SHIFT_AMOUNT)
-    /** DATA is length; OPERAND is start_index */
     const val OP_REF_BLOB = (TokenTypeConst.BLOB shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-
-    /** DATA is u24 index into constant pool */
     const val OP_CP_CLOB = (TokenTypeConst.CLOB shl TOKEN_TYPE_SHIFT_AMOUNT)
-    /** DATA is length; OPERAND is start_index */
     const val OP_REF_CLOB = (TokenTypeConst.CLOB shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-
 
     // Data model containers
     // They are both length prefixed and delimited.
     const val OP_LIST_START = TokenTypeConst.LIST shl TOKEN_TYPE_SHIFT_AMOUNT
     const val OP_SEXP_START = TokenTypeConst.SEXP shl TOKEN_TYPE_SHIFT_AMOUNT
     const val OP_STRUCT_START = TokenTypeConst.STRUCT shl TOKEN_TYPE_SHIFT_AMOUNT
+    const val OP_CONTAINER_END = TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT
 
-
-    /** DATA is length; OPERAND is start_index */
-    const val OP_REF_LIST = (TokenTypeConst.LIST shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-    /** DATA is length; OPERAND is start_index */
-    const val OP_REF_SEXP = (TokenTypeConst.SEXP shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-    /** DATA is length; OPERAND is start_index */
-    const val OP_REF_SID_STRUCT = (TokenTypeConst.STRUCT shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-
-    // Metadata
-    /** DATA is u24 constant pool index */
     const val OP_CP_FIELD_NAME = (TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_SHIFT_AMOUNT)
-    /** DATA is length, OPERAND is start_index */
     const val OP_REF_FIELD_NAME_TEXT = (TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-    /** DATA is the SID */
     const val OP_FIELD_NAME_SID = (TokenTypeConst.FIELD_NAME shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
-    /** DATA is constant pool index */
     const val OP_CP_ANNOTATION = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 0
-    /**
-     * DATA is length; OPERAND is start_index
-     * If length is 0, the OPERAND is a system symbol ID.
-     */
     const val OP_REF_ANNOTATION = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-    /** DATA is SID as u24 */
     const val OP_ANNOTATION_SID = (TokenTypeConst.ANNOTATIONS shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
 
     // Macros
     /** DATA is the length of the default value. */
-    const val OP_PARAMETER = TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT
-
+    const val OP_PLACEHOLDER = TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT
     /** DATA is tagless value's opcode. */
-    const val OP_TAGLESS_PARAMETER = (TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
-
-    /** DATA is macro id. */
-    const val OP_MACRO_SHAPED_PARAMETER = (TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
+    const val OP_TAGLESS_PLACEHOLDER = (TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    /** No data */
+    const val ABSENT_ARGUMENT = (TokenTypeConst.ABSENT_ARGUMENT shl TOKEN_TYPE_SHIFT_AMOUNT)
 
     // Directives:
-    // We should try to use the DATA for something useful, if possible, especially since these cannot be skipped.
     const val DIRECTIVE_SET_SYMBOLS = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT)
     const val DIRECTIVE_ADD_SYMBOLS = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     const val DIRECTIVE_SET_MACROS = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
@@ -172,18 +177,11 @@ object Bytecode {
     const val DIRECTIVE_USE = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 4
     const val DIRECTIVE_MODULE = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 5
     const val DIRECTIVE_ENCODING = (TokenTypeConst.SYSTEM_VALUE shl TOKEN_TYPE_SHIFT_AMOUNT) + 6
-
-    const val ABSENT_ARGUMENT = (TokenTypeConst.ABSENT_ARGUMENT shl TOKEN_TYPE_SHIFT_AMOUNT)
-
-    const val EOF = TokenTypeConst.EOF shl TOKEN_TYPE_SHIFT_AMOUNT
-    const val OP_CONTAINER_END = TokenTypeConst.END shl TOKEN_TYPE_SHIFT_AMOUNT
-
     const val IVM = (TokenTypeConst.IVM shl TOKEN_TYPE_SHIFT_AMOUNT)
+
+    // Bytecode interpreter control
+    const val EOF = TokenTypeConst.EOF shl TOKEN_TYPE_SHIFT_AMOUNT
     const val REFILL = (TokenTypeConst.REFILL shl TOKEN_TYPE_SHIFT_AMOUNT)
-
-
-
-
 
 
     @JvmStatic
@@ -301,13 +299,16 @@ object Bytecode {
         @OptIn(ExperimentalStdlibApi::class)
         val AS_HEX_BYTE = { data: Int -> " " + data.toUByte().toHexString()}
         val AS_INT = { data: Int -> " $data" }
+        val AS_SHORT = { data: Int -> " ${data.toShort()}" }
         val REF_LENGTH = { data: Int -> " $data" }
         val BYTECODE_LENGTH = { data: Int -> " $data" }
+        /** Represents an unsigned 32-bit integer. */
         val SRC_INDEX = { data: Int -> " $data" }
         val CP_INDEX = { data: Int -> " $data" }
         val SID = { data: Int -> " $data" }
         val CHAR = { data: Int -> " '${data.toChar()}'" }
         val NO_DATA = { _: Int -> "" }
+        val BOOL_DATA = { it: Int -> " " + (it == 1).toString() }
     }
 
     /**
@@ -329,9 +330,9 @@ object Bytecode {
         NULL_SEXP(OP_NULL_SEXP, NO_DATA),
         NULL_STRUCT(OP_NULL_STRUCT, NO_DATA),
 
-        BOOL(OP_BOOL, dataFormatter = { " " + (it == 1).toString() }),
+        BOOL(OP_BOOL, BOOL_DATA),
 
-        INT16(OP_SMALL_INT, { " " + (it.toShort()).toString() }),
+        INT16(OP_SMALL_INT, AS_SHORT),
         INT32(OP_INLINE_INT, NO_DATA, 1, AS_HEX_INT),
         INT64(OP_INLINE_LONG, NO_DATA, 2, AS_HEX_INT),
         INT_CNST(OP_CP_BIG_INT, CP_INDEX),
@@ -345,7 +346,6 @@ object Bytecode {
         TSL_REF(OP_REF_TIMESTAMP_LONG, REF_LENGTH, 1, SRC_INDEX),
         STR_CNST(OP_CP_STRING, CP_INDEX),
         STR_REF(OP_REF_STRING, REF_LENGTH, 1, SRC_INDEX),
-        SYM_SYS(OP_SYMBOL_SYSTEM_SID, SID),
         SYM_CNST(OP_CP_SYMBOL_TEXT, CP_INDEX),
         SYM_REF(OP_REF_SYMBOL_TEXT, REF_LENGTH, 1, SRC_INDEX),
         SYM_SID(OP_SYMBOL_SID, SID),
@@ -357,16 +357,15 @@ object Bytecode {
         LIST_START(OP_LIST_START, BYTECODE_LENGTH),
         SEXP_START(OP_SEXP_START, BYTECODE_LENGTH),
         STRUCT_START(OP_STRUCT_START, BYTECODE_LENGTH),
-        LIST_REF(OP_REF_LIST, REF_LENGTH, 1, SRC_INDEX),
-        SEXP_REF(OP_REF_SEXP, REF_LENGTH, 1, SRC_INDEX),
-        STRUCT_REF(OP_REF_SID_STRUCT, REF_LENGTH, 1, SRC_INDEX),
         FNAME_SID(OP_FIELD_NAME_SID, SID),
         FNAME_CNST(OP_CP_FIELD_NAME, CP_INDEX),
         FNAME_REF(OP_REF_FIELD_NAME_TEXT, REF_LENGTH, 1, SRC_INDEX),
         ANN_CNST(OP_CP_ANNOTATION, CP_INDEX),
         ANN_SID(OP_ANNOTATION_SID, SID),
         ANN_REF(OP_REF_ANNOTATION, REF_LENGTH, 1, SRC_INDEX),
-        PARAM(OP_PARAMETER, AS_INT),
+        PLACEHOLDER(OP_PLACEHOLDER, BYTECODE_LENGTH),
+        TAGLESS_PLACEHOLDER(OP_TAGLESS_PLACEHOLDER, AS_HEX_BYTE),
+        ABSENT_ARG(ABSENT_ARGUMENT, NO_DATA),
         EOF(Bytecode.EOF, NO_DATA),
         CONTAINER_END(OP_CONTAINER_END, NO_DATA),
 

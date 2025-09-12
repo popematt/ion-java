@@ -1,14 +1,7 @@
 package com.amazon.ion.v8
 
-import com.amazon.ion.*
 import com.amazon.ion.impl.bin.*
-import com.amazon.ion.system.*
 import com.amazon.ion.v8.Bytecode.opToInstruction
-import java.nio.ByteBuffer
-import java.nio.channels.FileChannel
-import java.nio.file.Files
-import java.nio.file.StandardOpenOption
-import kotlin.io.path.Path
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -194,7 +187,7 @@ class ToBytecodeTest {
         """,
         macTab = intArrayOf(
             Bytecode.OP_LIST_START.opToInstruction(2),
-            Bytecode.OP_PARAMETER.opToInstruction(),
+            Bytecode.OP_PLACEHOLDER.opToInstruction(),
             Bytecode.OP_CONTAINER_END.opToInstruction(),
             Bytecode.EOF.opToInstruction(),
         ),
@@ -214,7 +207,7 @@ class ToBytecodeTest {
         """,
         macTab = intArrayOf(
             Bytecode.OP_LIST_START.opToInstruction(2),
-            Bytecode.OP_PARAMETER.opToInstruction(),
+            Bytecode.OP_PLACEHOLDER.opToInstruction(),
             Bytecode.OP_CONTAINER_END.opToInstruction(),
             Bytecode.EOF.opToInstruction(),
         ),
@@ -231,13 +224,74 @@ class ToBytecodeTest {
         """,
         macTab = intArrayOf(
             Bytecode.OP_LIST_START.opToInstruction(2),
-            Bytecode.OP_PARAMETER.opToInstruction(),
+            Bytecode.OP_PLACEHOLDER.opToInstruction(),
             Bytecode.OP_CONTAINER_END.opToInstruction(),
             Bytecode.EOF.opToInstruction(),
             Bytecode.OP_SMALL_INT.opToInstruction(1),
             Bytecode.EOF.opToInstruction(),
         ),
         macOffsets = intArrayOf(0, 4, 6)
+    )
+
+    @Test
+    fun taglessInt8ParameterMacroEvaluation() = checkIonBinaryCompilesToBytecode(
+        "00 7B",
+        """
+            LIST_START 2
+            INT16 123
+            CONTAINER_END
+        """,
+        macTab = intArrayOf(
+            Bytecode.OP_LIST_START.opToInstruction(2),
+            Bytecode.OP_TAGLESS_PLACEHOLDER.opToInstruction(Ops.INT_8),
+            Bytecode.OP_CONTAINER_END.opToInstruction(),
+            Bytecode.EOF.opToInstruction(),
+        ),
+        macOffsets = intArrayOf(0, 4)
+    )
+
+    @Test
+    fun taglessElementList() = checkIonBinaryCompilesToBytecode(
+        "EC 61 09 7B 7C 7D 7E",
+        """
+            LIST_START 5
+            INT16 123
+            INT16 124
+            INT16 125
+            INT16 126
+            CONTAINER_END
+        """,
+        macTab = intArrayOf(),
+        macOffsets = intArrayOf(0)
+    )
+
+    @Test
+    fun taglessElementSexpWithMacroShape() = checkIonBinaryCompilesToBytecode(
+        "ED 00 07 01 04 02 05 03 06",
+        """
+            SEXP_START 13
+            LIST_START 3
+            INT16 1
+            INT16 4
+            CONTAINER_END
+            LIST_START 3
+            INT16 2
+            INT16 5
+            CONTAINER_END
+            LIST_START 3
+            INT16 3
+            INT16 6
+            CONTAINER_END
+            CONTAINER_END
+        """,
+        macTab = intArrayOf(
+            Bytecode.OP_LIST_START.opToInstruction(3),
+            Bytecode.OP_TAGLESS_PLACEHOLDER.opToInstruction(Ops.INT_8),
+            Bytecode.OP_TAGLESS_PLACEHOLDER.opToInstruction(Ops.INT_8),
+            Bytecode.OP_CONTAINER_END.opToInstruction(),
+            Bytecode.EOF.opToInstruction(),
+        ),
+        macOffsets = intArrayOf(0)
     )
 
     @Test

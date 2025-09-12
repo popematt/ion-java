@@ -190,11 +190,13 @@ class BytecodeIonReader(
         do {
             // Move to the next instruction.
             val length = instruction and Bytecode.DATA_MASK
-
-            // TODO: This line is 7% of all. Can we improve it?
+            // TODO: This line is 7% of all. Can we improve it? Maybe, if we can encode the operands into the variant somehow.
             val operandsToSkip = N_OPERANDS[op]
-
+            // Figure out how to make this branchless
             i += if (operandsToSkip.toInt() == -1) length else operandsToSkip.toInt()
+
+
+
             instruction = bytecode[i++]
             op = instruction.instructionToOp()
 
@@ -442,9 +444,6 @@ class BytecodeIonReader(
                 }
                 this.isInStruct = true
             }
-            Bytecode.OP_REF_LIST,
-            Bytecode.OP_REF_SEXP,
-            Bytecode.OP_REF_SID_STRUCT -> TODO()
             else -> throw IonException("Not positioned on a container")
         }
 

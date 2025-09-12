@@ -82,7 +82,8 @@ object Ops {
     const val TAGGED_PLACEHOLDER_WITH_DEFAULT = 0xEA
     const val TAGLESS_PLACEHOLDER = 0xEB
 
-    const val HOMOGENEOUS_LIST = 0xED
+    const val TAGLESS_ELEMENT_LIST = 0xEC
+    const val TAGLESS_ELEMENT_SEXP = 0xED
 
     const val NOP = 0xEE
     const val NOP_L = 0xEF
@@ -183,7 +184,7 @@ object Ops {
             TAGGED_PLACEHOLDER -> Info(null, 0, TokenTypeConst.VARIABLE_REF)
             TAGGED_PLACEHOLDER_WITH_DEFAULT -> Info(null, -2, TokenTypeConst.VARIABLE_REF)
 
-            HOMOGENEOUS_LIST -> Info(IonType.LIST,-4, TokenTypeConst.LIST)
+            TAGLESS_ELEMENT_LIST -> Info(IonType.LIST,-4, TokenTypeConst.LIST)
             NOP -> Info(null, 0, TokenTypeConst.NOP)
             NOP_L -> Info(null, -1, TokenTypeConst.NOP)
             NULL_NULL -> Info(IonType.NULL, 0, TokenTypeConst.NULL)
