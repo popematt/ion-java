@@ -78,8 +78,6 @@ class BytecodeIonReader(
     @JvmField internal var firstLocalConstant = 0
 
     private var instruction = 0
-
-    // Always set to the index after the current `instruction`
     private var fieldNameIndex = -1
     private var annotationsIndex = -1
     private var annotationCount: Byte = 0
@@ -90,7 +88,8 @@ class BytecodeIonReader(
     private val containerStack = _Private_RecyclingStack(10) { ContainerInfo() }
 
     data class ContainerInfo(
-        @JvmField var isInStruct: Boolean = false,
+        @JvmField var isStruct: Boolean = false,
+        /** The index of the first instruction after this container. */
         @JvmField var bytecodeI: Int = -1,
     )
 
@@ -205,7 +204,7 @@ class BytecodeIonReader(
             when (tokenType) {
                 // MacroBytecode doesn't have a nop with length, so it's fine to skip just one.
                 TokenTypeConst.NOP -> fieldNameIndex = -1
-                TokenTypeConst.END, // Container end OR end of input
+                TokenTypeConst.END, // Container end
                 TokenTypeConst.NULL,
                 TokenTypeConst.BOOL,
                 TokenTypeConst.INT,
@@ -236,6 +235,11 @@ class BytecodeIonReader(
                 TokenTypeConst.EOF -> {
 
                     break
+                }
+                TokenTypeConst.ABSENT_ARGUMENT -> {
+                    annotationStart = 0
+                    annotationFlag = -1
+                    annotationCount = 0
                 }
                 else -> {
                     TODO("${TokenTypeConst(tokenType)} at ${i - 1}")
@@ -424,7 +428,7 @@ class BytecodeIonReader(
                 val length = instruction and Bytecode.DATA_MASK
                 containerStack.push {
                     it.bytecodeI = bytecodeI + length
-                    it.isInStruct = isInStruct
+                    it.isStruct = isInStruct
                 }
                 this.isInStruct = false
             }
@@ -432,7 +436,7 @@ class BytecodeIonReader(
                 val length = instruction and Bytecode.DATA_MASK
                 containerStack.push {
                     it.bytecodeI = bytecodeI + length
-                    it.isInStruct = isInStruct
+                    it.isStruct = isInStruct
                 }
                 this.isInStruct = false
             }
@@ -440,7 +444,7 @@ class BytecodeIonReader(
                 val length = instruction and Bytecode.DATA_MASK
                 containerStack.push {
                     it.bytecodeI = bytecodeI + length
-                    it.isInStruct = isInStruct
+                    it.isStruct = isInStruct
                 }
                 this.isInStruct = true
             }
@@ -454,12 +458,17 @@ class BytecodeIonReader(
 
         val top = containerStack.pop() ?: throw IonException("Nothing to step out of.")
         this.bytecodeI = top.bytecodeI
-        this.isInStruct = top.isInStruct
+        this.isInStruct = top.isStruct
         this.instruction = INSTRUCTION_NOT_SET
         this.fieldNameIndex = -1
     }
 
-    override fun isInStruct(): Boolean = isInStruct
+    override fun isInStruct(): Boolean {
+        if (isInStruct && fieldNameIndex < 0) {
+            TODO()
+        }
+        return isInStruct
+    }
 
     override fun getDepth(): Int = containerStack.size()
 

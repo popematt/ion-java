@@ -2,7 +2,9 @@ package com.amazon.ion.v8
 
 import com.amazon.ion.IonException
 import com.amazon.ion.v8.IntHelper.getInt
+import java.math.BigInteger
 import java.nio.ByteBuffer
+import kotlin.math.pow
 
 /**
  * Helper class containing methods for reading FixedInts, FlexInts, FixedUInts, and FlexUInts.
@@ -346,6 +348,73 @@ object IntHelper {
         }
         return ((value.toLong() shl 32) shr 24) or numBytes.toLong()
     }
+
+    @JvmStatic
+    fun readFlexIntLongValue(source: ByteArray, position: Int): Long {
+        val firstByte = source.get(position)
+        val numBytes = firstByte.countTrailingZeroBits() + 1
+        val value = when (numBytes) {
+            1 -> {
+                (firstByte.toInt() shr 1).toLong()
+            }
+            2, 3, 4 -> {
+                // TODO: We could probably simplify some of these calculations.
+                val backtrack = 4 - numBytes
+                val data = source.getInt(position - backtrack)
+                val shiftAmount = 8 * backtrack + numBytes
+                (data shr shiftAmount).toLong()
+            }
+            5, 6, 7, 8 -> {
+                val backtrack = 8 - numBytes
+                val data = source.getLong(position - backtrack)
+                val shiftAmount = 8 * backtrack + numBytes
+                (data shr shiftAmount)
+            }
+            else -> {
+                val numBytes = source[position + 1].countTrailingZeroBits() + 9
+                when (numBytes) {
+                    9 -> {
+                        val value = readFixedIntAt(source, position + 1, 8)
+                        value shr 1
+                    }
+                    10 -> {
+                        // This could fit, but maybe we don't need it yet.
+                        TODO("10")
+                    }
+                    else -> throw IonException("FlexInt value too large to find in a Long")
+                }
+            }
+        }
+        return value
+    }
+
+    @JvmStatic
+    fun readFlexIntBigIntegerValue(source: ByteArray, position: Int): BigInteger {
+        // FIXME
+        var p = position
+        var firstByte = 0.toByte()
+        var i = 0
+        while (firstByte == 0.toByte()) {
+            firstByte = source[p++]
+            i++
+        }
+        val length = firstByte.countTrailingZeroBits() + 1 + ((i - 1) * 8)
+        var numberOfDataBytesRemaining = length - i
+        val dataBytes = ByteArray(numberOfDataBytesRemaining + 1)
+        val rightShiftAmount = (length.mod(8))
+        val leftShiftAmount = (8 - rightShiftAmount)
+        val mask = (1 shl leftShiftAmount) - 1
+
+        dataBytes[numberOfDataBytesRemaining] = firstByte.toInt().shr(rightShiftAmount).toByte()
+        while (numberOfDataBytesRemaining > 0) {
+            val currentByte = source[p++]
+            dataBytes[numberOfDataBytesRemaining] = dataBytes[numberOfDataBytesRemaining].toInt().and(mask).or(currentByte.toInt().shl(leftShiftAmount)).toByte()
+            dataBytes[numberOfDataBytesRemaining - 1] = currentByte.toInt().shr(rightShiftAmount).toByte()
+            numberOfDataBytesRemaining--
+        }
+        return BigInteger(dataBytes)
+    }
+
 
     @JvmStatic
     fun readFlexInt(source: ByteBuffer): Int {

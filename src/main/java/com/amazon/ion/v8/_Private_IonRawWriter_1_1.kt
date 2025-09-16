@@ -17,7 +17,7 @@ internal interface _Private_IonRawWriter_1_1 : IonRawWriter_1_1 {
     fun writeTaggedPlaceholderWithDefault(default: (IonRawWriter_1_1) -> Unit)
 
     // TODO: Figure out the correct signature for this
-    fun writeTaglessPlaceholder()
+    fun writeTaglessPlaceholder(opcode: Int)
 
     // TODO: Make this more robust instead of just using an [Ops] value.
     fun stepInDirective(directive: Int) {}

@@ -4,12 +4,15 @@ package com.amazon.ion.v8
 
 import com.amazon.ion.*
 import com.amazon.ion.IonEncodingVersion.*
+import com.amazon.ion.TestUtils.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.SymbolInliningStrategy
 import com.amazon.ion.system.*
+import com.amazon.ion.util.*
 import com.amazon.ion.v8.ExpressionBuilderDsl.Companion.templateBody
 import java.io.ByteArrayOutputStream
 import java.math.BigInteger
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Disabled
@@ -208,6 +211,115 @@ internal class IonManagedWriter_1_1_Test {
             endMacro()
         }
 
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `write an e-expression with tagless parameter in text`() {
+        val expected = """
+            $ion_1_1
+            (:${'$'}set_macros (null [(:? \${'$'}int8\)]))
+            (:0 1)
+        """.trimIndent()
+
+        val macro =  MacroV8.build {
+            list {
+                variable(TaglessScalarType.INT_8)
+            }
+        }
+
+        val actual = write {
+            startMacro(macro)
+            writeInt(1)
+            endMacro()
+        }
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `write an e-expression with tagless parameter in binary`() {
+        val expected = TestUtils.hexStringToByteArray(TestUtils.cleanCommentedHexBytes("""
+            E0 01 01 EA
+            E3                 | set_macros
+               F2              | delim sexp start
+                  8F           | null
+                  F1 EB 61 F0  | [(:<$ int8>?)]
+               F0
+            F0
+            00 01
+        """.trimIndent()))
+
+        val macro =  MacroV8.build {
+            list {
+                variable(TaglessScalarType.INT_8)
+            }
+        }
+
+        val actual = writeBinary {
+            startMacro(macro)
+            writeInt(1)
+            endMacro()
+        }
+
+        println("Expected: ${expected.toPrettyHexString()}")
+        println("Actual: ${actual.toPrettyHexString()}")
+
+        assertArrayEquals(expected, actual)
+    }
+
+    @Test
+    fun `write a tagless-element list with scalar type`() {
+        val expectedText = """
+            $ion_1_1
+            [\${'$'}int8\ 1,2]
+        """.trimIndent()
+
+        val expectedBinary = hexStringToByteArray(
+            cleanCommentedHexBytes("""
+            E0 01 01 EA
+            EC 61 05 01 02
+        """.trimIndent()))
+
+        val writeFn: IonManagedWriter_1_1.() -> Unit = {
+            stepInTaglessElementList(TaglessScalarType.INT_8)
+            writeInt(1)
+            writeInt(2)
+            stepOut()
+        }
+        val actualText = write(block = writeFn)
+        assertEquals(expectedText, actualText)
+
+        val actualBinary = writeBinary(block = writeFn)
+        assertEquals(expectedBinary.toPrettyHexString(), actualBinary.toPrettyHexString())
+    }
+
+    @Test
+    fun `write a tagless-element list with macro shape`() {
+        val expected = """
+            $ion_1_1
+            (:${'$'}set_macros (null [(:? \${'$'}int8\)]))
+            [\0\ (1),(2),(3)]
+        """.trimIndent()
+
+        val macro =  MacroV8.build {
+            list {
+                variable(TaglessScalarType.INT_8)
+            }
+        }
+
+        val actual = write {
+            stepInTaglessElementList(macro)
+            startMacro(macro)
+            writeInt(1)
+            endMacro()
+            startMacro(macro)
+            writeInt(2)
+            endMacro()
+            startMacro(macro)
+            writeInt(3)
+            endMacro()
+            stepOut()
+        }
         assertEquals(expected, actual)
     }
 
@@ -558,7 +670,6 @@ internal class IonManagedWriter_1_1_Test {
 
         assertEquals(expected, actual)
     }
-
 
     @Test
     fun `when pretty printing, directive expressions should have the clause name on the first line`() {

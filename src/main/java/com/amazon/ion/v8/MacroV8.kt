@@ -1,7 +1,6 @@
 package com.amazon.ion.v8
 
 import com.amazon.ion.*
-import com.amazon.ion.impl.macro.Macro
 import com.amazon.ion.v8.ExpressionBuilderDsl.*
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -9,14 +8,26 @@ import java.math.BigInteger
 class MacroV8 private constructor(
     // TODO: Signature here is informational only. Make sure it's accurate if we're going to keep it.
     @JvmField
-    val signature: Array<Macro.Parameter>,
+    val signature: Array<Parameter>,
     // TODO: Body could actually be more than one expression if there are annotations.
     @JvmField
     val body: Array<TemplateExpression>,
 ) {
+    class Parameter(val type: Int) {
+        val isRequired: Boolean
+            get() = type > 0
+    }
 
-//    @JvmField
-//    val returnType: IonType = TemplateBodyExpressionModel.Kind.ION_TYPES[body.expressionKind]!!
+    @JvmField
+    val returnType: IonType? = let {
+        for (expr in body) {
+            // TODO: Create a proper mapping from Kind to IonType.
+            if (expr.expressionKind in TemplateExpression.Kind.NULL..TemplateExpression.Kind.STRUCT) {
+                return@let IonType.entries[expr.expressionKind - 1]
+            }
+        }
+        null
+    }
 
     fun writeTo(writer: IonRawWriter_1_1) {
         writeTemplateExpressions(body, writer)
@@ -25,7 +36,7 @@ class MacroV8 private constructor(
     companion object {
         @JvmStatic
         fun create(body: Array<TemplateExpression>): MacroV8 {
-            val signature = mutableListOf<Macro.Parameter>()
+            val signature = mutableListOf<Parameter>()
             body.forEach { addPlaceholders(it, signature) }
             return MacroV8(signature.toTypedArray(), body)
         }
@@ -33,11 +44,10 @@ class MacroV8 private constructor(
         @JvmStatic
         internal fun build(block: TemplateDsl.() -> Unit): MacroV8 = create(Template().apply(block).build())
 
-        private fun addPlaceholders(body: TemplateExpression, signature: MutableList<Macro.Parameter>) {
+        private fun addPlaceholders(body: TemplateExpression, signature: MutableList<Parameter>) {
             if (body.expressionKind == TemplateExpression.Kind.VARIABLE) {
-                // TODO: Optional parameters, default values, tagless encodings
-                val n = signature.size
-                signature.add(Macro.Parameter("variable$n", Macro.ParameterEncoding.Tagged, Macro.ParameterCardinality.ExactlyOne))
+                signature.add(Parameter(body.primitiveValue.toInt()))
+            } else {
                 body.childValues.forEach { addPlaceholders(it, signature) }
             }
         }
@@ -88,7 +98,9 @@ class MacroV8 private constructor(
                     TemplateExpression.Kind.ANNOTATIONS -> expr.annotations.forEach { it?.let(writer::writeAnnotations) ?: writer.writeAnnotations(0) }
                     TemplateExpression.Kind.VARIABLE -> {
                         // TODO: Tagless values
-                        if (expr.childValues.isEmpty()) {
+                        if (expr.primitiveValue > 0) {
+                            writer.writeTaglessPlaceholder(expr.primitiveValue.toInt())
+                        } else if (expr.childValues.isEmpty()) {
                             writer.writeTaggedPlaceholder()
                         } else {
                             writer.writeTaggedPlaceholderWithDefault { writeTemplateExpressions(expr.childValues, writer) }

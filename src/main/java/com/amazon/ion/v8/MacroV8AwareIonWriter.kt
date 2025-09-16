@@ -59,4 +59,12 @@ interface MacroV8AwareIonWriter : IonWriter {
     fun endMacro()
 
     fun absentArgument()
+
+    fun stepInTaglessElementList(macro: MacroV8)
+    fun stepInTaglessElementList(name: String, macro: MacroV8)
+    fun stepInTaglessElementList(scalar: TaglessScalarType)
+
+    fun stepInTaglessElementSExp(macro: MacroV8)
+    fun stepInTaglessElementSExp(name: String, macro: MacroV8)
+    fun stepInTaglessElementSExp(scalar: TaglessScalarType)
 }

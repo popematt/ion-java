@@ -421,8 +421,13 @@ class IonRawTextWriter_1_1 internal constructor(
         }
     }
 
-    override fun writeTaglessPlaceholder() {
-        TODO()
+    override fun writeTaglessPlaceholder(opcode: Int) {
+        val typeName = getTaglessOpName(opcode)
+        writeScalar {
+            output.appendAscii("(:? ")
+            writeTaglessTypeIndicator(typeName)
+            output.appendAscii(")")
+        }
     }
 
     override fun stepInDirective(directive: Int) {
@@ -439,5 +444,96 @@ class IonRawTextWriter_1_1 internal constructor(
         stepInSExp(false)
         output.appendAscii(directiveName)
         isPendingSeparator = true
+    }
+
+    private fun writeTaglessTypeIndicator(type: String) {
+        output.appendAscii("\\")
+        output.appendAscii(type)
+        output.appendAscii("\\")
+    }
+
+    override fun stepInTaglessElementList(opcode: Int) {
+        openValue {
+            output.appendAscii("[")
+            writeTaglessTypeIndicator(getTaglessOpName(opcode))
+            output.appendAscii(" ")
+        }
+        ancestorContainersStack.add(currentContainer)
+        currentContainer = List
+        currentContainerHasValues = false // So that it does what?
+        isPendingLeadingWhitespace = false
+    }
+
+    override fun stepInTaglessElementList(macroId: Int, macroName: String?) {
+        openValue {
+            output.appendAscii("[")
+            writeTaglessTypeIndicator(macroName ?: macroId.toString())
+            output.appendAscii(" ")
+        }
+        ancestorContainersStack.add(currentContainer)
+        currentContainer = List
+        currentContainerHasValues = false
+        isPendingLeadingWhitespace = false
+    }
+
+    override fun stepInTaglessElementSExp(opcode: Int) {
+        openValue {
+            output.appendAscii("(")
+            writeTaglessTypeIndicator(getTaglessOpName(opcode))
+        }
+        ancestorContainersStack.add(currentContainer)
+        currentContainer = SExp
+        currentContainerHasValues = false
+        isPendingLeadingWhitespace = true
+    }
+
+    override fun stepInTaglessElementSExp(macroId: Int, macroName: String?) {
+        openValue {
+            output.appendAscii("(")
+            writeTaglessTypeIndicator(macroName ?: macroId.toString())
+        }
+        ancestorContainersStack.add(currentContainer)
+        currentContainer = SExp
+        currentContainerHasValues = false
+        isPendingLeadingWhitespace = true
+    }
+
+    override fun stepInTaglessEExp(id: Int, name: CharSequence?) {
+        openValue {
+            output.appendAscii('(')
+        }
+        ancestorContainersStack.add(currentContainer)
+        currentContainer = EExpression
+        currentContainerHasValues = false
+        isPendingLeadingWhitespace = false
+    }
+
+    override fun writeTaglessInt(implicitOpcode: Int, value: Int) {
+        // TODO: Consider checking the opcode
+        writeInt(value.toLong())
+    }
+
+    override fun writeTaglessInt(implicitOpcode: Int, value: Long) {
+        writeInt(value)
+    }
+
+    override fun writeTaglessFloat(implicitOpcode: Int, value: Float) {
+        writeFloat(value)
+    }
+
+    override fun writeTaglessFloat(implicitOpcode: Int, value: Double) {
+        writeFloat(value)
+    }
+
+    override fun writeTaglessSymbol(implicitOpcode: Int, id: Int) {
+        writeSymbol(id)
+    }
+
+    override fun writeTaglessSymbol(implicitOpcode: Int, text: CharSequence) {
+        writeSymbol(text)
+    }
+
+    override fun writeTaglessString(implicitOpcode: Int, value: CharSequence) {
+        writeString(value)
     }
 }

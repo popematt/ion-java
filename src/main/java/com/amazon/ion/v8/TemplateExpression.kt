@@ -25,7 +25,7 @@ import java.lang.StringBuilder
  *  - STRUCT: children are in [childValues]
  *  - ANNOTATIONS: annotations is nonEmpty
  *  - FIELD_NAME: fieldName is `String?`
- *  - VARIABLE: default value is in [childValues]
+ *  - VARIABLE: default value is in [childValues], tagless type is in [primitiveValue]. These are mutually exclusive.
  *
  *  Any other expression kind is illegal.
  */
@@ -94,40 +94,42 @@ data class TemplateExpression(
     }
 
     object Kind {
-        const val NULL = 0
-        const val BOOL = 1
-        const val INT = 2
-        const val FLOAT = 3
-        const val DECIMAL = 4
-        const val TIMESTAMP = 5
-        const val STRING = 6
-        const val SYMBOL = 7
-        const val CLOB = 8
-        const val BLOB = 9
-        const val LIST = 10
-        const val SEXP = 11
-        const val STRUCT = 12
-        const val ANNOTATIONS = 13
-        const val FIELD_NAME = 14
-        const val VARIABLE = 23
+        // TODO: Align and/or merge these with TokenTypeConst
+
+        const val NULL = 1
+        const val BOOL = 2
+        const val INT = 3
+        const val FLOAT = 4
+        const val DECIMAL = 5
+        const val TIMESTAMP = 6
+        const val STRING = 7
+        const val SYMBOL = 8
+        const val CLOB = 9
+        const val BLOB = 10
+        const val LIST = 11
+        const val SEXP = 12
+        const val STRUCT = 13
+        const val ANNOTATIONS = 14
+        const val FIELD_NAME = 15
+        const val VARIABLE = 21
 
         operator fun invoke(i: Int) = when (i) {
-            0 -> "NULL"
-            1 -> "BOOL"
-            2 -> "INT"
-            3 -> "FLOAT"
-            4 -> "DECIMAL"
-            5 -> "TIMESTAMP"
-            6 -> "STRING"
-            7 -> "SYMBOL"
-            8 -> "CLOB"
-            9 -> "BLOB"
-            10 -> "LIST"
-            11 -> "SEXP"
-            12 -> "STRUCT"
-            13 -> "ANNOTATIONS"
-            14 -> "FIELD_NAME"
-            23 -> "VARIABLE"
+            1 -> "NULL"
+            2 -> "BOOL"
+            3 -> "INT"
+            4 -> "FLOAT"
+            5 -> "DECIMAL"
+            6 -> "TIMESTAMP"
+            7 -> "STRING"
+            8 -> "SYMBOL"
+            9 -> "CLOB"
+            10 -> "BLOB"
+            11 -> "LIST"
+            12 -> "SEXP"
+            13 -> "STRUCT"
+            14 -> "ANNOTATIONS"
+            15 -> "FIELD_NAME"
+            21 -> "VARIABLE"
             else -> "UNKNOWN"
         } + "($i)"
     }

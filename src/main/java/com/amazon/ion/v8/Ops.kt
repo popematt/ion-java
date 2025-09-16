@@ -106,6 +106,16 @@ object Ops {
     const val VARIABLE_LENGTH_CLOB = 0xFF
 
 
+    // When dealing with tagless types, there are a few supplemental/replacement opcodes
+    // See [TaglessScalarType]
+
+    const val TE_FLEX_INT = 0x60
+    const val TE_FLEX_UINT = 0xE0
+    const val TE_UINT_8 = 0xE1
+    const val TE_UINT_16 = 0xE2
+    const val TE_UINT_32 = 0xE4
+    const val TE_UINT_64 = 0xE8
+    const val TE_ANY_SYMBOL = 0xEA
 
     data class Info(
         /** ordinal of IonType, or -1 */

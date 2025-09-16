@@ -61,8 +61,7 @@ internal interface DataModelDsl : ValuesDsl {
 @ExpressionBuilderDslMarker
 internal interface TemplateDsl : ValuesDsl {
     fun variable()
-    // TODO: Determine signature of this method.
-    fun taglessVariable(): Unit = TODO()
+    fun variable(type: TaglessScalarType)
     fun variable(default: TemplateDsl.() -> Unit)
 
     fun list(content: TemplateDsl.() -> Unit)
@@ -148,6 +147,7 @@ internal sealed class ExpressionBuilderDsl : ValuesDsl, ValuesDsl.Fields {
         override fun struct(content: TemplateDsl.Fields.() -> Unit) = container(TemplateExpression.Kind.STRUCT, content)
 
         override fun variable() { expressions.add(TemplateExpression(TemplateExpression.Kind.VARIABLE)) }
+        override fun variable(type: TaglessScalarType) { expressions.add(TemplateExpression(TemplateExpression.Kind.VARIABLE, primitiveValue = type.opcode.toLong())) }
 
         override fun variable(default: TemplateDsl.() -> Unit) = container(TemplateExpression.Kind.VARIABLE, content = default)
     }

@@ -36,6 +36,8 @@ class IonRawBinaryWriter_1_1 internal constructor(
         STRUCT,
         EEXP,
         EXPR_GROUP,
+        TE_LIST,
+        TE_SEXP,
         /**
          * Represents the top level stream. The [containerStack] always has [ContainerInfo] for [TOP] at the bottom
          * of the stack so that we never have to check if [currentContainer] is null.
@@ -63,12 +65,10 @@ class IonRawBinaryWriter_1_1 internal constructor(
         /**
          * The number of elements in the expression group or arguments to the macro.
          * This is updated when _finishing_ writing a value or expression group.
+         *
+         * TODO: Confirm that this is not needed for macros, and then update it only when starting a tagless value.
          */
         @JvmField var numChildren: Int = 0,
-        /**
-         * The kind of tagless encoding to use if this is a tagless expression group.
-         */
-        @JvmField var taglessEncodingKind: TaglessEncoding? = null
     ) {
         /**
          * Clears this [ContainerInfo] of old data and initializes it with the given new data.
@@ -586,27 +586,31 @@ class IonRawBinaryWriter_1_1 internal constructor(
                 currentContainer.metadataOffset += buffer.writeFlexUInt(id)
                 buffer.reserve(lengthPrefixPreallocation)
             } else {
-                if (id < 64) {
-                    buffer.writeByte(id.toByte())
-                } else if (id < 4160) {
-                    val biasedId = id - 64
-                    val lowNibble = biasedId / 256
-                    val adjustedId = biasedId % 256L
-                    buffer.writeByte((Ops.BIASED_E_EXPRESSION_ONE_BYTE_FIXED_INT + lowNibble).toByte())
-                    currentContainer.metadataOffset += buffer.writeFixedUInt(adjustedId)
-                } else if (id < 1_052_736) {
-                    val biasedId = id - 4160
-                    val lowNibble = biasedId / (256 * 256)
-                    val adjustedId = biasedId % (256 * 256L)
-                    buffer.writeByte((Ops.BIASED_E_EXPRESSION_TWO_BYTE_FIXED_INT + lowNibble).toByte())
-                    currentContainer.metadataOffset += buffer.writeFixedIntOrUInt(adjustedId, 2)
-                } else {
-                    buffer.writeByte(Ops.E_EXPRESSION_WITH_FLEX_UINT_ADDRESS)
-                    currentContainer.metadataOffset += buffer.writeFlexUInt(id)
-                }
+                writeEExpMacroIdWithoutLengthPrefix(id)
             }
         }
         hasFieldName = false
+    }
+
+    private fun writeEExpMacroIdWithoutLengthPrefix(id: Int) {
+        if (id < 64) {
+            buffer.writeByte(id.toByte())
+        } else if (id < 4160) {
+            val biasedId = id - 64
+            val lowNibble = biasedId / 256
+            val adjustedId = biasedId % 256L
+            buffer.writeByte((Ops.BIASED_E_EXPRESSION_ONE_BYTE_FIXED_INT + lowNibble).toByte())
+            currentContainer.metadataOffset += buffer.writeFixedUInt(adjustedId)
+        } else if (id < 1_052_736) {
+            val biasedId = id - 4160
+            val lowNibble = biasedId / (256 * 256)
+            val adjustedId = biasedId % (256 * 256L)
+            buffer.writeByte((Ops.BIASED_E_EXPRESSION_TWO_BYTE_FIXED_INT + lowNibble).toByte())
+            currentContainer.metadataOffset += buffer.writeFixedIntOrUInt(adjustedId, 2)
+        } else {
+            buffer.writeByte(Ops.E_EXPRESSION_WITH_FLEX_UINT_ADDRESS)
+            currentContainer.metadataOffset += buffer.writeFlexUInt(id)
+        }
     }
 
     override fun stepOut() {
@@ -619,6 +623,12 @@ class IonRawBinaryWriter_1_1 internal constructor(
 
         // currentContainer.type is non-null for any initialized ContainerInfo
         when (currentContainer.type.assumeNotNull()) {
+            TE_LIST, TE_SEXP -> {
+                // Add one byte to account for the op code
+                thisContainerTotalLength++
+                thisContainerTotalLength += writeCurrentContainerLength(lengthPrefixPreallocation, currentContainer.numChildren.toLong())
+            }
+
             LIST, SEXP, STRUCT -> {
                 // Add one byte to account for the op code
                 thisContainerTotalLength++
@@ -674,8 +684,7 @@ class IonRawBinaryWriter_1_1 internal constructor(
      * @param numPreAllocatedLengthPrefixBytes the number of bytes that were pre-allocated for the length prefix of the
      *                                         current container.
      */
-    private fun writeCurrentContainerLength(numPreAllocatedLengthPrefixBytes: Int): Int {
-        val lengthToWrite = currentContainer.length
+    private fun writeCurrentContainerLength(numPreAllocatedLengthPrefixBytes: Int, lengthToWrite: Long = currentContainer.length): Int {
         val lengthPosition = currentContainer.position + currentContainer.metadataOffset
         val lengthPrefixBytesRequired = FlexInt.flexUIntLength(lengthToWrite)
         if (lengthPrefixBytesRequired == numPreAllocatedLengthPrefixBytes) {
@@ -730,14 +739,199 @@ class IonRawBinaryWriter_1_1 internal constructor(
         hasFieldName = false
     }
 
-    override fun writeTaglessPlaceholder() {
-        buffer.writeByte(Ops.TAGLESS_PLACEHOLDER)
-        currentContainer.length++
-        TODO()
+    override fun writeTaglessPlaceholder(opcode: Int) {
+        buffer.write2Bytes(Ops.TAGLESS_PLACEHOLDER.toByte(), opcode.toByte())
+        currentContainer.length += 2
+        hasFieldName = false
     }
 
     override fun stepInDirective(directive: Int) {
         currentContainer = containerStack.push { it.reset(SEXP, buffer.position(), isLengthPrefixed = false) }
         buffer.writeByte(directive)
+    }
+
+    override fun stepInTaglessElementList(opcode: Int) {
+        openValue {
+            currentContainer = containerStack.push {
+                it.reset(TE_LIST, buffer.position(), true)
+            }
+            buffer.write2Bytes(Ops.TAGLESS_ELEMENT_LIST.toByte(), opcode.toByte())
+            currentContainer.metadataOffset++
+            buffer.reserve(lengthPrefixPreallocation)
+        }
+    }
+
+    override fun stepInTaglessElementList(macroId: Int, macroName: String?) {
+        openValue {
+            currentContainer = containerStack.push { it.reset(TE_LIST, buffer.position(), true) }
+            buffer.writeByte(Ops.TAGLESS_ELEMENT_LIST)
+            currentContainer.metadataOffset++
+            writeEExpMacroIdWithoutLengthPrefix(macroId)
+            buffer.reserve(lengthPrefixPreallocation)
+        }
+    }
+
+    override fun stepInTaglessElementSExp(opcode: Int) {
+        openValue {
+            currentContainer = containerStack.push { it.reset(TE_SEXP, buffer.position(), true) }
+            buffer.write2Bytes(Ops.TAGLESS_ELEMENT_SEXP.toByte(), opcode.toByte())
+            currentContainer.metadataOffset++
+            buffer.reserve(lengthPrefixPreallocation)
+        }
+    }
+
+    override fun stepInTaglessElementSExp(macroId: Int, macroName: String?) {
+        openValue {
+            currentContainer = containerStack.push { it.reset(TE_SEXP, buffer.position(), true) }
+            buffer.writeByte(Ops.TAGLESS_ELEMENT_SEXP)
+            currentContainer.metadataOffset++
+            writeEExpMacroIdWithoutLengthPrefix(macroId)
+            buffer.reserve(lengthPrefixPreallocation)
+        }
+    }
+
+    override fun stepInTaglessEExp(id: Int, name: CharSequence?) {
+        currentContainer = containerStack.push { it.reset(EEXP, buffer.position(), isLengthPrefixed = false) }
+    }
+
+    override fun writeTaglessInt(implicitOpcode: Int, value: Int) {
+        // TODO: Bounds checking?
+        // TODO: We can probably collapse these branches
+        val currentContainer = currentContainer
+        when (implicitOpcode) {
+            Ops.INT_8,
+            Ops.INT_16,
+            Ops.INT_32,
+            Ops.INT_64 -> {
+                val length = implicitOpcode - Ops.INT_0
+                buffer.writeFixedIntOrUInt(value.toLong(), length)
+                currentContainer.length += length
+            }
+            Ops.TE_UINT_8,
+            Ops.TE_UINT_16,
+            Ops.TE_UINT_32,
+            Ops.TE_UINT_64 -> {
+                val length = implicitOpcode - 0xE0
+                buffer.writeFixedIntOrUInt(value.toLong(), length)
+                currentContainer.length += length
+            }
+            Ops.TE_FLEX_INT -> currentContainer.length += buffer.writeFlexInt(value.toLong())
+            Ops.TE_FLEX_UINT -> currentContainer.length += buffer.writeFlexUInt(value)
+            else -> throw IonException("Not a valid tagless int opcode: $implicitOpcode")
+        }
+        currentContainer.numChildren++
+    }
+
+    override fun writeTaglessInt(implicitOpcode: Int, value: Long) {
+        // TODO: Bounds checking?
+        // TODO: We can probably collapse these branches
+        val currentContainer = currentContainer
+        when (implicitOpcode) {
+            Ops.INT_8,
+            Ops.INT_16,
+            Ops.INT_32,
+            Ops.INT_64 -> {
+                val length = implicitOpcode - Ops.INT_0
+                buffer.writeFixedIntOrUInt(value, length)
+                currentContainer.length += length
+            }
+            Ops.TE_UINT_8,
+            Ops.TE_UINT_16,
+            Ops.TE_UINT_32,
+            Ops.TE_UINT_64 -> {
+                val length = implicitOpcode - 0xE0
+                buffer.writeFixedIntOrUInt(value, length)
+                currentContainer.length += length
+            }
+            Ops.TE_FLEX_INT -> currentContainer.length += buffer.writeFlexInt(value)
+            Ops.TE_FLEX_UINT -> currentContainer.length += buffer.writeFlexUInt(value)
+            else -> throw IonException("Not a valid tagless int opcode: $implicitOpcode")
+        }
+        currentContainer.numChildren++
+    }
+
+
+    override fun writeTaglessFloat(implicitOpcode: Int, value: Float) {
+        val currentContainer = currentContainer
+        when (implicitOpcode) {
+            Ops.FLOAT_16 -> TODO()
+            Ops.FLOAT_32 -> {
+                buffer.writeFixedIntOrUInt(floatToIntBits(value).toLong(), 4)
+                currentContainer.length += 4
+            }
+            Ops.FLOAT_64 -> {
+                buffer.writeFixedIntOrUInt(doubleToRawLongBits(value.toDouble()), 8)
+                currentContainer.length += 8
+            }
+            else -> throw IonException("Not a valid tagless float opcode: $implicitOpcode")
+        }
+        currentContainer.numChildren++
+    }
+
+    override fun writeTaglessFloat(implicitOpcode: Int, value: Double) {
+        val bytesWritten = when (implicitOpcode) {
+            Ops.FLOAT_16 -> TODO()
+            Ops.FLOAT_32 -> {
+                buffer.writeFixedIntOrUInt(floatToIntBits(value.toFloat()).toLong(), 4)
+                4
+            }
+            Ops.FLOAT_64 -> {
+                buffer.writeFixedIntOrUInt(doubleToRawLongBits(value), 8)
+                8
+            }
+            else -> throw IonException("Not a valid tagless float opcode: $implicitOpcode")
+        }
+        val currentContainer = currentContainer
+        currentContainer.length += bytesWritten
+        currentContainer.numChildren++
+    }
+
+    override fun writeTaglessSymbol(implicitOpcode: Int, id: Int) {
+        val bytesWritten = when (implicitOpcode) {
+            Ops.SYMBOL_VALUE_SID -> buffer.writeFlexUInt(id)
+            Ops.TE_ANY_SYMBOL -> buffer.writeFlexInt(id.toLong())
+            else -> throw IonException("Not a valid tagless symbol id opcode: $implicitOpcode")
+        }
+        val currentContainer = currentContainer
+        currentContainer.length += bytesWritten
+        currentContainer.numChildren++
+    }
+
+    @OptIn(ExperimentalStdlibApi::class)
+    override fun writeTaglessSymbol(implicitOpcode: Int, text: CharSequence) {
+        val bytesWritten = when (implicitOpcode) {
+            Ops.VARIABLE_LENGTH_INLINE_SYMBOL -> {
+                val encodedText = utf8StringEncoder.encode(text.toString())
+                val encodedTextLength = encodedText.encodedLength
+                val lengthOfLength = buffer.writeFlexUInt(encodedTextLength)
+                buffer.writeBytes(encodedText.buffer, 0, encodedTextLength)
+                lengthOfLength + encodedTextLength
+            }
+            Ops.TE_ANY_SYMBOL -> {
+                val encodedText = utf8StringEncoder.encode(text.toString())
+                val encodedTextLength = encodedText.encodedLength
+                val lengthOfLength = buffer.writeFlexInt(-1 - encodedTextLength.toLong())
+                buffer.writeBytes(encodedText.buffer, 0, encodedTextLength)
+                lengthOfLength + encodedTextLength
+            }
+            else -> throw IonException("Not a valid tagless symbol text opcode: ${implicitOpcode.toByte().toHexString()}")
+        }
+        val currentContainer = currentContainer
+        currentContainer.length += bytesWritten
+        currentContainer.numChildren++
+    }
+
+    override fun writeTaglessString(implicitOpcode: Int, value: CharSequence) {
+        if (implicitOpcode != Ops.VARIABLE_LENGTH_STRING) {
+            throw IonException("Not a valid tagless string opcode: $implicitOpcode")
+        }
+        val encodedText = utf8StringEncoder.encode(value.toString())
+        val encodedTextLength = encodedText.encodedLength
+        val lengthOfLength = buffer.writeFlexUInt(encodedTextLength)
+        buffer.writeBytes(encodedText.buffer, 0, encodedTextLength)
+
+        val currentContainer = currentContainer
+        currentContainer.length += lengthOfLength + encodedTextLength
+        currentContainer.numChildren++
     }
 }

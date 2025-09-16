@@ -141,6 +141,60 @@ internal class IonManagedWriter_1_1(
     /** The first symbol ID in the current encoding context. */
     private var firstLocalSid: Int = 0
 
+    private var containers = _Private_RecyclingStack(16) { ContainerInfo() }
+    init {
+        // Push a container to be at the top-level so we don't need to do null checks.
+        containers.push { it.reset() }
+    }
+
+    // Stores info about the types of the child elements.
+    private class ContainerInfo(
+        @JvmField var signature: Array<MacroV8.Parameter> = EMPTY_ARRAY,
+        @JvmField var type: Int = -1,
+        /**
+        // If i>=-1, type is an opcode
+        // If i==-2, there is no type
+        // If i==-3, type is a macro id
+        */
+        @JvmField var i: Int = 0,
+    ) {
+
+        companion object {
+            @JvmStatic
+            private val EMPTY_ARRAY = emptyArray<MacroV8.Parameter>()
+        }
+
+        val macroId: Int get() = -1 - type
+
+        fun reset(signature: Array<MacroV8.Parameter>) {
+            this.signature = signature
+            i = 0
+            prepareNextType()
+        }
+
+        fun resetWithMacroShape(macroId: Int) {
+            this.signature = EMPTY_ARRAY
+            this.type = -1 - macroId
+            i = -3
+        }
+
+        fun reset(opcode: Int = 0) {
+            this.signature = EMPTY_ARRAY
+            this.type = opcode
+            i = if (opcode == 0) -2 else -1
+        }
+
+        fun prepareNextType() {
+            if (i >= 0) {
+                if (i < signature.size) {
+                    type = signature[i++].type
+                } else {
+                    type = Ops.DELIMITED_CONTAINER_END
+                }
+            }
+        }
+    }
+
     /**
      * Adds a new symbol to the table for this writer, or finds an existing definition of it. This writer does not
      * implement [IonWriter.getSymbolTable], so this method supplies some of that functionality.
@@ -159,23 +213,6 @@ internal class IonManagedWriter_1_1(
         sid = symbolTable.size + newSymbols.size + 1
         newSymbols[text] = sid
         return sid
-    }
-
-    /**
-     * Checks for macro invocations in the body of a TemplateMacro and ensure that those macros are added to the
-     * macro table.
-     *
-     * This is essentially a recursive, memoized, topological sort. Given a dependency graph, it runs in O(V + E) time.
-     * Memoization is done using the macro table, so the O(V + E) cost is only paid the first time a macro is added to
-     * the macro table.
-     */
-    private fun addMacroDependencies(macro: MacroV8) {
-//        macro.dependencies.forEach {
-//            if (it !is SystemMacro && it !in macroTable && it !in newMacros) {
-//                addMacroDependencies(it)
-//                assignMacroAddress(it)
-//            }
-//        }
     }
 
     /**
@@ -213,9 +250,6 @@ internal class IonManagedWriter_1_1(
 
             val address = if (existingAddress < 0) {
                 // Macro is not in newMacros
-
-                // If it's in macroTable, we can skip adding dependencies
-                if (macro !in macroTable) addMacroDependencies(macro)
                 // Add to newMacros and get a macro address
                 assignMacroAddress(macro)
             } else {
@@ -250,7 +284,6 @@ internal class IonManagedWriter_1_1(
         address = newMacros.getOrDefault(macro, -1)
         if (address >= 0) return address
 
-        addMacroDependencies(macro)
         return assignMacroAddress(macro)
     }
 
@@ -448,9 +481,44 @@ internal class IonManagedWriter_1_1(
             }
             else -> throw IllegalArgumentException("Not a container type: $containerType")
         }
+        containers.push { it.reset() }
     }
 
-    override fun stepOut() = userData.stepOut()
+    fun stepInTaglessElementList(macro: MacroV8) {
+        val macroId = getOrAssignMacroAddress(macro)
+        userData.stepInTaglessElementList(macroId, null)
+        containers.push { it.resetWithMacroShape(macroId) }
+    }
+    fun stepInTaglessElementList(name: String, macro: MacroV8) {
+        val macroId = getOrAssignMacroAddressAndName(name, macro)
+        userData.stepInTaglessElementList(macroId, name)
+        containers.push { it.resetWithMacroShape(macroId) }
+    }
+    fun stepInTaglessElementList(scalar: TaglessScalarType) {
+        userData.stepInTaglessElementList(scalar.opcode)
+        containers.push { it.reset(scalar.opcode) }
+    }
+
+    fun stepInTaglessElementSExp(macro: MacroV8) {
+        val macroId = getOrAssignMacroAddress(macro)
+        userData.stepInTaglessElementSExp(macroId, null)
+        containers.push { it.resetWithMacroShape(macroId) }
+    }
+    fun stepInTaglessElementSExp(name: String, macro: MacroV8) {
+        val macroId = getOrAssignMacroAddressAndName(name, macro)
+        userData.stepInTaglessElementSExp(macroId, name)
+        containers.push { it.resetWithMacroShape(macroId) }
+    }
+    fun stepInTaglessElementSExp(scalar: TaglessScalarType) {
+        userData.stepInTaglessElementSExp(scalar.opcode)
+        containers.push { it.reset(scalar.opcode) }
+    }
+
+    override fun stepOut() {
+        // TODO: Make sure you can't use this function to step out of a macro?
+        containers.pop()
+        userData.stepOut()
+    }
 
     override fun isInStruct(): Boolean = userData.isInStruct()
 
@@ -463,7 +531,20 @@ internal class IonManagedWriter_1_1(
     }
 
     override fun writeSymbol(content: String?) {
-        if (content == null) {
+        val container = containers.peek()
+        if (container.type != 0) {
+            content ?: throw IonException("Cannot write null.symbol for tagless symbol")
+            when (container.type) {
+                Ops.SYMBOL_VALUE_SID -> userData.writeTaglessSymbol(container.type, intern(content))
+                Ops.VARIABLE_LENGTH_INLINE_SYMBOL -> userData.writeTaglessSymbol(container.type, content)
+                else -> if (options.shouldWriteInline(SymbolKind.VALUE, content)) {
+                    userData.writeTaglessSymbol(container.type, content)
+                } else {
+                    userData.writeTaglessSymbol(container.type, intern(content))
+                }
+            }
+            container.prepareNextType()
+        } else if (content == null) {
             userData.writeNull(IonType.SYMBOL)
         } else {
             handleSymbolToken(UNKNOWN_SYMBOL_ID, content, SymbolKind.VALUE, userData)
@@ -471,7 +552,25 @@ internal class IonManagedWriter_1_1(
     }
 
     override fun writeSymbolToken(content: SymbolToken?) {
-        if (content == null) {
+        val container = containers.peek()
+        if (container.type != 0) {
+            content ?: throw IonException("Cannot write null.symbol for tagless symbol")
+            val text = content.text
+            if (text != null) {
+                when (container.type) {
+                    Ops.SYMBOL_VALUE_SID -> userData.writeTaglessSymbol(container.type, intern(text))
+                    Ops.VARIABLE_LENGTH_INLINE_SYMBOL -> userData.writeTaglessSymbol(container.type, text)
+                    else -> if (options.shouldWriteInline(SymbolKind.VALUE, text)) {
+                        userData.writeTaglessSymbol(container.type, text)
+                    } else {
+                        userData.writeTaglessSymbol(container.type, intern(text))
+                    }
+                }
+            } else {
+                userData.writeTaglessSymbol(container.type, 0)
+            }
+            container.prepareNextType()
+        } else if (content == null) {
             userData.writeNull(IonType.SYMBOL)
         } else {
             val text: String? = content.text
@@ -515,13 +614,40 @@ internal class IonManagedWriter_1_1(
     override fun writeNull() = userData.writeNull()
     override fun writeNull(type: IonType?) = userData.writeNull(type ?: IonType.NULL)
     override fun writeBool(value: Boolean) = userData.writeBool(value)
-    override fun writeInt(value: Long) = userData.writeInt(value)
+    override fun writeInt(value: Long) {
+        val container = containers.peek()
+        if (container.type != 0) {
+            userData.writeTaglessInt(container.type, value)
+            container.prepareNextType()
+        } else {
+            userData.writeInt(value)
+        }
+    }
 
+    // TODO: Tagless int support for BigIntegers
     override fun writeInt(value: BigInteger?) = value.writeMaybeNull(IonType.INT, userData::writeInt)
-    override fun writeFloat(value: Double) = userData.writeFloat(value)
+
+    override fun writeFloat(value: Double) {
+        val container = containers.peek()
+        if (container.type != 0) {
+            userData.writeTaglessFloat(container.type, value)
+            container.prepareNextType()
+        } else {
+            userData.writeFloat(value)
+        }
+    }
     override fun writeDecimal(value: BigDecimal?) = value.writeMaybeNull(IonType.DECIMAL, userData::writeDecimal)
     override fun writeTimestamp(value: Timestamp?) = value.writeMaybeNull(IonType.TIMESTAMP, userData::writeTimestamp)
-    override fun writeString(value: String?) = value.writeMaybeNull(IonType.STRING, userData::writeString)
+    override fun writeString(value: String?) {
+        val container = containers.peek()
+        if (container.type != 0) {
+            value ?: throw IonException("Cannot write null.string for tagless string")
+            userData.writeTaglessString(container.type, value)
+            container.prepareNextType()
+        } else {
+            value.writeMaybeNull(IonType.STRING, userData::writeString)
+        }
+    }
 
     override fun writeClob(value: ByteArray?) = value.writeMaybeNull(IonType.CLOB, userData::writeClob)
     override fun writeClob(value: ByteArray?, start: Int, len: Int) = value.writeMaybeNull(IonType.CLOB) { userData.writeClob(it, start, len) }
@@ -725,20 +851,34 @@ internal class IonManagedWriter_1_1(
     }
 
     private fun startMacro(name: String?, address: Int, definition: MacroV8) {
-        val useNames = options.eExpressionIdentifierStrategy == ManagedWriterOptions_1_1.EExpressionIdentifierStrategy.BY_NAME
-        if (useNames && name != null) {
-            userData.stepInEExp(name)
+        val container = containers.peek()
+        val prescribedMacroType = container.macroId
+        if (prescribedMacroType < 0) {
+            val useNames =
+                options.eExpressionIdentifierStrategy == ManagedWriterOptions_1_1.EExpressionIdentifierStrategy.BY_NAME
+            if (useNames && name != null) {
+                userData.stepInEExp(name)
+            } else {
+                val includeLengthPrefix = false // options.writeLengthPrefix(ContainerType.EEXP, depth + 1)
+                userData.stepInEExp(address, includeLengthPrefix)
+            }
         } else {
-            val includeLengthPrefix = false // options.writeLengthPrefix(ContainerType.EEXP, depth + 1)
-            userData.stepInEExp(address, includeLengthPrefix)
+            userData.stepInTaglessEExp(prescribedMacroType, name)
+            container.prepareNextType()
         }
+        containers.push { it.reset(definition.signature) }
     }
 
     override fun endMacro() {
+        // TODO: See if there are unwritten parameters, and attempt to write `absent arg` for all of them.
         userData.stepOut()
+        containers.pop()
     }
 
     override fun absentArgument() {
+        val container = containers.peek()
+        if (container.type != 0) throw IonException("The argument corresponding to a tagless placeholder cannot be absent.")
         userData.writeAbsentArgument()
+        container.prepareNextType()
     }
 }

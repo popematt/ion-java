@@ -303,16 +303,6 @@ class ToBytecodeTest {
 
     @ParameterizedTest
     @CsvSource(
-
-
-        // -4231 | 66 03
-        //  3257 | 6A 03
-
-        // 00000001 00111010
-        // 10011011 11100110
-        //
-
-
         " -8, 11110001",
         " -12, 11101001",
         "                  64, 00000010 00000001", // 02 01
@@ -361,6 +351,9 @@ class ToBytecodeTest {
 
         Assertions.assertEquals(expectedValue, value)
         Assertions.assertEquals((input.length + 1) / 9, length)
+
+        val bigInteger = IntHelper.readFlexIntBigIntegerValue(data, 4)
+        assertEquals(expectedValue, bigInteger.toInt())
     }
 
 

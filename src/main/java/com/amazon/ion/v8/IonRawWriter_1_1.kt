@@ -199,4 +199,24 @@ interface IonRawWriter_1_1 {
 
     fun writeClob(value: ByteArray) = writeClob(value, 0, value.size)
     fun writeClob(value: ByteArray, start: Int, length: Int)
+
+    //
+
+    fun stepInTaglessElementList(opcode: Int)
+    fun stepInTaglessElementList(macroId: Int, macroName: String?)
+    fun stepInTaglessElementSExp(opcode: Int)
+    fun stepInTaglessElementSExp(macroId: Int, macroName: String?)
+
+    // TODO: Do we even need any arguments here?
+    fun stepInTaglessEExp(id: Int, name: CharSequence?)
+
+    fun writeTaglessInt(implicitOpcode: Int, value: Int)
+    fun writeTaglessInt(implicitOpcode: Int, value: Long)
+    fun writeTaglessInt(implicitOpcode: Int, value: BigInteger): Unit = TODO()
+    fun writeTaglessFloat(implicitOpcode: Int, value: Float)
+    fun writeTaglessFloat(implicitOpcode: Int, value: Double)
+    fun writeTaglessSymbol(implicitOpcode: Int, id: Int)
+    fun writeTaglessSymbol(implicitOpcode: Int, text: CharSequence)
+    fun writeTaglessString(implicitOpcode: Int, value: CharSequence)
+
 }

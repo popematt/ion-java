@@ -3,6 +3,7 @@ package com.amazon.ion.v8
 import com.amazon.ion.*
 import com.amazon.ion.impl.bin.*
 import com.amazon.ion.v8.Bytecode.OPERATION_SHIFT_AMOUNT
+import com.amazon.ion.v8.Bytecode.debugString
 import com.amazon.ion.v8.Bytecode.instructionToOp
 import com.amazon.ion.v8.Bytecode.opToInstruction
 import java.nio.charset.StandardCharsets
@@ -221,16 +222,18 @@ private fun evalMacro(
                 p += compileValue(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
                 val substitutionSize = dest.size() - destSize
                 // hasValue will be all 1s if substitution size is non-zero, causing the default value to be skipped over.
-                val hasValue = ((substitutionSize * -1) shr 32)
+                val hasValue = ((substitutionSize * -1) shr 31)
                 i += hasValue and instruction and Bytecode.DATA_MASK
             }
             Bytecode.OP_TAGLESS_PLACEHOLDER -> {
-                val argOpcode = instruction and Bytecode.DATA_MASK
-                val handler = TAGLESS_OP_HANDLERS[argOpcode]
-                p += handler.writeBytecode(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
+                // Get the opcode from the instruction.
+                val argumentOpcode = instruction and Bytecode.DATA_MASK
+                val handler = TAGLESS_OP_HANDLERS[argumentOpcode]
+                p += handler.writeBytecode(src, p, argumentOpcode, dest, cp, macSrc, macIdx, symTab)
             }
             Bytecode.EOF -> break
             Bytecode.REFILL -> TODO("Unreachable: ${Bytecode(instruction)}")
+            Bytecode.ABSENT_ARGUMENT -> dest.add(instruction)
             else -> {
                 TODO("${Bytecode(instruction)} at i_macro = ${i - 1}; i_source = $pos")
             }
@@ -252,7 +255,6 @@ private val TWELVE_BIT_MAC_ID = WriteBytecode { src, pos, op, dest, cp, macSrc, 
 }
 
 private val TWENTY_BIT_MAC_ID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
-    println(pos)
     val bias = (op and 0xF) * 65536 + 4160
     val unbiasedId = src.getShort(pos).toInt() and 0xFFFF
     val macAddr = unbiasedId + bias
@@ -307,6 +309,20 @@ private val SYMBOL_SID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx,
     val sid = (valueAndLength ushr 8).toInt()
     dest.add(Bytecode.OP_SYMBOL_SID.opToInstruction(sid))
     length
+}
+
+private val SYMBOL_SID_OR_TEXT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexIntValueAndLengthAt(src, pos)
+    val flexIntLength = valueAndLength.toInt() and 0xFF
+    val flexIntValue = (valueAndLength ushr 8).toInt()
+    if (flexIntValue >= 0) {
+        dest.add(Bytecode.OP_SYMBOL_SID.opToInstruction(flexIntValue))
+        flexIntLength
+    } else {
+        val textLength = -1 - flexIntValue
+        BytecodeHelper.emitSymbolTextReference(dest, pos + flexIntLength, textLength)
+        textLength + flexIntLength
+    }
 }
 
 
@@ -498,7 +514,7 @@ private val VAR_CLOB_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macId
 }
 
 private val TAGGED_PARAM = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
-    dest.add(Bytecode.OP_PLACEHOLDER.opToInstruction()); 0
+    dest.add2(Bytecode.OP_PLACEHOLDER.opToInstruction(1), Bytecode.ABSENT_ARGUMENT.opToInstruction()); 0
 }
 
 private val TAGGED_PARAM_WITH_DEFAULT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
@@ -518,6 +534,7 @@ private val TAGLESS_PARAM = WriteBytecode { src, pos, op, dest, cp, macSrc, macI
     val typeOp = src[pos].toInt() and 0xFF
     when (typeOp) {
         in 0x60..0x68,
+        in 0x6B..0x6D,
         in 0xE0..0xE8,
         in 0x82..0x87,
         0xA0, 0xEA,
@@ -531,8 +548,6 @@ private val TAGLESS_PARAM = WriteBytecode { src, pos, op, dest, cp, macSrc, macI
 private val TAGLESS_ELEMENT_SEQUENCE = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
     var p = pos
     val typeOp = src[p++].toInt() and 0xFF
-
-    println("typeOp: ${typeOp.toHexString()}")
 
     val macId = when (typeOp shr 4) {
         0x0, 0x1, 0x2, 0x3 -> typeOp
@@ -588,7 +603,10 @@ private val TAGLESS_ELEMENT_SEQUENCE = WriteBytecode { src, pos, op, dest, cp, m
 }
 
 // TODO: Confirm that we don't ever need to add a `Bytecode.NOTHING` here.
-private val NOTHING_ARG = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->  0 }
+//       Seems like we might need to in order to make sure that annotations can be reset.
+//       But if we do write it, then it messes up the case when we want to use the default value.
+//       Instead, we'll have a default value of "nothing".
+private val NOTHING_ARG = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> 0 }
 
 private val IVM = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> dest.add(Bytecode.IVM.opToInstruction(src.getShort(pos).toInt() and 0xFFFF)); 3 }
 
@@ -609,7 +627,7 @@ private val TYPED_NULL_INSTRUCTIONS = intArrayOf(
 
 
 @OptIn(ExperimentalStdlibApi::class)
-private val OP_TODO = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> TODO("${op.toHexString()} at $pos\n${src.toHexString()}") }
+private val OP_TODO = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> TODO("${op.toHexString()} at $pos}") }
 
 @OptIn(ExperimentalStdlibApi::class)
 private val OP_INVALID = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab -> throw IonException("Encountered invalid opcode: ${op.toHexString()}") }
@@ -641,13 +659,36 @@ private val DIRECTIVE = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, 
     p - pos
 }
 
-private val FLEX_INT_HANDLER = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+private val FLEX_INT_HANDLER_INT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
     val valueAndLength = IntHelper.readFlexIntValueAndLengthAt(src, pos)
     val length = valueAndLength.toInt() and 0xFF
     val value = (valueAndLength ushr 8).toInt()
     dest.add2(Bytecode.OP_INLINE_INT.opToInstruction(), value)
     length
 }
+private val FLEX_INT_HANDLER = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val flexIntLength = IntHelper.lengthOfFlexUIntAt(src, pos)
+    when (flexIntLength) {
+        1, 2, 3, 4 -> {
+            val valueAndLength = IntHelper.readFlexIntValueAndLengthAt(src, pos)
+            val length = valueAndLength.toInt() and 0xFF
+            val value = (valueAndLength ushr 8).toInt()
+            dest.add2(Bytecode.OP_INLINE_INT.opToInstruction(), value)
+        }
+        5, 6, 7, 8, 9 -> {
+            val longValue = IntHelper.readFlexIntLongValue(src, pos)
+            BytecodeHelper.emitInt64Value(dest, longValue)
+        }
+        else -> {
+            val bigInt = IntHelper.readFlexIntBigIntegerValue(src, pos)
+            val cpIndex = cp.size
+            cp.add(bigInt)
+            dest.add(Bytecode.OP_CP_BIG_INT.opToInstruction(cpIndex))
+        }
+    }
+    flexIntLength
+}
+
 private val FLEX_UINT_HANDLER = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
     val valueAndLength = IntHelper.readFlexIntValueAndLengthAt(src, pos)
     val length = valueAndLength.toInt() and 0xFF
@@ -789,6 +830,7 @@ private val TAGLESS_OP_HANDLERS = Array<WriteBytecode>(256) { op ->
         0xA0 -> SYMBOL_SID
         0xE0 -> FLEX_UINT_HANDLER
         in 0xE1 .. 0xE8 -> FIXED_UINT_HANDLER
+        0xEA -> SYMBOL_SID_OR_TEXT // symbol sid or text
         0xF8 -> VAR_TIMESTAMP_REF
         0xF9 -> VAR_STRING_REF
         0xFA -> VAR_SYMBOL_REF
@@ -920,7 +962,7 @@ private fun evalMacroWithFullPooling(
                 p += compileValueWithFullPooling(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
                 val substitutionSize = dest.size() - destSize
                 // hasValue will be all 1s if substitution size is non-zero, causing the default value to be skipped over.
-                val hasValue = ((substitutionSize * -1) shr 32)
+                val hasValue = ((substitutionSize * -1) shr 31)
                 i += hasValue and instruction and Bytecode.DATA_MASK
             }
             Bytecode.OP_TAGLESS_PLACEHOLDER -> {
@@ -1014,6 +1056,25 @@ private val SYMBOL_SID_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, c
     cp.add(symTab[sid])
     dest.add(Bytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
     length
+}
+
+private val SYMBOL_SID_OR_TEXT_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
+    val valueAndLength = IntHelper.readFlexIntValueAndLengthAt(src, pos)
+    val flexIntLength = valueAndLength.toInt() and 0xFF
+    val flexIntValue = (valueAndLength ushr 8).toInt()
+    if (flexIntValue >= 0) {
+        val cpIndex = cp.size
+        cp.add(symTab[flexIntValue])
+        dest.add(Bytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
+        flexIntLength
+    } else {
+        val textLength = -1 - flexIntValue
+        val s = String(src, pos + flexIntLength, textLength, StandardCharsets.UTF_8)
+        val cpIndex = cp.size
+        cp.add(s)
+        dest.add(Bytecode.OP_CP_SYMBOL_TEXT.opToInstruction(cpIndex))
+        textLength + flexIntLength
+    }
 }
 
 private val SHORT_PREFIXED_LIST_WITH_FULL_POOLING = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
@@ -1225,7 +1286,7 @@ private val TAGLESS_ELEMENT_SEQUENCE_WITH_FULL_POOLING = WriteBytecode { src, po
     var p = pos
     val typeOp = src[p++].toInt() and 0xFF
 
-    println("typeOp: ${typeOp.toHexString()}")
+    // println("typeOp: ${typeOp.toHexString()}")
 
     val macId = when (typeOp shr 4) {
         0x0, 0x1, 0x2, 0x3 -> typeOp
@@ -1299,6 +1360,7 @@ private val TAGLESS_OP_HANDLERS_WITH_FULL_POOLING = Array<WriteBytecode>(256) { 
         0xA0 -> SYMBOL_SID
         0xE0 -> FLEX_UINT_HANDLER
         in 0xE1 .. 0xE8 -> FIXED_UINT_HANDLER
+        0xEA -> SYMBOL_SID_OR_TEXT_WITH_FULL_POOLING // symbol sid or text
         0xF8 -> OP_TODO // Long Timestamp
         0xF9 -> VAR_STRING_REF_WITH_FULL_POOLING
         0xFA -> VAR_SYMBOL_REF_WITH_FULL_POOLING
