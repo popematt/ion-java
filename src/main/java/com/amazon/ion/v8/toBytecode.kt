@@ -3,7 +3,6 @@ package com.amazon.ion.v8
 import com.amazon.ion.*
 import com.amazon.ion.impl.bin.*
 import com.amazon.ion.v8.Bytecode.OPERATION_SHIFT_AMOUNT
-import com.amazon.ion.v8.Bytecode.debugString
 import com.amazon.ion.v8.Bytecode.instructionToOp
 import com.amazon.ion.v8.Bytecode.opToInstruction
 import java.nio.charset.StandardCharsets

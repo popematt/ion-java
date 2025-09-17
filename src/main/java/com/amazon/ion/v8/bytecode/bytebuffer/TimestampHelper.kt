@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-package com.amazon.ion.v8
+package com.amazon.ion.v8.bytecode.bytebuffer
 
 import com.amazon.ion.*
 import com.amazon.ion.Timestamp._private_createFromLocalTimeFieldsUnchecked as uncheckedNewTimestamp
@@ -12,7 +12,7 @@ import java.nio.ByteBuffer
 /**
  * Helper class containing static methods for reading timestamps from byte arrays.
  *
- * This class provides ByteArray equivalents of the methods in TimestampHelper,
+ * This class provides ByteBuffer equivalents of the methods in TimestampHelper,
  * modified to read directly from byte arrays instead of ByteBuffers.
  *
  * TODO: Update all methods to avoid auto-boxing the offset integer.
@@ -30,7 +30,7 @@ object TimestampHelper {
      * Position should point to the first byte of the data, not the opcode.
      */
     @JvmStatic
-    fun readShortTimestampAt(opcode: Int, source: ByteArray, position: Int): Timestamp {
+    fun readShortTimestampAt(opcode: Int, source: ByteBuffer, position: Int): Timestamp {
         // Often, the data for an application will use a lot of timestamps with similar precisions. For example, logging
         // might use mostly millisecond-precision timestamps with UTC offsets, or a calendar application might use
         // minute precision with an offset for representing calendar events.
@@ -55,14 +55,14 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x80(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x80(source: ByteBuffer, position: Int): Timestamp {
         val data = source[position].toInt()
         val year = (data and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         return Timestamp.forYear(year)
     }
 
     @JvmStatic
-    private fun readTimestamp0x81(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x81(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(2, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -70,7 +70,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x82(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x82(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(2, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -79,7 +79,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x83(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x83(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(4, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -91,7 +91,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x84(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x84(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(5, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -105,7 +105,7 @@ object TimestampHelper {
 
 
     @JvmStatic
-    private fun readTimestamp0x85(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x85(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(6, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -123,7 +123,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x86(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x86(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(7, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -141,7 +141,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x87(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x87(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(8, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -159,7 +159,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x88(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x88(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(5, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -171,7 +171,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x89(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x89(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(5, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -184,7 +184,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x8A(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x8A(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(7, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -202,7 +202,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x8B(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x8B(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(8, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -220,7 +220,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readTimestamp0x8C(source: ByteArray, position: Int): Timestamp {
+    private fun readTimestamp0x8C(source: ByteBuffer, position: Int): Timestamp {
         val data = readBytesAt(5, source, position)
         val year = (data.toInt() and S_TIMESTAMP_YEAR_MASK) + S_TIMESTAMP_YEAR_BIAS
         val month = (data.toInt() and S_TIMESTAMP_MONTH_MASK) ushr S_TIMESTAMP_MONTH_BIT_OFFSET
@@ -251,7 +251,7 @@ object TimestampHelper {
      * Reads `n` bytes as the least significant bytes of a Long.
      */
     @JvmStatic
-    private fun readBytesAt(n: Int, source: ByteArray, position: Int): Long {
+    private fun readBytesAt(n: Int, source: ByteBuffer, position: Int): Long {
         var result = 0L
         for (i in n - 1 downTo 0) {
             result = (result shl 8) or (source[position + i].toLong() and 0xFF)
@@ -263,7 +263,7 @@ object TimestampHelper {
      * Reads a fixed unsigned integer from a byte array.
      */
     @JvmStatic
-    private fun readFixedUIntAt(source: ByteArray, position: Int, length: Int): Int {
+    private fun readFixedUIntAt(source: ByteBuffer, position: Int, length: Int): Int {
         var result = 0
         for (i in 0 until length) {
             result = (result shl 8) or (source[position + i].toInt() and 0xFF)
@@ -272,7 +272,7 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    fun readLongTimestampAt(source: ByteArray, start: Int, length: Int): Timestamp {
+    fun readLongTimestampAt(source: ByteBuffer, start: Int, length: Int): Timestamp {
         return when (length) {
             0, 1 -> throw IonException("Invalid Timestamp length")
             2 -> readLongTimestampL2(source, start)
@@ -285,28 +285,28 @@ object TimestampHelper {
     }
 
     @JvmStatic
-    private fun readLongTimestampL2(source: ByteArray, start: Int): Timestamp {
+    private fun readLongTimestampL2(source: ByteBuffer, start: Int): Timestamp {
         TODO()
     }
 
     @JvmStatic
-    private fun readLongTimestampL3(source: ByteArray, start: Int): Timestamp {
+    private fun readLongTimestampL3(source: ByteBuffer, start: Int): Timestamp {
         TODO()
     }
 
     @JvmStatic
-    private fun readLongTimestampL6(source: ByteArray, start: Int): Timestamp {
+    private fun readLongTimestampL6(source: ByteBuffer, start: Int): Timestamp {
         TODO()
     }
 
     /** Seconds precision */
     @JvmStatic
-    private fun readLongTimestampL7(source: ByteArray, start: Int): Timestamp {
+    private fun readLongTimestampL7(source: ByteBuffer, start: Int): Timestamp {
         TODO()
     }
 
     @JvmStatic
-    private fun readLongTimestampL8(source: ByteArray, start: Int, length: Int): Timestamp {
+    private fun readLongTimestampL8(source: ByteBuffer, start: Int, length: Int): Timestamp {
         val data = readBytesAt(8, source, start)
 
         val year = (data.toInt() and L_TIMESTAMP_YEAR_MASK)
@@ -319,9 +319,8 @@ object TimestampHelper {
         offset -= L_TIMESTAMP_OFFSET_BIAS
         val second = ((data and L_TIMESTAMP_SECOND_MASK) ushr L_TIMESTAMP_SECOND_BIT_OFFSET).toInt()
 
-        val scaleLengthAndValue = IntHelper.readFlexIntValueAndLengthAt(source, start + 7)
-        val lengthOfScale = (scaleLengthAndValue and 0xFF).toInt()
-        val fractionalSecondScale = scaleLengthAndValue.toInt().shr(8)
+        val lengthOfScale = IntHelper.lengthOfFlexUIntAt(source, start + 7)
+        val fractionalSecondScale = IntHelper.readFlexIntAt(source, start + 7)
         val coefficientLength = length - 7 - lengthOfScale
         val fractionalSecondCoefficient = readFixedUIntAt(source, start + 7 + lengthOfScale, coefficientLength)
         val fractionalSecond = BigDecimal.valueOf(fractionalSecondCoefficient.toLong(), fractionalSecondScale)

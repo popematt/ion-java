@@ -216,7 +216,9 @@ object Bytecode {
                 write(indent)
                 write("NOP ${instruction.toHexString()}\n")
                 // continue
-                return
+                if (!lax) return
+
+                continue
             }
 
             val operation = Operations.entries.singleOrNull() { it.operation == operationInt }

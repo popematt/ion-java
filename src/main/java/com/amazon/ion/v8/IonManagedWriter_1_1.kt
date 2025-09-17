@@ -484,32 +484,32 @@ internal class IonManagedWriter_1_1(
         containers.push { it.reset() }
     }
 
-    fun stepInTaglessElementList(macro: MacroV8) {
+    override fun stepInTaglessElementList(macro: MacroV8) {
         val macroId = getOrAssignMacroAddress(macro)
         userData.stepInTaglessElementList(macroId, null)
         containers.push { it.resetWithMacroShape(macroId) }
     }
-    fun stepInTaglessElementList(name: String, macro: MacroV8) {
+    override fun stepInTaglessElementList(name: String, macro: MacroV8) {
         val macroId = getOrAssignMacroAddressAndName(name, macro)
         userData.stepInTaglessElementList(macroId, name)
         containers.push { it.resetWithMacroShape(macroId) }
     }
-    fun stepInTaglessElementList(scalar: TaglessScalarType) {
+    override fun stepInTaglessElementList(scalar: TaglessScalarType) {
         userData.stepInTaglessElementList(scalar.opcode)
         containers.push { it.reset(scalar.opcode) }
     }
 
-    fun stepInTaglessElementSExp(macro: MacroV8) {
+    override fun stepInTaglessElementSExp(macro: MacroV8) {
         val macroId = getOrAssignMacroAddress(macro)
         userData.stepInTaglessElementSExp(macroId, null)
         containers.push { it.resetWithMacroShape(macroId) }
     }
-    fun stepInTaglessElementSExp(name: String, macro: MacroV8) {
+    override fun stepInTaglessElementSExp(name: String, macro: MacroV8) {
         val macroId = getOrAssignMacroAddressAndName(name, macro)
         userData.stepInTaglessElementSExp(macroId, name)
         containers.push { it.resetWithMacroShape(macroId) }
     }
-    fun stepInTaglessElementSExp(scalar: TaglessScalarType) {
+    override fun stepInTaglessElementSExp(scalar: TaglessScalarType) {
         userData.stepInTaglessElementSExp(scalar.opcode)
         containers.push { it.reset(scalar.opcode) }
     }

@@ -27,11 +27,9 @@ import java.util.*
  * TODO: Push the encoding context handling down to the binary-to-bytecode handler so that we can try to get better performance.
  * TODO: See if we can implement an Ion 1.0 binary-to-bytecode handler so that this can handle both Ion versions.
  */
-class BytecodeIonReader(
-    private val source: ByteArray,
+class BytecodeIonReaderB(
+    private val generator: BytecodeGenerator,
 ): IonReader {
-    // TODO: Move `source` and `sourceI` into a separate abstraction, if possible.
-    private var sourceI = 0
 
     private var bytecodeI = 0
 
@@ -139,25 +137,16 @@ class BytecodeIonReader(
 
     private fun refillBytecode(): IntArray {
         // Fill 1 top-level value, or until the bytecode buffer is full, whichever comes first.
-
-        val source = source
-        var i = sourceI
-
         val bytecodeIntList = bytecodeIntList
         bytecodeIntList.clear()
         val constantPool = constantPool
         constantPool.truncate(firstLocalConstant)
         val context = context
-
-        i += compileTopLevel(source, i, bytecodeIntList, constantPool, context.macroTableBytecode.unsafeGetArray(), context.macroBytecodeOffsets.unsafeGetArray(), symbolTable, source.size)
-        sourceI = i
-
+        generator.refill(bytecodeIntList, constantPool, context.macroTableBytecode.unsafeGetArray(), context.macroBytecodeOffsets.unsafeGetArray(), symbolTable)
         val bytecodeArray = bytecodeIntList.unsafeGetArray()
         this.bytecode = bytecodeArray
-
 //        Bytecode.debugString(bytecodeArray)
 //        println()
-
         return bytecodeArray
     }
 
@@ -291,13 +280,13 @@ class BytecodeIonReader(
                         Bytecode.OP_CP_SYMBOL_TEXT,
                         Bytecode.OP_CP_STRING -> constantPool[instruction0 and Bytecode.DATA_MASK] as String?
                         Bytecode.OP_REF_SYMBOL_TEXT,
-                        Bytecode.OP_REF_STRING -> readText(position = bytecode[i++], length = instruction0 and Bytecode.DATA_MASK, source)
+                        Bytecode.OP_REF_STRING -> generator.readTextReference(position = bytecode[i++], length = instruction0 and Bytecode.DATA_MASK)
                         Bytecode.OP_SYMBOL_CHAR -> (instruction0 and Bytecode.DATA_MASK).toChar().toString()
                         Bytecode.OP_SYMBOL_SID -> symbolTable[instruction0 and Bytecode.DATA_MASK]
                         Bytecode.OP_NULL_SYMBOL,
                         Bytecode.OP_NULL_STRING -> null
                         Bytecode.OP_CONTAINER_END -> break
-                        else -> throw IonException("Not a valid symbol declaration")
+                        else -> throw IonException("Not a valid symbol declaration: ${Bytecode(instruction0)}")
                     }
                     newSymbols.add(s)
                 }
@@ -314,13 +303,13 @@ class BytecodeIonReader(
                         Bytecode.OP_CP_SYMBOL_TEXT,
                         Bytecode.OP_CP_STRING -> constantPool[instruction0 and Bytecode.DATA_MASK] as String?
                         Bytecode.OP_REF_SYMBOL_TEXT,
-                        Bytecode.OP_REF_STRING -> readText(position = bytecode[i++], length = instruction0 and Bytecode.DATA_MASK, source)
+                        Bytecode.OP_REF_STRING -> generator.readTextReference(position = bytecode[i++], length = instruction0 and Bytecode.DATA_MASK)
                         Bytecode.OP_SYMBOL_CHAR -> (instruction0 and Bytecode.DATA_MASK).toChar().toString()
                         Bytecode.OP_SYMBOL_SID -> symbolTable[instruction0 and Bytecode.DATA_MASK]
                         Bytecode.OP_NULL_SYMBOL,
                         Bytecode.OP_NULL_STRING -> null
                         Bytecode.OP_CONTAINER_END -> break
-                        else -> throw IonException("Not a valid symbol declaration")
+                        else -> throw IonException("Not a valid symbol declaration: ${Bytecode(instruction)}")
                     }
                     newSymbols.add(s)
                 }
@@ -347,7 +336,7 @@ class BytecodeIonReader(
                                 Bytecode.OP_CP_SYMBOL_TEXT,
                                 Bytecode.OP_CP_STRING -> constantPool[nameInstruction and Bytecode.DATA_MASK] as String?
                                 Bytecode.OP_REF_SYMBOL_TEXT,
-                                Bytecode.OP_REF_STRING -> readText(position = bytecode[i++], length = nameInstruction and Bytecode.DATA_MASK, source)
+                                Bytecode.OP_REF_STRING -> generator.readTextReference(position = bytecode[i++], length = nameInstruction and Bytecode.DATA_MASK)
                                 Bytecode.OP_SYMBOL_CHAR -> (nameInstruction and Bytecode.DATA_MASK).toChar().toString()
                                 // Bytecode.OP_SYMBOL_SYSTEM_SID -> EncodingContextManager.ION_1_1_SYSTEM_SYMBOLS_AS_SYMBOL_TABLE[nameInstruction and Bytecode.DATA_MASK]
                                 Bytecode.OP_SYMBOL_SID -> symbolTable[nameInstruction and Bytecode.DATA_MASK]
@@ -390,7 +379,7 @@ class BytecodeIonReader(
                                 Bytecode.OP_CP_SYMBOL_TEXT,
                                 Bytecode.OP_CP_STRING -> constantPool[nameInstruction and Bytecode.DATA_MASK] as String?
                                 Bytecode.OP_REF_SYMBOL_TEXT,
-                                Bytecode.OP_REF_STRING -> readText(position = bytecode[i++], length = nameInstruction and Bytecode.DATA_MASK, source)
+                                Bytecode.OP_REF_STRING -> generator.readTextReference(position = bytecode[i++], length = nameInstruction and Bytecode.DATA_MASK)
                                 Bytecode.OP_SYMBOL_CHAR -> (nameInstruction and Bytecode.DATA_MASK).toChar().toString()
                                 Bytecode.OP_SYMBOL_SID -> symbolTable[nameInstruction and Bytecode.DATA_MASK]
                                 Bytecode.OP_NULL_NULL,
@@ -508,7 +497,7 @@ class BytecodeIonReader(
                 Bytecode.OP_REF_ANNOTATION -> {
                     val position = bytecode[p++]
                     val length = instruction and Bytecode.DATA_MASK
-                    readText(position, length, source)
+                    generator.readTextReference(position, length)
                 }
                 else -> throw IllegalStateException("annotationsIndex does not point to an annotation; was ${Bytecode(instruction)}")
             }
@@ -538,7 +527,7 @@ class BytecodeIonReader(
                 Bytecode.OP_REF_ANNOTATION -> {
                     val position = bytecode[p++]
                     val length = instruction and Bytecode.DATA_MASK
-                    val text = readText(position, length, source)
+                    val text = generator.readTextReference(position, length)
                     createSymbolToken(text, -1)
                 }
                 else -> throw IllegalStateException("Annotation index does not point to an annotation; was ${Bytecode(instruction)}")
@@ -572,7 +561,7 @@ class BytecodeIonReader(
             Bytecode.OP_REF_FIELD_NAME_TEXT -> {
                 val position = bytecode[fieldName + 1]
                 val length = fieldInstruction and Bytecode.DATA_MASK
-                readText(position, length, source)
+                generator.readTextReference(position, length)
             }
             else -> throw IllegalStateException("Field name index does not point to a field name; was ${Bytecode(fieldInstruction)}")
         }
@@ -595,17 +584,11 @@ class BytecodeIonReader(
             Bytecode.OP_REF_FIELD_NAME_TEXT -> {
                 val position = bytecode[fieldName + 1]
                 val length = fieldInstruction and Bytecode.DATA_MASK
-                val text = readText(position, length, source)
+                val text = generator.readTextReference(position, length)
                 createSymbolToken(text, -1)
             }
             else -> throw IllegalStateException("Field name index does not point to a field name; was ${Bytecode(fieldInstruction)}")
         }
-    }
-
-
-    private fun readText(position: Int, length: Int, source: ByteArray): String {
-        // TODO: try the decoder pool, as in IonContinuableCoreBinary
-        return String(source, position, length, StandardCharsets.UTF_8)
     }
 
     override fun isNullValue(): Boolean {
@@ -682,7 +665,7 @@ class BytecodeIonReader(
                 val i = bytecodeI
                 val length = instruction and Bytecode.DATA_MASK
                 val position = bytecode[i]
-                return DecimalHelper.readDecimal(source, position, length)
+                return generator.readDecimalReference(position, length).let(Decimal::valueOf)
             }
             Bytecode.OP_CP_DECIMAL -> {
                 val constantPoolIndex = (instruction and Bytecode.DATA_MASK)
@@ -706,12 +689,12 @@ class BytecodeIonReader(
             Bytecode.OP_REF_TIMESTAMP_SHORT -> {
                 val opcode = instruction and Bytecode.DATA_MASK
                 val position = bytecode[i]
-                return TimestampHelper.readShortTimestampAt(opcode, source, position)
+                return generator.readShortTimestampReference(position, opcode)
             }
             Bytecode.OP_REF_TIMESTAMP_LONG -> {
                 val length = instruction and Bytecode.DATA_MASK
                 val position = bytecode[i]
-                return TimestampHelper.readLongTimestampAt(source, position, length)
+                return generator.readTimestampReference(position, length)
             }
             else -> throw IncorrectUsageException("Cannot read a ${object {}.javaClass.enclosingMethod.name} from instruction ${Bytecode(instruction)}")
         }
@@ -734,12 +717,12 @@ class BytecodeIonReader(
             Bytecode.OP_REF_STRING -> {
                 val length = instruction and Bytecode.DATA_MASK
                 val position = bytecode[i]
-                String(source, position, length, Charsets.UTF_8)
+                generator.readTextReference(position, length)
             }
             Bytecode.OP_REF_SYMBOL_TEXT -> {
                 val position = bytecode[i]
                 val length = instruction and Bytecode.DATA_MASK
-                readText(position, length, source)
+                generator.readTextReference(position, length)
             }
             Bytecode.OP_SYMBOL_CHAR -> {
                 (instruction and Bytecode.DATA_MASK).toChar().toString()
@@ -767,7 +750,7 @@ class BytecodeIonReader(
             Bytecode.OP_REF_SYMBOL_TEXT -> {
                 val position = bytecode[i]
                 val length = instruction and Bytecode.DATA_MASK
-                val text = readText(position, length, source)
+                val text = generator.readTextReference(position, length)
                 _Private_Utils.newSymbolToken(text)
             }
             Bytecode.OP_SYMBOL_CHAR -> {
@@ -818,7 +801,7 @@ class BytecodeIonReader(
             Bytecode.OP_REF_CLOB -> {
                 val length = instruction and Bytecode.DATA_MASK
                 val position = bytecode[i]
-                source.copyOfRange(position, position + length)
+                generator.readBytesReference(position, length)
             }
             else -> throw IonException("Not positioned on a lob value")
         }

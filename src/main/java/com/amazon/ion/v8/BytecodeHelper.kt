@@ -35,7 +35,7 @@ object BytecodeHelper {
 
     @JvmStatic
     fun emitInt64Value(bytecode: IntList, longValue: Long) {
-        bytecode.add3(Bytecode.OP_INLINE_LONG.opToInstruction(), (longValue shr 32).toInt(), longValue.toInt())
+        bytecode.add3(Bytecode.OP_INLINE_LONG.opToInstruction(), longValue.toInt(), (longValue shr 32).toInt(),)
     }
 
     @JvmStatic

@@ -3,6 +3,7 @@ package com.amazon.ion.v8
 import com.amazon.ion.*
 import com.amazon.ion.IonEncodingVersion.*
 import com.amazon.ion.impl.bin.*
+import com.amazon.ion.impl.bin.IonManagedWriter_1_1_Test.Companion.ion
 import com.amazon.ion.impl.macro.*
 import com.amazon.ion.impl.macro.ExpressionBuilderDsl.Companion.templateBody
 import com.amazon.ion.impl.macro.ParameterFactory.exactlyOneTagged
@@ -13,6 +14,7 @@ import com.amazon.ion.util.*
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.*
 import kotlin.random.Random
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -836,7 +838,7 @@ class RoundTripTest {
     })
 
     @Test
-//    @Disabled("Already generated this data.")
+    @Disabled("Already generated this data.")
     fun polygonSampleData() {
 
         // val seed = System.currentTimeMillis()
@@ -1054,6 +1056,153 @@ class RoundTripTest {
             Files.write(Paths.get("polygons-$fileSuffix-tagless.11m.ion"), ion11MData)
         }
 
+    }
+
+
+
+    @Test
+    @Disabled("Already generated this data.")
+    fun manySmallTopLevelSymbolsDegenerateCaseSampleData() {
+
+        // val seed = System.currentTimeMillis()
+        val seed = 1757482725331L
+        println("Seed: $seed")
+
+        val fileSuffix = "interned-delimited"
+
+        val ion10Data: ByteArray
+        // Ion 1.0 Binary
+        Random(seed).let { random ->
+            ion10Data = write10Binary {
+                repeat(2000) {
+                    repeat(10) {
+                        val s = UUID.nameUUIDFromBytes(random.nextBytes(32)).toString()
+                        writeSymbol(s)
+                    }
+                    flush()
+                }
+            }
+            println(ion10Data.size)
+            // Files.write(Paths.get("degenerate-symbols.10.ion"), ion11MData)
+        }
+
+
+        val ion11MData: ByteArray
+        // Ion 1.1 Simplified
+        Random(seed).let { random ->
+
+            ion11MData = writeBinary(symbolInliningStrategy = SymbolInliningStrategy.ALWAYS_INLINE, lengthPrefixStrategy = LengthPrefixStrategy.NEVER_PREFIXED) {
+                repeat(2000) {
+                    repeat(10) {
+                        val s = UUID.nameUUIDFromBytes(random.nextBytes(32)).toString()
+                        writeSymbol(s)
+                    }
+                    flush()
+                }
+            }
+            println(ion11MData.size)
+            // Files.write(Paths.get("degenerate-symbols-$fileSuffix.11m.ion"), ion11MData)
+        }
+
+        val ION = IonSystemBuilder.standard().build()
+        val iter10 = ION.iterate(ION.newReader(ion10Data))
+        val iter11 = ION.iterate(BytecodeIonReader(ion11MData))
+
+        while (iter10.hasNext() && iter11.hasNext()) {
+            assertEquals(iter10.next(), iter11.next())
+        }
+        assertEquals(iter10.hasNext(), iter11.hasNext())
+
+
+        val iter10b = ION.iterate(ION.newReader(ion10Data))
+        val iter11b = ION.iterate(BytecodeIonReaderB(ByteArrayBytecodeGenerator(ion11MData)))
+
+        while (iter10b.hasNext() && iter11b.hasNext()) {
+            assertEquals(iter10b.next(), iter11b.next())
+        }
+        assertEquals(iter10b.hasNext(), iter11b.hasNext())
+
+
+        val iter10c = ION.iterate(ION.newReader(ion10Data))
+        val iter11c = ION.iterate(BytecodeIonReaderB(ByteArray10BytecodeGenerator(ion10Data)))
+
+        while (iter10c.hasNext() && iter11c.hasNext()) {
+            assertEquals(iter10c.next(), iter11c.next())
+        }
+        assertEquals(iter10c.hasNext(), iter11c.hasNext())
+
+
+    }
+
+    @Test
+    @Disabled("Already generated this data.")
+    fun manyStringsSampleData() {
+
+        // val seed = System.currentTimeMillis()
+        val seed = 1757482725331L
+        println("Seed: $seed")
+
+        val fileSuffix = "interned-delimited"
+
+        val ion10Data: ByteArray
+        // Ion 1.0 Binary
+        Random(seed).let { random ->
+            ion10Data = write10Binary {
+                repeat(2000) {
+                    stepIn(IonType.LIST)
+                    repeat(10) {
+                        val s = UUID.nameUUIDFromBytes(random.nextBytes(32)).toString()
+                        writeString(s)
+                    }
+                    stepOut()
+                }
+            }
+            println(ion10Data.size)
+             Files.write(Paths.get("many-strings.10.ion"), ion10Data)
+        }
+
+
+        val ion11MData: ByteArray
+        // Ion 1.1 Simplified
+        Random(seed).let { random ->
+
+            ion11MData = writeBinary(symbolInliningStrategy = SymbolInliningStrategy.ALWAYS_INLINE, lengthPrefixStrategy = LengthPrefixStrategy.NEVER_PREFIXED) {
+                repeat(2000) {
+                    stepIn(IonType.LIST)
+                    repeat(10) {
+                        val s = UUID.nameUUIDFromBytes(random.nextBytes(32)).toString()
+                        writeString(s)
+                    }
+                    stepOut()
+                }
+            }
+            println(ion11MData.size)
+             Files.write(Paths.get("many-strings.11m.ion"), ion11MData)
+        }
+
+        val ION = IonSystemBuilder.standard().build()
+
+        val iter10 = ION.iterate(ION.newReader(ion10Data))
+        val iter11 = ION.iterate(BytecodeIonReader(ion11MData))
+
+        while (iter10.hasNext() && iter11.hasNext()) {
+            assertEquals(iter10.next(), iter11.next())
+        }
+        assertEquals(iter10.hasNext(), iter11.hasNext())
+    }
+
+    @Test
+    fun readServiceLogLegacy10() {
+        val bytes = Files.readAllBytes(Paths.get("/Users/popematt/Library/Application Support/JetBrains/IntelliJIdea2024.3/scratches/service_log_legacy.10n"))
+
+        val ION = IonSystemBuilder.standard().build()
+        val iter10 = ION.iterate(ION.newReader(bytes))
+        val iter11 = ION.iterate(BytecodeIonReaderB(ByteArray10BytecodeGenerator(bytes)))
+
+        while (iter10.hasNext() && iter11.hasNext()) {
+            assertEquals(iter10.next(), iter11.next())
+        }
+        assertEquals(iter10.hasNext(), iter11.hasNext())
     }
 
     fun checkBinaryRoundTrip(ionText: String) {

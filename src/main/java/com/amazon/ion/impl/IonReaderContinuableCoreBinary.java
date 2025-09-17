@@ -2078,7 +2078,7 @@ class IonReaderContinuableCoreBinary extends IonCursorBinary implements IonReade
     private long readUInt(long startIndex, long endIndex) {
         long result = 0;
         for (long i = startIndex; i < endIndex; i++) {
-            result = (result << VALUE_BITS_PER_UINT_BYTE) | buffer[(int) i] & SINGLE_BYTE_MASK;
+            result = (result << 8) | buffer[(int) i] & 0xFF;
         }
         return result;
     }
