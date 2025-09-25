@@ -3,6 +3,7 @@ package com.amazon.ion.v8
 import com.amazon.ion.*
 import com.amazon.ion.impl.*
 import com.amazon.ion.impl.bin.IntList
+import com.amazon.ion.v8.Bytecode.DATA_MASK
 import com.amazon.ion.v8.Bytecode.OPERATION_SHIFT_AMOUNT
 import com.amazon.ion.v8.Bytecode.TOKEN_TYPE_SHIFT_AMOUNT
 import com.amazon.ion.v8.Bytecode.instructionToOp
@@ -31,7 +32,7 @@ class BytecodeIonReaderB(
     private val generator: BytecodeGenerator,
 ): IonReader {
 
-    private var bytecodeI = 0
+    @JvmField var bytecodeI = 0
 
     private var minorVersion: Byte = 1
 
@@ -79,6 +80,8 @@ class BytecodeIonReaderB(
     private var fieldNameIndex = -1
     private var annotationsIndex = -1
     private var annotationCount: Byte = 0
+
+    private var labelIndex = -1
 
     private var isInStruct = false
     private var isNextAlreadyLoaded = false
@@ -172,6 +175,7 @@ class BytecodeIonReaderB(
         var annotationStart = 0 // Stores the start of the annotations, offset by 1 (for bit-twiddling reasons).
         var annotationFlag = -1 // -1 if not set, 0 if set. Used to avoid branches in the annotation case.
         var annotationCount = 0
+        var labelIndex = labelIndex
 
         val N_OPERANDS = Bytecode.Operations.N_OPERANDS
 
@@ -230,11 +234,19 @@ class BytecodeIonReaderB(
                     annotationFlag = -1
                     annotationCount = 0
                 }
+                TokenTypeConst.LABEL -> {
+                    labelIndex = i - 1
+                    continue
+                }
                 else -> {
                     TODO("${TokenTypeConst(tokenType)} at ${i - 1}")
                 }
             }
         } while (true)
+
+        if (labelIndex != -1) {
+            this.labelIndex = labelIndex
+        }
 
         this.bytecodeI = i
         this.instruction = instruction
@@ -242,6 +254,35 @@ class BytecodeIonReaderB(
         this.annotationCount = annotationCount.toByte()
 
         return getType(instruction)
+    }
+
+    data class Label(val row: Int = -1, val column: Int = -1, val offset: Long = -1)
+
+    fun lastSeenLabel(): Label? {
+        val labelIndex = labelIndex
+        if (labelIndex == -1) {
+            return null
+        }
+        val bytecode = bytecode
+        val labelInstruction = bytecode[labelIndex]
+        val labelOperation = labelInstruction.instructionToOp()
+        return when (labelOperation) {
+            // Ref types could theoretically be used as labels too.
+            Bytecode.LABEL_OFFSET -> {
+                val msb = (labelInstruction and DATA_MASK).toLong()
+                val lsb = bytecode[labelIndex + 1].toLong().and(0xFFFF_FFFFL)
+                val offset = (msb shl 32) or lsb
+                Label(offset = offset)
+            }
+            Bytecode.LABEL_ROWCOL -> {
+                val col = labelInstruction and DATA_MASK
+                val row = bytecode[labelIndex + 1]
+                Label(row, col)
+            }
+            else -> throw IllegalStateException("Invalid label: ${Bytecode(labelInstruction)}")
+        }
+
+
     }
 
     private fun handleIvm(instruction: Int) {
@@ -453,9 +494,9 @@ class BytecodeIonReaderB(
     }
 
     override fun isInStruct(): Boolean {
-        if (isInStruct && fieldNameIndex < 0) {
-            TODO()
-        }
+//        if (isInStruct && fieldNameIndex < 0) {
+//            TODO()
+//        }
         return isInStruct
     }
 

@@ -5,7 +5,6 @@ import com.amazon.ion.impl.bin.IntList
 import com.amazon.ion.v8.*
 import com.amazon.ion.v8.Bytecode.instructionToOp
 import com.amazon.ion.v8.Bytecode.opToInstruction
-import com.amazon.ion.v8.bytecode.bytebuffer.ByteBufferToBytecode.ByteArraySlice
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
@@ -268,7 +267,7 @@ object ByteBufferToBytecode {
                     dest[containerStartIndex] = startInstruction.instructionToOp().opToInstruction(containerEndIndex - start)
                 }
 
-                Bytecode.OP_PLACEHOLDER -> {
+                Bytecode.OP_OPT_PLACEHOLDER -> {
                     val destSize = dest.size()
                     val argOpcode = src[p++].toInt() and 0xFF
                     p += compileValue(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
@@ -625,7 +624,7 @@ object ByteBufferToBytecode {
     }
 
     private val TAGGED_PARAM = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
-        dest.add2(Bytecode.OP_PLACEHOLDER.opToInstruction(1), Bytecode.ABSENT_ARGUMENT.opToInstruction()); 0
+        dest.add2(Bytecode.OP_OPT_PLACEHOLDER.opToInstruction(1), Bytecode.ABSENT_ARGUMENT.opToInstruction()); 0
     }
 
     private val TAGGED_PARAM_WITH_DEFAULT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
@@ -636,7 +635,7 @@ object ByteBufferToBytecode {
         val defaultValueOp = src[p++].toInt() and 0xFF
         p += compileValueWithFullPooling(src, p, defaultValueOp, dest, cp, macSrc, macIdx, symTab)
         val end = dest.size()
-        dest[pIndex] = Bytecode.OP_PLACEHOLDER.opToInstruction(end - start)
+        dest[pIndex] = Bytecode.OP_OPT_PLACEHOLDER.opToInstruction(end - start)
         p - pos
     }
 
@@ -1075,7 +1074,7 @@ object ByteBufferToBytecode {
                     dest[containerStartIndex] = startInstruction.instructionToOp().opToInstruction(containerEndIndex - start)
                 }
 
-                Bytecode.OP_PLACEHOLDER -> {
+                Bytecode.OP_OPT_PLACEHOLDER -> {
                     val destSize = dest.size()
                     val argOpcode = src[p++].toInt() and 0xFF
                     p += compileValueWithFullPooling(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)

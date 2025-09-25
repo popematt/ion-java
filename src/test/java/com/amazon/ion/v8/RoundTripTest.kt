@@ -838,19 +838,19 @@ class RoundTripTest {
     })
 
     @Test
-    @Disabled("Already generated this data.")
+//    @Disabled("Already generated this data.")
     fun polygonSampleData() {
 
         // val seed = System.currentTimeMillis()
         val seed = 1757482725331L
         println("Seed: $seed")
 
-        val fileSuffix = "interned-delimited"
+        val fileSuffix = ""
 
-        /*
+
         // Ion 1.0 Binary
         Random(seed).let { random ->
-            val ion11MData = write10Binary {
+            val ion11MData = writeCurrent11Binary {
                 repeat(2000) {
                     stepIn(IonType.STRUCT)
                     setFieldName("points")
@@ -869,7 +869,7 @@ class RoundTripTest {
                     if (random.nextInt(10) == 0) {
                         writeNull()
                     } else {
-                        setTypeAnnotations("rgb")
+                        setTypeAnnotations(arrayOf("rgb"))
                         stepIn(IonType.LIST)
                         writeInt(random.nextLong(255))
                         writeInt(random.nextLong(255))
@@ -880,9 +880,9 @@ class RoundTripTest {
                 }
             }
             println(ion11MData.size)
-            Files.write(Paths.get("polygons.10.ion"), ion11MData)
+            Files.write(Paths.get("polygons.11.ion"), ion11MData)
         }
-         */
+
         /*
         // Ion 1.1 Simplified
         Random(seed).let { random ->
@@ -993,7 +993,7 @@ class RoundTripTest {
         }
          */
 
-
+        /*
         // Ion 1.1 Simplified With tagless values
         Random(seed).let { random ->
             val point = MacroV8.build {
@@ -1055,7 +1055,7 @@ class RoundTripTest {
             println(ion11MData.size)
             Files.write(Paths.get("polygons-$fileSuffix-tagless.11m.ion"), ion11MData)
         }
-
+        */
     }
 
 

@@ -7,9 +7,11 @@ import com.amazon.ion.v8.Bytecode.DataFormatters.AS_SHORT
 import com.amazon.ion.v8.Bytecode.DataFormatters.BOOL_DATA
 import com.amazon.ion.v8.Bytecode.DataFormatters.BYTECODE_LENGTH
 import com.amazon.ion.v8.Bytecode.DataFormatters.CHAR
+import com.amazon.ion.v8.Bytecode.DataFormatters.COL_DATA
 import com.amazon.ion.v8.Bytecode.DataFormatters.CP_INDEX
 import com.amazon.ion.v8.Bytecode.DataFormatters.NO_DATA
 import com.amazon.ion.v8.Bytecode.DataFormatters.REF_LENGTH
+import com.amazon.ion.v8.Bytecode.DataFormatters.ROW_DATA
 import com.amazon.ion.v8.Bytecode.DataFormatters.SID
 import com.amazon.ion.v8.Bytecode.DataFormatters.SRC_INDEX
 
@@ -163,9 +165,11 @@ object Bytecode {
 
     // Macros
     /** DATA is the length of the default value. */
-    const val OP_PLACEHOLDER = TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT
+    const val OP_PLACEHOLDER = (TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT)
+    /** DATA is the length of the default value. */
+    const val OP_OPT_PLACEHOLDER = (TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
     /** DATA is tagless value's opcode. */
-    const val OP_TAGLESS_PLACEHOLDER = (TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
+    const val OP_TAGLESS_PLACEHOLDER = (TokenTypeConst.VARIABLE_REF shl TOKEN_TYPE_SHIFT_AMOUNT) + 2
     /** No data */
     const val ABSENT_ARGUMENT = (TokenTypeConst.ABSENT_ARGUMENT shl TOKEN_TYPE_SHIFT_AMOUNT)
 
@@ -182,6 +186,10 @@ object Bytecode {
     // Bytecode interpreter control
     const val EOF = TokenTypeConst.EOF shl TOKEN_TYPE_SHIFT_AMOUNT
     const val REFILL = (TokenTypeConst.REFILL shl TOKEN_TYPE_SHIFT_AMOUNT)
+
+    // Labels
+    const val LABEL_OFFSET = TokenTypeConst.LABEL shl TOKEN_TYPE_SHIFT_AMOUNT
+    const val LABEL_ROWCOL = (TokenTypeConst.LABEL shl TOKEN_TYPE_SHIFT_AMOUNT) + 1
 
 
     @JvmStatic
@@ -236,6 +244,23 @@ object Bytecode {
             if (useIndent) when (operationInt) {
                 OP_CONTAINER_END -> indent = indent.dropLast(2)
             }
+
+            if (operationInt == LABEL_ROWCOL) {
+                write("LABEL:")
+                write(operation.dataFormatter(instruction and DATA_MASK))
+                val operand = bytecode[i++]
+                write(operation.operandFormatter(operand))
+                write("\n")
+                continue
+            } else if (operationInt == LABEL_OFFSET) {
+                write("OFFSET=")
+                val msb = (instruction and DATA_MASK).toLong()
+                val lsb = bytecode[i++].toLong().and(0xFFFF_FFFFL)
+                val offset = (msb shl 32) or lsb
+                write("$offset\n")
+                continue
+            }
+
             write(indent)
             write(operation.name)
             write(operation.dataFormatter(instruction and DATA_MASK))
@@ -311,6 +336,8 @@ object Bytecode {
         val CHAR = { data: Int -> " '${data.toChar()}'" }
         val NO_DATA = { _: Int -> "" }
         val BOOL_DATA = { it: Int -> " " + (it == 1).toString() }
+        val ROW_DATA = { it: Int -> " row: $it," }
+        val COL_DATA = { it: Int -> " col: $it," }
     }
 
     /**
@@ -365,7 +392,8 @@ object Bytecode {
         ANN_CNST(OP_CP_ANNOTATION, CP_INDEX),
         ANN_SID(OP_ANNOTATION_SID, SID),
         ANN_REF(OP_REF_ANNOTATION, REF_LENGTH, 1, SRC_INDEX),
-        PLACEHOLDER(OP_PLACEHOLDER, BYTECODE_LENGTH),
+        PLACEHOLDER(OP_PLACEHOLDER, NO_DATA),
+        OPT_PLACEHOLDER(OP_OPT_PLACEHOLDER, BYTECODE_LENGTH),
         TAGLESS_PLACEHOLDER(OP_TAGLESS_PLACEHOLDER, AS_HEX_BYTE),
         ABSENT_ARG(ABSENT_ARGUMENT, NO_DATA),
         EOF(Bytecode.EOF, NO_DATA),
@@ -381,6 +409,9 @@ object Bytecode {
         USE(DIRECTIVE_USE, NO_DATA),
         MODULE(DIRECTIVE_MODULE, NO_DATA),
         ENCODING(DIRECTIVE_ENCODING, NO_DATA),
+
+        LABEL_O(LABEL_OFFSET, NO_DATA, numberOfOperands = 1),
+        LABEL_RC(LABEL_ROWCOL, ROW_DATA, numberOfOperands = 1, COL_DATA),
         ;
 
         companion object {

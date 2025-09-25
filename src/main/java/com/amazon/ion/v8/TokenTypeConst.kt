@@ -47,6 +47,8 @@ object TokenTypeConst {
     const val REFILL = 25
     const val EOF = 26
 
+    const val LABEL = 27
+
     /**
      * Helper function to allow calling `TokenTypeConst(x)` to get a descriptive name for the integer value.
      */

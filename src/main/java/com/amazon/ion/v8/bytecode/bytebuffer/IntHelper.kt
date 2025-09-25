@@ -329,18 +329,19 @@ object IntHelper {
         dataBytes[numberOfDataBytesRemaining] = firstByte.toInt().shr(rightShiftAmount).toByte()
         while (numberOfDataBytesRemaining > 0) {
             val currentByte = source[p++]
-            dataBytes[numberOfDataBytesRemaining] = dataBytes[numberOfDataBytesRemaining].toInt().and(mask).or(currentByte.toInt().shl(leftShiftAmount)).toByte()
+            dataBytes[numberOfDataBytesRemaining] =
+                dataBytes[numberOfDataBytesRemaining].toInt().and(mask).or(currentByte.toInt().shl(leftShiftAmount))
+                    .toByte()
             dataBytes[numberOfDataBytesRemaining - 1] = currentByte.toInt().shr(rightShiftAmount).toByte()
             numberOfDataBytesRemaining--
         }
         return BigInteger(dataBytes)
     }
 
-
     @JvmStatic
     fun readFlexInt(source: ByteBuffer): Int {
         val position = source.position()
-        val firstByte = source.get()
+        val firstByte = source.get().toInt() and 0xFF
         val numBytes = firstByte.countTrailingZeroBits() + 1
         if (source.remaining() < numBytes) { throw IonException("Incomplete data at $position") }
         source.position(position + numBytes)
@@ -348,11 +349,20 @@ object IntHelper {
             1 -> {
                 (firstByte.toInt() shr 1)
             }
-            2, 3, 4 -> {
-                val backtrack = 4 - numBytes
-                val data = source.getInt(position - backtrack)
-                val shiftAmount = 8 * backtrack + numBytes
-                (data shr shiftAmount)
+            2 -> {
+                (firstByte.toInt() shr 2) or
+                        source.get(position + 1).toInt().and(0xFF).shl(6)
+            }
+            3 -> {
+                (firstByte.toInt() shr 3) or
+                        source.get(position + 1).toInt().and(0xFF).shl(5) or
+                        source.get(position + 2).toInt().and(0xFF).shl(13)
+            }
+            4 -> {
+                (firstByte.toInt() shr 4) or
+                        source.get(position + 1).toInt().and(0xFF).shl(4) or
+                        source.get(position + 2).toInt().and(0xFF).shl(12) or
+                        source.get(position + 3).toInt().and(0xFF).shl(20)
             }
             5 -> {
                 val data = source.getInt(position + 1)

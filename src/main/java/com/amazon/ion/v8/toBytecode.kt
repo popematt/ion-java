@@ -65,6 +65,67 @@ fun compileTopLevel(
     return p - pos
 }
 
+
+fun smartCompileTopLevel(
+    src: ByteArray,
+    pos: Int,
+    dest: IntList,
+    cp: MutableList<Any?>,
+    macSrc: IntArray,
+    /**
+     * A lookup table indicating the start position of each macro within the macroSource array.
+     * This is always one larger than the number of macros so that `macroIndices[macroId + 1]` can be used to
+     * find the end of the macro bytecode.
+     */
+    macIdx: IntArray,
+    symTab: Array<String?>,
+): Int {
+    var p = pos
+    var opcode = 0
+    val end = src.size
+
+    val instructionLimit = dest.currentCapacity() - 1
+
+    var checkpoint = dest.size()
+
+    val OP_HANDLERS = OP_HANDLERS
+
+    while (p < end && checkpoint < instructionLimit) {
+        opcode = src[p++].toInt() and 0xFF
+        val handler = OP_HANDLERS[opcode]
+        p += handler.writeBytecode(src, p, opcode, dest, cp, macSrc, macIdx, symTab)
+
+        when (opcode) {
+            Ops.ANNOTATION_TEXT,
+            Ops.ANNOTATION_SID -> {
+                continue
+            }
+            Ops.IVM,
+            Ops.SET_SYMBOLS,
+            Ops.SET_MACROS,
+            Ops.ADD_SYMBOLS,
+            Ops.ADD_MACROS,
+            Ops.USE,
+            Ops.MODULE,
+            Ops.ENCODING -> {
+                checkpoint = dest.size()
+                break
+            }
+            else -> {
+                checkpoint = dest.size()
+            }
+        }
+
+    }
+    dest.truncate(checkpoint)
+    val finalBytecodeOperation = if (p >= src.size) Bytecode.EOF else Bytecode.REFILL
+    dest.add(finalBytecodeOperation.opToInstruction())
+    return p - pos
+}
+
+
+
+/** For testing only */
 internal fun testCompileValue(
     src: ByteArray,
     pos: Int,
@@ -76,7 +137,7 @@ internal fun testCompileValue(
     symTab: Array<String?>,
 ) = compileValue(src, pos, op, dest, cp, macSrc, macIdx, symTab)
 
-private fun compileValue(
+internal fun compileValue(
     src: ByteArray,
     pos: Int,
     op: Int,
@@ -94,6 +155,8 @@ private fun compileValue(
     var handler = OP_HANDLERS[op]
     var p = pos
     var op = op
+    // TODO: Sometimes this method is called from in a loop. Rather than have indirectly nested loops, see if we can
+    //       rewrite some of the call sites to handle this logic in their own loops.
     while (op == Ops.ANNOTATION_TEXT || op == Ops.ANNOTATION_SID) {
         p += handler.writeBytecode(src, p, op, dest, cp, macSrc, macIdx, symTab)
         op = src[p++].toInt() and 0xFF
@@ -133,6 +196,9 @@ private fun evalMacro(
 
     val containerPositions = IntArray(32)
     var containerStackSize = 0
+
+    // TODO: For constant macros, we could just do a straight arraycopy operation instead of iterating through the macro
+    //       source looking for placeholders.
 
     var i = macSrcStart
 
@@ -214,8 +280,11 @@ private fun evalMacro(
                 val startInstruction = dest[containerStartIndex]
                 dest[containerStartIndex] = startInstruction.instructionToOp().opToInstruction(containerEndIndex - start)
             }
-
             Bytecode.OP_PLACEHOLDER -> {
+                val argOpcode = src[p++].toInt() and 0xFF
+                p += compileValue(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
+            }
+            Bytecode.OP_OPT_PLACEHOLDER -> {
                 val destSize = dest.size()
                 val argOpcode = src[p++].toInt() and 0xFF
                 p += compileValue(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
@@ -513,7 +582,7 @@ private val VAR_CLOB_REF = WriteBytecode { src, pos, op, dest, cp, macSrc, macId
 }
 
 private val TAGGED_PARAM = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
-    dest.add2(Bytecode.OP_PLACEHOLDER.opToInstruction(1), Bytecode.ABSENT_ARGUMENT.opToInstruction()); 0
+    dest.add(Bytecode.OP_PLACEHOLDER.opToInstruction()); 0
 }
 
 private val TAGGED_PARAM_WITH_DEFAULT = WriteBytecode { src, pos, op, dest, cp, macSrc, macIdx, symTab ->
@@ -524,7 +593,7 @@ private val TAGGED_PARAM_WITH_DEFAULT = WriteBytecode { src, pos, op, dest, cp, 
     val defaultValueOp = src[p++].toInt() and 0xFF
     p += compileValueWithFullPooling(src, p, defaultValueOp, dest, cp, macSrc, macIdx, symTab)
     val end = dest.size()
-    dest[pIndex] = Bytecode.OP_PLACEHOLDER.opToInstruction(end - start)
+    dest[pIndex] = Bytecode.OP_OPT_PLACEHOLDER.opToInstruction(end - start)
     p - pos
 }
 
@@ -956,6 +1025,10 @@ private fun evalMacroWithFullPooling(
             }
 
             Bytecode.OP_PLACEHOLDER -> {
+                val argOpcode = src[p++].toInt() and 0xFF
+                p += compileValueWithFullPooling(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)
+            }
+            Bytecode.OP_OPT_PLACEHOLDER -> {
                 val destSize = dest.size()
                 val argOpcode = src[p++].toInt() and 0xFF
                 p += compileValueWithFullPooling(src, p, argOpcode, dest, cp, macSrc, macIdx, symTab)

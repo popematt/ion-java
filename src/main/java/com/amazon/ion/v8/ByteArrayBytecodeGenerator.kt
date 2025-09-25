@@ -3,10 +3,12 @@ package com.amazon.ion.v8
 import com.amazon.ion.*
 import com.amazon.ion.impl.bin.*
 import com.amazon.ion.impl.bin.utf8.Utf8StringDecoderPool
+import com.amazon.ion.v8.Bytecode.opToInstruction
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
+import kotlin.math.min
 
 class ByteArrayBytecodeGenerator(
     private val source: ByteArray
@@ -27,7 +29,7 @@ class ByteArrayBytecodeGenerator(
         // Fill 1 top-level value, or until the bytecode buffer is full, whichever comes first.
         val source = source
         var i = i
-        i += compileTopLevel(source, i, destination, constantPool, macroSrc, macroIndices, symTab, source.size)
+        i += smartCompileTopLevel(source, i, destination, constantPool, macroSrc, macroIndices, symTab)
         this.i = i
     }
 

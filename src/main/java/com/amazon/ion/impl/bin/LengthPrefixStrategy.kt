@@ -22,7 +22,7 @@ fun interface LengthPrefixStrategy {
 
     companion object {
         @JvmField
-        val NEVER_PREFIXED = LengthPrefixStrategy { _, _ -> true }
+        val NEVER_PREFIXED = LengthPrefixStrategy { _, _ -> false }
         @JvmField
         val ALWAYS_PREFIXED = LengthPrefixStrategy { _, _ -> true }
     }
