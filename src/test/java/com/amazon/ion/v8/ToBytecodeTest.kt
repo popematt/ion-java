@@ -187,7 +187,7 @@ class ToBytecodeTest {
         """,
         macTab = intArrayOf(
             Bytecode.OP_LIST_START.opToInstruction(2),
-            Bytecode.OP_PLACEHOLDER.opToInstruction(),
+            Bytecode.OP_OPT_PLACEHOLDER.opToInstruction(),
             Bytecode.OP_CONTAINER_END.opToInstruction(),
             Bytecode.EOF.opToInstruction(),
         ),
@@ -207,7 +207,7 @@ class ToBytecodeTest {
         """,
         macTab = intArrayOf(
             Bytecode.OP_LIST_START.opToInstruction(2),
-            Bytecode.OP_PLACEHOLDER.opToInstruction(),
+            Bytecode.OP_OPT_PLACEHOLDER.opToInstruction(),
             Bytecode.OP_CONTAINER_END.opToInstruction(),
             Bytecode.EOF.opToInstruction(),
         ),
@@ -224,7 +224,7 @@ class ToBytecodeTest {
         """,
         macTab = intArrayOf(
             Bytecode.OP_LIST_START.opToInstruction(2),
-            Bytecode.OP_PLACEHOLDER.opToInstruction(),
+            Bytecode.OP_OPT_PLACEHOLDER.opToInstruction(),
             Bytecode.OP_CONTAINER_END.opToInstruction(),
             Bytecode.EOF.opToInstruction(),
             Bytecode.OP_SMALL_INT.opToInstruction(1),

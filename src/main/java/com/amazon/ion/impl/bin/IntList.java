@@ -49,7 +49,12 @@ public class IntList {
      * @return  The number of ints currently stored in the list.
      */
     public int size() {
+        // TODO: Consider exposing a raw field.
         return numberOfValues;
+    }
+
+    public int currentCapacity() {
+        return capacity;
     }
 
     /**

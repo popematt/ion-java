@@ -24,6 +24,12 @@ object UpgradeToV8 {
             copyBytes(nBytes)
         }
 
+
+        if (writeBuffer.position() > 9480) {
+            println()
+        }
+
+
         val byte = readBuffer.get()
 
         when (byte.toInt() and 0xFF) {
@@ -260,15 +266,15 @@ object UpgradeToV8 {
             // 1-3	Symbols with symbol address
             0xE1 -> {
                 writeBuffer.put(0xA0.toByte())
-                val sid = readBuffer.get().toInt() and 0xFF
+                val sid = 9 + (readBuffer.get().toInt() and 0xFF)
                 FlexInt.writeFlexIntOrUIntInto(writeBuffer, sid.toLong())
             }
             0xE2 -> {
                 writeBuffer.put(0xA0.toByte())
                 val lsb = readBuffer.get().toInt() and 0xFF
                 val msb = readBuffer.get().toInt() and 0xFF
-                val sid = msb.shl(8).or(lsb)
-                FlexInt.writeFlexIntOrUIntInto(writeBuffer, sid.toLong())
+                val sid = 256 + (msb.shl(8).or(lsb))
+                FlexInt.writeFlexIntOrUIntInto(writeBuffer, sid.toLong() + 9L)
             }
             0xE3 -> {
                 TODO()
@@ -277,16 +283,16 @@ object UpgradeToV8 {
             // 4-6 Annotations with symbol address
             0xE4 -> {
                 writeBuffer.put(0x8D.toByte())
-                val sid = IntHelper.readFlexUInt(readBuffer)
+                val sid = 9 + IntHelper.readFlexUInt(readBuffer)
                 FlexInt.writeFlexIntOrUIntInto(writeBuffer, sid.toLong())
                 copyValue(readBuffer, writeBuffer)
             }
             0xE5 -> {
                 writeBuffer.put(0x8D.toByte())
-                val sid0 = IntHelper.readFlexUInt(readBuffer)
+                val sid0 = 9 + IntHelper.readFlexUInt(readBuffer)
                 FlexInt.writeFlexIntOrUIntInto(writeBuffer, sid0.toLong())
                 writeBuffer.put(0x8D.toByte())
-                val sid1 = IntHelper.readFlexUInt(readBuffer)
+                val sid1 = 9 + IntHelper.readFlexUInt(readBuffer)
                 FlexInt.writeFlexIntOrUIntInto(writeBuffer, sid1.toLong())
                 copyValue(readBuffer, writeBuffer)
 
@@ -295,7 +301,7 @@ object UpgradeToV8 {
                 val annEnd = IntHelper.readFlexUInt(readBuffer) + readBuffer.position()
                 while (readBuffer.position() < annEnd) {
                     writeBuffer.put(0x8D.toByte())
-                    val sid0 = IntHelper.readFlexUInt(readBuffer)
+                    val sid0 = 9 + IntHelper.readFlexUInt(readBuffer)
                     FlexInt.writeFlexIntOrUIntInto(writeBuffer, sid0.toLong())
                 }
                 copyValue(readBuffer, writeBuffer)
@@ -450,10 +456,10 @@ object UpgradeToV8 {
             text.forEach { writeBuffer.put(it) }
         } else if (flexInt < 0) {
             val textLength = -flexInt
-            FlexInt.writeFlexIntOrUIntInto(writeBuffer, textLength.toLong())
+            FlexInt.writeFlexIntOrUIntInto(writeBuffer, (-1 - textLength).toLong())
             repeat(textLength) { writeBuffer.put(readBuffer.get()) }
         } else {
-            FlexInt.writeFlexIntOrUIntInto(writeBuffer, flexInt.toLong())
+            FlexInt.writeFlexIntOrUIntInto(writeBuffer, flexInt.toLong() + 9)
         }
 
         return true
@@ -474,7 +480,7 @@ object UpgradeToV8 {
             repeat(textLength) { writeBuffer.put(readBuffer.get()) }
         } else {
             writeBuffer.put(0x8D.toByte())
-            FlexInt.writeFlexIntOrUIntInto(writeBuffer, flexInt.toLong())
+            FlexInt.writeFlexIntOrUIntInto(writeBuffer, flexInt.toLong() + 9)
         }
     }
 }

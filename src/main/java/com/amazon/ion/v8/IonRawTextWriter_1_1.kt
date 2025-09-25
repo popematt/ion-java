@@ -509,7 +509,7 @@ class IonRawTextWriter_1_1 internal constructor(
     }
 
     override fun writeTaglessInt(implicitOpcode: Int, value: Int) {
-        // TODO: Consider checking the opcode
+        // TODO: Consider checking the opcode to make sure the value fits the encoding. Or maybe that should be handled in the managed layer?
         writeInt(value.toLong())
     }
 

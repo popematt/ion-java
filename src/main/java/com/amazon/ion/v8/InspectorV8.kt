@@ -312,7 +312,21 @@ object InspectorV8 {
                 }
 
                 0xFD -> {
-                    TODO("Var prefixed structs")
+                    val valueAndLength = IntHelper.readFlexUIntValueAndLengthAt(source, p)
+                    val lengthOfLength = valueAndLength.toInt() and 0xFF
+                    val lengthOfValue = valueAndLength.ushr(8).toInt()
+                    p += lengthOfLength
+
+                    val end = p + lengthOfValue
+
+                    sink.writeRow(position, source.sliceArray(position..p), indent(depth, "{   (L=$lengthOfValue)"))
+
+                    while (p < end) {
+                        p += inspectFieldName(depth + 1, p, source, sink)
+                        p += inspectValue(depth + 2, p, source, sink)
+                    }
+                    sink.writeRow(-1, byteArrayOf(), indent(depth, "}"))
+                    p++
                 }
 
                 0xF6 -> {
