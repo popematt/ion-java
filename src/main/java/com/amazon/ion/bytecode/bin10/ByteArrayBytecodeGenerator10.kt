@@ -31,6 +31,9 @@ import kotlin.math.min
 /**
  * A bytecode generator for Ion 1.0 binary encoding.
  *
+ * TODO: Consider _not_ stopping the refill when an Ion 1.0 IVM or Ion 1.0 symbol table is encountered, since it does
+ *       not affect the correctness. Only things that change the macro table require the refill to stop.
+ *
  * #### Note on integer values
  *
  * Because there are separate positive/negative opcodes for integers in Ion 1.0, the data referenced in an INT_REF

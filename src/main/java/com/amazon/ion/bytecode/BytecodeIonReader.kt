@@ -193,6 +193,34 @@ internal class BytecodeIonReader(private var generator: BytecodeGenerator) : Ion
         return OperationKind.ionTypeOf(operationKind)
     }
 
+    internal data class Label(val row: Int = -1, val column: Int = -1, val offset: Long = -1)
+
+    // TODO: Figure out how to expose this as a SpanProvider facet
+    internal fun lastSeenLabel(): Label? {
+        val labelIndex = labelIndex
+        if (labelIndex == -1) {
+            return null
+        }
+        val bytecode = bytecode
+        val labelInstruction = bytecode[labelIndex]
+        val labelOperation = Instructions.toOperation(labelInstruction)
+        return when (labelOperation) {
+            // Ref types could theoretically be used as labels too.
+            Operation.OP_META_OFFSET -> {
+                val msb = Instructions.getData(labelInstruction).toLong()
+                val lsb = bytecode[labelIndex + 1].toLong().and(0xFFFF_FFFFL)
+                val offset = (msb shl 32) or lsb
+                Label(offset = offset)
+            }
+            Operation.OP_META_ROWCOL -> {
+                val col = Instructions.getData(labelInstruction)
+                val row = bytecode[labelIndex + 1]
+                Label(row, col)
+            }
+            else -> throw IllegalStateException("Invalid label: ${Debugger.renderSingleInstruction(labelInstruction)}")
+        }
+    }
+
     private fun handleIvm(instruction: Int) {
         val ionVersionInt = Instructions.getData(instruction)
         minorVersion = ionVersionInt.toByte()
@@ -202,8 +230,63 @@ internal class BytecodeIonReader(private var generator: BytecodeGenerator) : Ion
         context.reset()
     }
 
-    private fun handleSystemValue(instruction: Int, nextI: Int): Int {
-        TODO("Implement directive handler")
+    /**
+     * Specialized method for...
+     *
+     * Assumptions:
+     *  - we are stepped into an s-expression that is a macro definition
+     *  - we are positioned on the macro name
+     *
+     *  When complete:
+     *  - we will be stepped out of the s-expression
+     */
+    internal fun copyMacroDefinitionBytecode(dest: BytecodeBuffer) {
+
+        // Find the start of the template body
+        var i = bytecodeI
+        val length = Instructions.getData(instruction)
+        val operandsToSkip = Instructions.getOperandCountBits(instruction)
+        // This makes useOperandCount all zeros if operandsToSkip is 3, and all ones if operandsToSkip is smaller than 3.
+        val useOperandCount = ((operandsToSkip - 3) shr 2)
+        i += (operandsToSkip and useOperandCount) or (length and useOperandCount.inv())
+
+        // Now determine the end of the s-expression, and step out.
+        val top = containerStack.pop() ?: throw IonException("Nothing to step out of.")
+        this.bytecodeI = top.bytecodeI
+        this.isInStruct = top.isStruct
+        this.instruction = INSTRUCTION_NOT_SET
+        this.fieldNameIndex = -1
+        val macroLength = top.bytecodeI - i - 1 // Subtract 1 extra to avoid copying the CONTAINER_END instruction of the SExp.
+
+        dest.addSlice(bytecode, i, macroLength)
+    }
+
+    private fun handleSystemValue(instruction: Int, position: Int): Int {
+        val op = Instructions.toOperation(instruction)
+        this.instruction = INSTRUCTION_NOT_SET
+        bytecodeI = position
+
+        when (op) {
+            Operation.OP_DIRECTIVE_SET_SYMBOLS -> context.readSetSymbolsDirective(this)
+            Operation.OP_DIRECTIVE_ADD_SYMBOLS -> context.readAddSymbols(this)
+            Operation.OP_DIRECTIVE_SET_MACROS -> context.readSetMacrosDirective(this)
+            Operation.OP_DIRECTIVE_ADD_MACROS -> context.readAddMacrosDirective(this)
+
+            Operation.OP_DIRECTIVE_USE -> context.readUseDirective(this)
+            Operation.OP_DIRECTIVE_IMPORT -> context.readImportDirective(this)
+            Operation.OP_DIRECTIVE_ENCODING -> context.readEncodingDirective(this)
+            Operation.OP_DIRECTIVE_MODULE -> context.readModuleDirective(this)
+
+            else -> TODO()
+        }
+        // TODO: Assert that we are positioned on/after the END_CONTAINER instruction.
+        // Clear the current instruction, so that we can advance past the directive's CONTAINER_END
+        this.instruction = INSTRUCTION_NOT_SET
+
+        // This is required after any directive other than ADD/SET macros, so we'll just do this in all cases since it's a cheap operation.
+        symbolTable = context.getEffectiveSymbolTable()
+
+        return bytecodeI
     }
 
     override fun getType(): IonType? = OperationKind.ionTypeOf(Operation.toOperationKind(Instructions.toOperation(instruction)))
@@ -564,8 +647,7 @@ internal class BytecodeIonReader(private var generator: BytecodeGenerator) : Ion
         }
     }
 
-    // TODO: don't return null
-    override fun getSymbolTable(): SymbolTable? = null
+    override fun getSymbolTable(): SymbolTable = context.getLstSnapshot()
 
     override fun byteSize(): Int {
         val instruction = this.instruction

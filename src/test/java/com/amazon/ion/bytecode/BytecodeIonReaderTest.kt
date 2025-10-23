@@ -9,6 +9,10 @@ import com.amazon.ion.IonReader
 import com.amazon.ion.IonType
 import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
+import com.amazon.ion.bytecode.BytecodeIonReaderTest.Companion.NullExpectation.`⚛️`
+import com.amazon.ion.bytecode.BytecodeIonReaderTest.Companion.NullExpectation.`✅`
+import com.amazon.ion.bytecode.BytecodeIonReaderTest.Companion.NullExpectation.`🚫`
+import com.amazon.ion.bytecode.ir.Instructions
 import com.amazon.ion.bytecode.ir.Instructions.I_ANNOTATION_CP
 import com.amazon.ion.bytecode.ir.Instructions.I_ANNOTATION_REF
 import com.amazon.ion.bytecode.ir.Instructions.I_ANNOTATION_SID
@@ -58,12 +62,144 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.Executable
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.MethodSource
 import java.math.BigDecimal
 import java.math.BigInteger
 
 class BytecodeIonReaderTest {
 
     private val ION = IonSystemBuilder.standard().build()
+
+    companion object {
+
+        enum class NullExpectation(val exception: Class<out Throwable>?) {
+            `✅`(null),
+            `⚛️`(IonException::class.java),
+            `🚫`(IllegalStateException::class.java),
+            ;
+        }
+        enum class IonReaderMethodExpectationText(val method: IonReader.() -> Any?, vararg val expectations: NullExpectation) {
+            //                                                                 NULL  BOOL  INT  FLOAT  DEC   TIME   SYM   STR   CLOB  BLOB  LIST  SEXP STRUCT
+            booleanValue( /*       */ IonReader:: booleanValue, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`),
+            getIntegerSize( /*   */ IonReader:: getIntegerSize, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`),
+            intValue( /*               */ IonReader:: intValue, `🚫`, `🚫`, `⚛️`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            longValue( /*             */ IonReader:: longValue, `🚫`, `🚫`, `⚛️`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            bigIntegerValue( /* */ IonReader:: bigIntegerValue, `🚫`, `🚫`, `✅`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            doubleValue( /*         */ IonReader:: doubleValue, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `🚫`),
+            decimalValue( /*       */ IonReader:: decimalValue, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`),
+            bigDecimalValue( /* */ IonReader:: bigDecimalValue, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`),
+            timestampValue( /*   */ IonReader:: timestampValue, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`),
+            dateValue( /*             */ IonReader:: dateValue, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`),
+            stringValue( /*         */ IonReader:: stringValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            symbolValue( /*         */ IonReader:: symbolValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            byteSize( /*               */ IonReader:: byteSize, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`),
+            newBytes( /*               */ IonReader:: newBytes, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`),
+            ;
+        }
+        enum class IonReaderMethodExpectationBinary(val method: IonReader.() -> Any?, vararg val expectations: NullExpectation) {
+            //                                                                 NULL  BOOL  INT  FLOAT  DEC   TIME   SYM   STR   CLOB  BLOB  LIST  SEXP STRUCT
+            booleanValue( /*       */ IonReader:: booleanValue, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`),
+            getIntegerSize( /*   */ IonReader:: getIntegerSize, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`),
+            intValue( /*               */ IonReader:: intValue, `🚫`, `🚫`, `⚛️`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            longValue( /*             */ IonReader:: longValue, `🚫`, `🚫`, `⚛️`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            bigIntegerValue( /* */ IonReader:: bigIntegerValue, `🚫`, `🚫`, `✅`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            doubleValue( /*         */ IonReader:: doubleValue, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `🚫`),
+            decimalValue( /*       */ IonReader:: decimalValue, `🚫`, `🚫`, `✅`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            bigDecimalValue( /* */ IonReader:: bigDecimalValue, `🚫`, `🚫`, `✅`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            timestampValue( /*   */ IonReader:: timestampValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            dateValue( /*             */ IonReader:: dateValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            stringValue( /*         */ IonReader:: stringValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            symbolValue( /*         */ IonReader:: symbolValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            byteSize( /*               */ IonReader:: byteSize, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`),
+            newBytes( /*               */ IonReader:: newBytes, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`),
+            ;
+        }
+        enum class IonReaderMethodExpectation(val method: IonReader.() -> Any?, vararg val expectations: NullExpectation) {
+            //                                                             NULL  BOOL  INT  FLOAT  DEC   TIME   SYM   STR   CLOB  BLOB  LIST  SEXP STRUCT
+            booleanValue( /*       */ IonReader:: booleanValue, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`),
+            getIntegerSize( /*   */ IonReader:: getIntegerSize, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`, `✅`),
+            intValue( /*               */ IonReader:: intValue, `🚫`, `🚫`, `⚛️`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            longValue( /*             */ IonReader:: longValue, `🚫`, `🚫`, `⚛️`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            bigIntegerValue( /* */ IonReader:: bigIntegerValue, `🚫`, `🚫`, `✅`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            doubleValue( /*         */ IonReader:: doubleValue, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `⚛️`, `🚫`),
+            decimalValue( /*       */ IonReader:: decimalValue, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            bigDecimalValue( /* */ IonReader:: bigDecimalValue, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            timestampValue( /*   */ IonReader:: timestampValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            dateValue( /*             */ IonReader:: dateValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            stringValue( /*         */ IonReader:: stringValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            symbolValue( /*         */ IonReader:: symbolValue, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `✅`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`),
+            byteSize( /*               */ IonReader:: byteSize, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`),
+            newBytes( /*               */ IonReader:: newBytes, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `🚫`, `⚛️`, `⚛️`, `🚫`, `🚫`, `🚫`),
+            ;
+        }
+
+        @JvmStatic
+        fun nullCases() = IonReaderMethodExpectation.entries.flatMap {
+            val method = it.method
+            it.expectations.mapIndexed { i, expectation ->
+                val ionType = IonType.entries[i]
+                Arguments.of(it, ionType, expectation.exception, expectation.exception?.simpleName ?: "nothing")
+            }
+        }
+    }
+
+    @Nested
+    inner class `NULL operations` {
+        private val nullInstructionTable = arrayOf(
+            Instructions.I_NULL_NULL,
+            Instructions.I_NULL_BOOL,
+            Instructions.I_NULL_INT,
+            Instructions.I_NULL_FLOAT,
+            Instructions.I_NULL_DECIMAL,
+            Instructions.I_NULL_TIMESTAMP,
+            Instructions.I_NULL_SYMBOL,
+            Instructions.I_NULL_STRING,
+            Instructions.I_NULL_CLOB,
+            Instructions.I_NULL_BLOB,
+            Instructions.I_NULL_LIST,
+            Instructions.I_NULL_SEXP,
+            Instructions.I_NULL_STRUCT
+        )
+
+        @OptIn(ExperimentalUnsignedTypes::class)
+        private val nullTypeIdTable = ubyteArrayOf(0x0Fu, 0x1Fu, 0x2Fu, 0x4Fu, 0x5Fu, 0x6Fu, 0x7Fu, 0x8Fu, 0x9Fu, 0xAFu, 0xBFu, 0xCFu, 0xDFu)
+
+        @OptIn(ExperimentalUnsignedTypes::class)
+        @ParameterizedTest(name = "using {0} to read I_NULL_{1} should throw {3}")
+        @MethodSource("com.amazon.ion.bytecode.BytecodeIonReaderTest#nullCases")
+        fun `read `(method: IonReaderMethodExpectation, ionType: IonType, expectation: Class<out Exception>?, _name: String) {
+            val generator = MockGenerator(
+                nullInstructionTable[ionType.ordinal],
+                I_END_OF_INPUT,
+            )
+
+            listOf(
+                // ION.newReader("null.${ionType.name.lowercase()}"),
+                // ION.newReader(ubyteArrayOf(0xE0u, 1u, 0u, 0xEAu, nullTypeIdTable[ionType.ordinal]).toByteArray()),
+                ION.newReader(ION.newNull(ionType))
+                // BytecodeIonReader(generator),
+            ).forEach { reader ->
+                with(reader) {
+                    next() shouldBe ionType
+                    type shouldBe ionType
+                    isNullValue shouldBe true
+
+                    val methodFn = method.method
+
+                    if (expectation != null) {
+                        assertThrows(Exception::class.java) { methodFn(reader) }
+                    } else {
+                        assertEquals(null, methodFn(reader))
+                    }
+
+                    next() shouldBe null
+                }
+            }
+//            generator.assertAllRefillsUsed()
+        }
+    }
 
     @Test
     fun `read I_BOOL`() {
