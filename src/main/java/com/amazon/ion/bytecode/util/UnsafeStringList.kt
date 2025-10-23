@@ -7,15 +7,13 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings
 /**
  * This is a custom collection that allows unsafe access to the backing array.
  *
- * It has a specialized [add] method that allows adding something to a [ConstantPool] and getting the CP_INDEX all in
- * one method call.
  * This class also manages the growth of the backing array, making it easy to add to the constant pool, but when we need
  * to read the bytecode, we can access the backing array directly for more efficiency.
  */
-internal class ConstantPool private constructor(
-    private var data: Array<Any?>,
+internal class UnsafeStringList private constructor(
+    private var data: Array<String?>,
     private var numberOfValues: Int,
-) : AppendableConstantPoolView {
+) {
     companion object {
         const val GROWTH_MULTIPLIER: Int = 2
         private const val DEFAULT_INITIAL_CAPACITY: Int = 32
@@ -24,18 +22,10 @@ internal class ConstantPool private constructor(
     constructor(initialCapacity: Int) : this(data = arrayOfNulls(initialCapacity), numberOfValues = 0)
     constructor() : this(data = arrayOfNulls(DEFAULT_INITIAL_CAPACITY), numberOfValues = 0)
 
-    override val size: Int
+    val size: Int
         get() = numberOfValues
 
     fun isEmpty(): Boolean = numberOfValues == 0
-
-    /**
-     * Empties this `ConstantPool`, allowing items to be inserted at the beginning again.
-     * Note that this method does not shrink the size of the backing data store or modify the backing data store in any other way.
-     */
-    fun clear() {
-        numberOfValues = 0
-    }
 
     /**
      * Truncates the constant pool to length of `n`, allowing new items to be inserted starting at `n`.
@@ -49,17 +39,14 @@ internal class ConstantPool private constructor(
     /**
      * Returns the `i`th int in the list.
      */
-    override operator fun get(i: Int): Any? {
+    operator fun get(i: Int): Any? {
         if (i < 0 || i >= numberOfValues) {
             throw IndexOutOfBoundsException("Invalid index $i requested from IntList with $numberOfValues values.")
         }
         return data[i]
     }
 
-    /**
-     * Appends a value to this `ConstantPool`, returning the index of the newly added item.
-     */
-    override fun add(value: Any?): Int {
+    fun add(value: String?): Int {
         val n = numberOfValues
         val newNumberOfValues = n + 1
         val data = ensureCapacity(newNumberOfValues)
@@ -68,13 +55,13 @@ internal class ConstantPool private constructor(
         return n
     }
 
-    private fun ensureCapacity(minCapacity: Int): Array<Any?> {
-        val data: Array<Any?> = this.data
+    private fun ensureCapacity(minCapacity: Int): Array<String?> {
+        val data: Array<String?> = this.data
         val capacity = data.size
         if (minCapacity > capacity) {
             // TODO: Consider making it grow to the next power of 2 instead of just growing to double the required capacity.
             val newCapacity = minCapacity * GROWTH_MULTIPLIER
-            val newData: Array<Any?> = arrayOfNulls(newCapacity)
+            val newData: Array<String?> = arrayOfNulls(newCapacity)
             System.arraycopy(data, 0, newData, 0, capacity)
             this.data = newData
             return newData
@@ -109,7 +96,7 @@ internal class ConstantPool private constructor(
         value = ["EI_EXPOSE_REP"],
         justification = "unsafeGetArray intentionally exposes internal representation as a performance optimization"
     )
-    fun unsafeGetArray(): Array<Any?> {
+    fun unsafeGetArray(): Array<String?> {
         return data
     }
 
@@ -117,7 +104,7 @@ internal class ConstantPool private constructor(
         val numberOfValues = this.numberOfValues
 
         val builder = StringBuilder()
-        builder.append("ConstantPool(data=[")
+        builder.append("UnsafeStringList(data=[")
         if (numberOfValues > 0) {
             for (m in 0 until numberOfValues) {
                 builder.append(data[m]).append(",")
@@ -130,7 +117,7 @@ internal class ConstantPool private constructor(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
-        other as ConstantPool
+        other as UnsafeStringList
 
         val numberOfValues = this.numberOfValues
         val thisData = this.data

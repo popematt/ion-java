@@ -160,7 +160,7 @@ val sourceRepoRachetFromCommit: String by lazy {
             |No git remote found for amazon-ion/ion-java. Try again after running:
             |
             |    git remote add -f <name> $githubRepositoryUrl
-            """.trimMargin()
+        """.trimMargin()
     )
 
     // TODO: We might need to use the PR base ref when this is running as part of a CI check for a PR.
@@ -400,7 +400,7 @@ tasks {
     }
 
     ktlint {
-        version.set("0.40.0")
+        version.set("0.45.2")
         outputToConsole.set(true)
     }
 

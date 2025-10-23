@@ -149,6 +149,14 @@ internal class BytecodeBuffer private constructor(
         this.numberOfValues = newNumberOfValues
     }
 
+    fun addSlice(values: IntArray, startInclusive: Int, length: Int) {
+        val thisNumberOfValues = this.numberOfValues
+        val newNumberOfValues = thisNumberOfValues + length
+        val data = ensureCapacity(newNumberOfValues)
+        System.arraycopy(values, startInclusive, data, thisNumberOfValues, length)
+        this.numberOfValues = newNumberOfValues
+    }
+
     /**
      * Empties this `BytecodeBuffer`, allowing bytecode instructions to be inserted at the beginning again.
      * Note that this method does not shrink the size of the backing data store or modify the backing data store in any other way.
