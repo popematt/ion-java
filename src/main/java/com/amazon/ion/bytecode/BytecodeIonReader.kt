@@ -10,6 +10,7 @@ import com.amazon.ion.IonType
 import com.amazon.ion.SymbolTable
 import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
+import com.amazon.ion.UnknownSymbolException
 import com.amazon.ion.bytecode.BytecodeIonReader.AnnotationHelper.EMPTY_ANNOTATIONS
 import com.amazon.ion.bytecode.ir.Debugger
 import com.amazon.ion.bytecode.ir.Instructions
@@ -118,12 +119,7 @@ internal class BytecodeIonReader(private var generator: BytecodeGenerator) : Ion
 
         do {
             // Move `i` to point to the next instruction.
-            val length = Instructions.getData(instruction)
-            val operandCountBits = Instructions.getOperandCountBits(instruction)
-            // equivalent to `i += if (operandsToSkip == 3) length else operandsToSkip`
-            // `useOperandCount` is all zeros if `operandsToSkip` is 3, and all ones if `operandsToCount` is smaller than 3.
-            val useOperandCount = ((operandCountBits - 3) shr 2)
-            i += (operandCountBits and useOperandCount) or (length and useOperandCount.inv())
+            i += Instructions.getOperandCount(instruction)
 
             // Load the next instruction
             instruction = bytecode[i++]
@@ -202,8 +198,33 @@ internal class BytecodeIonReader(private var generator: BytecodeGenerator) : Ion
         context.reset()
     }
 
-    private fun handleSystemValue(instruction: Int, nextI: Int): Int {
-        TODO("Implement directive handler")
+    private fun handleSystemValue(instruction: Int, position: Int): Int {
+        val op = Instructions.toOperation(instruction)
+        this.instruction = INSTRUCTION_NOT_SET
+        bytecodeI = position
+
+        when (op) {
+            Operation.OP_DIRECTIVE_SET_SYMBOLS -> context.readSetSymbolsDirective(this)
+            Operation.OP_DIRECTIVE_ADD_SYMBOLS -> context.readAddSymbols(this)
+            Operation.OP_DIRECTIVE_SET_MACROS -> context.readSetMacrosDirective(this)
+            Operation.OP_DIRECTIVE_ADD_MACROS -> context.readAddMacrosDirective(this)
+
+            Operation.OP_DIRECTIVE_USE -> context.readUseDirective(this)
+            Operation.OP_DIRECTIVE_IMPORT -> context.readImportDirective(this)
+            Operation.OP_DIRECTIVE_ENCODING -> context.readEncodingDirective(this)
+            Operation.OP_DIRECTIVE_MODULE -> context.readModuleDirective(this)
+
+            else -> TODO()
+        }
+        // Ensure that we are positioned on/after the END_CONTAINER instruction.
+        bytecodeI += Instructions.getOperandCount(this.instruction) + 1
+        // Clear the current instruction, so that we can advance past the directive's CONTAINER_END
+        this.instruction = INSTRUCTION_NOT_SET
+
+        // This is required after any directive other than ADD/SET macros, so we'll just do this in all cases since it's a cheap operation.
+        symbolTable = context.getEffectiveSymbolTable()
+
+        return bytecodeI
     }
 
     override fun getType(): IonType? = OperationKind.ionTypeOf(Operation.toOperationKind(Instructions.toOperation(instruction)))
@@ -544,7 +565,10 @@ internal class BytecodeIonReader(private var generator: BytecodeGenerator) : Ion
             Operation.OP_SYMBOL_REF,
             Operation.OP_STRING_REF -> generator.readTextReference(position = bytecode[i], length = data)
             Operation.OP_SYMBOL_CHAR -> data.toChar().toString()
-            Operation.OP_SYMBOL_SID -> symbolTable[data]
+            Operation.OP_SYMBOL_SID -> {
+                // TODO: Check the size of the actual symbol table (not the `symbolTable` array, which may be over-allocated)
+                symbolTable[data]
+            }
             else -> throw IonException("Not positioned on a string or symbol value")
         }
     }
@@ -564,8 +588,7 @@ internal class BytecodeIonReader(private var generator: BytecodeGenerator) : Ion
         }
     }
 
-    // TODO: don't return null
-    override fun getSymbolTable(): SymbolTable? = null
+    override fun getSymbolTable(): SymbolTable = context.getLstSnapshot()
 
     override fun byteSize(): Int {
         val instruction = this.instruction

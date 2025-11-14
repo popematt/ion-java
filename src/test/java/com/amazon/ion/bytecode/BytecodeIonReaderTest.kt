@@ -9,6 +9,7 @@ import com.amazon.ion.IonReader
 import com.amazon.ion.IonType
 import com.amazon.ion.SymbolToken
 import com.amazon.ion.Timestamp
+import com.amazon.ion.UnknownSymbolException
 import com.amazon.ion.bytecode.ir.Instructions.I_ANNOTATION_CP
 import com.amazon.ion.bytecode.ir.Instructions.I_ANNOTATION_REF
 import com.amazon.ion.bytecode.ir.Instructions.I_ANNOTATION_SID
@@ -20,6 +21,8 @@ import com.amazon.ion.bytecode.ir.Instructions.I_CLOB_CP
 import com.amazon.ion.bytecode.ir.Instructions.I_CLOB_REF
 import com.amazon.ion.bytecode.ir.Instructions.I_DECIMAL_CP
 import com.amazon.ion.bytecode.ir.Instructions.I_DECIMAL_REF
+import com.amazon.ion.bytecode.ir.Instructions.I_DIRECTIVE_ADD_SYMBOLS
+import com.amazon.ion.bytecode.ir.Instructions.I_DIRECTIVE_SET_SYMBOLS
 import com.amazon.ion.bytecode.ir.Instructions.I_END_CONTAINER
 import com.amazon.ion.bytecode.ir.Instructions.I_END_OF_INPUT
 import com.amazon.ion.bytecode.ir.Instructions.I_FIELD_NAME_CP
@@ -60,6 +63,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.Executable
 import java.math.BigDecimal
 import java.math.BigInteger
+import org.junit.jupiter.api.Disabled
 
 class BytecodeIonReaderTest {
 
@@ -1618,10 +1622,343 @@ class BytecodeIonReaderTest {
         }
     }
 
+
+    @Nested
+    inner class `DIRECTIVE_ cases` {
+
+        @Test
+        fun `a non-empty DIRECTIVE_SET_SYMBOLS should add user symbols`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_STRING_REF.packInstructionData(3), 5,
+                I_STRING_CP.packInstructionData(0),
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_SYMBOL_REF.packInstructionData(3), 10,
+                I_SYMBOL_CP.packInstructionData(1),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                constants = ConstantPool().apply {
+                    add("foo")
+                    add("bar")
+                },
+                references = mapOf(
+                    5 to "abc",
+                    10 to "def",
+                )
+            )
+            with(BytecodeIonReader(generator)) {
+                // The first user value should be available.
+                next() shouldBe IonType.INT
+
+                // ...and the symbol table should be updated.
+                val lstSnapshot = symbolTable
+                lstSnapshot.maxId shouldBe 14
+                lstSnapshot.findKnownSymbol(0) shouldBe null
+                // System symbols
+                lstSnapshot.findKnownSymbol(1) shouldBe "\$ion"
+                lstSnapshot.findKnownSymbol(9) shouldBe "\$ion_shared_symbol_table"
+                // User symbols
+                lstSnapshot.findKnownSymbol(10) shouldBe "abc"
+                lstSnapshot.findKnownSymbol(11) shouldBe "foo"
+                lstSnapshot.findKnownSymbol(12) shouldBe "a"
+                lstSnapshot.findKnownSymbol(13) shouldBe "def"
+                lstSnapshot.findKnownSymbol(14) shouldBe "bar"
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        fun `a non-empty DIRECTIVE_SET_SYMBOLS should replace any existing user symbols`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_SYMBOL_CHAR.packInstructionData('b'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('c'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(2),
+            )
+            with(BytecodeIonReader(generator)) {
+                next() shouldBe IonType.INT
+                intValue() shouldBe 1
+                val lstSnapshot1 = symbolTable
+                next() shouldBe IonType.INT
+                intValue() shouldBe 2
+                val lstSnapshot2 = symbolTable
+
+                lstSnapshot1.maxId shouldBe 11
+                lstSnapshot1.findKnownSymbol(10) shouldBe "a"
+                lstSnapshot1.findKnownSymbol(11) shouldBe "b"
+                lstSnapshot2.maxId shouldBe 10
+                lstSnapshot2.findKnownSymbol(10) shouldBe "c"
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        fun `an empty DIRECTIVE_SET_SYMBOLS should clear the user symbols`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(2),
+            )
+            with(BytecodeIonReader(generator)) {
+                next() shouldBe IonType.INT
+                intValue() shouldBe 1
+                val lstSnapshot1 = symbolTable
+                next() shouldBe IonType.INT
+                intValue() shouldBe 2
+                val lstSnapshot2 = symbolTable
+
+                // Now check the two symbol table snapshots.
+                lstSnapshot1.maxId shouldBe 10
+                lstSnapshot1.findKnownSymbol(10) shouldBe "a"
+                lstSnapshot2.maxId shouldBe 9
+                lstSnapshot2.findKnownSymbol(9) shouldBe "\$ion_shared_symbol_table"
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        fun `a DIRECTIVE_SET_SYMBOLS can accept SYMBOL_SID instructions referencing the current symbol table`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_SYMBOL_CHAR.packInstructionData('b'.code),
+                I_SYMBOL_CHAR.packInstructionData('c'.code),
+                I_SYMBOL_CHAR.packInstructionData('d'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_SID.packInstructionData(12),
+                I_SYMBOL_SID.packInstructionData(13),
+                I_SYMBOL_SID.packInstructionData(0),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(2),
+            )
+            with(BytecodeIonReader(generator)) {
+                next() shouldBe IonType.INT
+                intValue() shouldBe 1
+                val lstSnapshot1 = symbolTable
+                next() shouldBe IonType.INT
+                intValue() shouldBe 2
+                val lstSnapshot2 = symbolTable
+
+                // Now check the two symbol table snapshots.
+                lstSnapshot1.maxId shouldBe 13
+                lstSnapshot1.findKnownSymbol(10) shouldBe "a"
+                lstSnapshot1.findKnownSymbol(11) shouldBe "b"
+                lstSnapshot1.findKnownSymbol(12) shouldBe "c"
+                lstSnapshot1.findKnownSymbol(13) shouldBe "d"
+                lstSnapshot2.maxId shouldBe 12
+                lstSnapshot2.findKnownSymbol(10) shouldBe "c"
+                lstSnapshot2.findKnownSymbol(11) shouldBe "d"
+                lstSnapshot2.findKnownSymbol(12) shouldBe null
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        fun `a DIRECTIVE_SET_SYMBOLS should not modify the active symbol table until after the directive is closed`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_SYMBOL_CHAR.packInstructionData('b'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                I_DIRECTIVE_SET_SYMBOLS,
+                // If implemented INCORRECTLY, this instruction will cause SID 10 to be `b`...
+                I_SYMBOL_SID.packInstructionData(11),
+                // ...and this one will see that SID 10 is 'b', resulting in 'b', 'b' in the symbol table.
+                I_SYMBOL_SID.packInstructionData(10),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(2),
+            )
+            with(BytecodeIonReader(generator)) {
+                next() shouldBe IonType.INT
+                intValue() shouldBe 1
+                val lstSnapshot1 = symbolTable
+                next() shouldBe IonType.INT
+                intValue() shouldBe 2
+                val lstSnapshot2 = symbolTable
+
+                // Now check the two symbol table snapshots.
+                lstSnapshot1.maxId shouldBe 11
+                lstSnapshot1.findKnownSymbol(10) shouldBe "a"
+                lstSnapshot1.findKnownSymbol(11) shouldBe "b"
+                lstSnapshot2.maxId shouldBe 11
+                lstSnapshot2.findKnownSymbol(10) shouldBe "b"
+                lstSnapshot2.findKnownSymbol(11) shouldBe "a"
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        fun `a non-empty DIRECTIVE_ADD_SYMBOLS should append to the system symbol table`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_ADD_SYMBOLS,
+                I_STRING_REF.packInstructionData(3), 5,
+                I_STRING_CP.packInstructionData(0),
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_SYMBOL_REF.packInstructionData(3), 10,
+                I_SYMBOL_CP.packInstructionData(1),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                constants = ConstantPool().apply {
+                    add("foo")
+                    add("bar")
+                },
+                references = mapOf(
+                    5 to "abc",
+                    10 to "def",
+                )
+            )
+            with(BytecodeIonReader(generator)) {
+                // The first user value should be available.
+                next() shouldBe IonType.INT
+
+                // ...and the symbol table should be updated.
+                val lstSnapshot = symbolTable
+                lstSnapshot.maxId shouldBe 14
+                lstSnapshot.findKnownSymbol(0) shouldBe null
+                // System symbols
+                lstSnapshot.findKnownSymbol(1) shouldBe "\$ion"
+                lstSnapshot.findKnownSymbol(9) shouldBe "\$ion_shared_symbol_table"
+                // User symbols
+                lstSnapshot.findKnownSymbol(10) shouldBe "abc"
+                lstSnapshot.findKnownSymbol(11) shouldBe "foo"
+                lstSnapshot.findKnownSymbol(12) shouldBe "a"
+                lstSnapshot.findKnownSymbol(13) shouldBe "def"
+                lstSnapshot.findKnownSymbol(14) shouldBe "bar"
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        fun `a non-empty DIRECTIVE_ADD_SYMBOLS should append after any existing user symbols`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_ADD_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                I_DIRECTIVE_ADD_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('b'.code),
+                I_SYMBOL_CHAR.packInstructionData('c'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(2),
+            )
+            with(BytecodeIonReader(generator)) {
+                next() shouldBe IonType.INT
+                intValue() shouldBe 1
+                val lstSnapshot1 = symbolTable
+                next() shouldBe IonType.INT
+                intValue() shouldBe 2
+                val lstSnapshot2 = symbolTable
+
+                lstSnapshot1.maxId shouldBe 10
+                lstSnapshot1.findKnownSymbol(10) shouldBe "a"
+                lstSnapshot2.maxId shouldBe 12
+                lstSnapshot2.findKnownSymbol(11) shouldBe "b"
+                lstSnapshot2.findKnownSymbol(12) shouldBe "c"
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        fun `an empty DIRECTIVE_ADD_SYMBOLS should not affect any user symbols in the table`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                I_DIRECTIVE_ADD_SYMBOLS,
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(2),
+            )
+            with(BytecodeIonReader(generator)) {
+                next() shouldBe IonType.INT
+                intValue() shouldBe 1
+                val lstSnapshot1 = symbolTable
+                next() shouldBe IonType.INT
+                intValue() shouldBe 2
+                val lstSnapshot2 = symbolTable
+
+                // Now check the two symbol table snapshots.
+                lstSnapshot1.maxId shouldBe 10
+                lstSnapshot1.findKnownSymbol(10) shouldBe "a"
+                lstSnapshot2.maxId shouldBe 10
+                lstSnapshot2.findKnownSymbol(10) shouldBe "a"
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        fun `a DIRECTIVE_ADD_SYMBOLS can accept SYMBOL_SID instructions referencing the current symbol table`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_SYMBOL_CHAR.packInstructionData('b'.code),
+                I_SYMBOL_CHAR.packInstructionData('c'.code),
+                I_SYMBOL_CHAR.packInstructionData('d'.code),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+                I_DIRECTIVE_ADD_SYMBOLS,
+                I_SYMBOL_SID.packInstructionData(12),
+                I_SYMBOL_SID.packInstructionData(13),
+                I_SYMBOL_SID.packInstructionData(0),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(2),
+            )
+            with(BytecodeIonReader(generator)) {
+                next() shouldBe IonType.INT
+                intValue() shouldBe 1
+                val lstSnapshot1 = symbolTable
+                next() shouldBe IonType.INT
+                intValue() shouldBe 2
+                val lstSnapshot2 = symbolTable
+
+                // Now check the two symbol table snapshots.
+                lstSnapshot1.maxId shouldBe 13
+                lstSnapshot1.findKnownSymbol(10) shouldBe "a"
+                lstSnapshot1.findKnownSymbol(11) shouldBe "b"
+                lstSnapshot1.findKnownSymbol(12) shouldBe "c"
+                lstSnapshot1.findKnownSymbol(13) shouldBe "d"
+                lstSnapshot2.maxId shouldBe 16
+                lstSnapshot1.findKnownSymbol(10) shouldBe "a"
+                lstSnapshot1.findKnownSymbol(11) shouldBe "b"
+                lstSnapshot1.findKnownSymbol(12) shouldBe "c"
+                lstSnapshot1.findKnownSymbol(13) shouldBe "d"
+                lstSnapshot2.findKnownSymbol(14) shouldBe "c"
+                lstSnapshot2.findKnownSymbol(15) shouldBe "d"
+                lstSnapshot2.findKnownSymbol(16) shouldBe null
+            }
+            generator.assertAllRefillsUsed()
+        }
+
+        @Test
+        @Disabled("Check that SID is in-bounds is not implemented yet.")
+        fun `a DIRECTIVE_ADD_SYMBOLS cannot reference symbols defined in that directive`() {
+            val generator = MockGenerator(
+                I_DIRECTIVE_SET_SYMBOLS,
+                I_SYMBOL_CHAR.packInstructionData('a'.code),
+                I_SYMBOL_SID.packInstructionData(10),
+                I_END_CONTAINER,
+                I_INT_I16.packInstructionData(1),
+            )
+            with(BytecodeIonReader(generator)) {
+                shouldThrow<UnknownSymbolException>{ next() }
+            }
+        }
+    }
+
     /*
     TODO: Test cases for
-        I_DIRECTIVE_SET_SYMBOLS
-        I_DIRECTIVE_ADD_SYMBOLS
         I_DIRECTIVE_SET_MACROS
         I_DIRECTIVE_ADD_MACROS
         I_DIRECTIVE_USE

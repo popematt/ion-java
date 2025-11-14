@@ -49,6 +49,22 @@ internal object Instructions {
     fun getData(instruction: Int) = instruction and DATA_MASK
 
     /**
+     * Determines the number of operands based on the operand count bits and the `length` in the data bits.
+     *
+     * @param instruction The packed instruction integer
+     * @return The number of operands for this instruction.
+     */
+    @JvmStatic
+    fun getOperandCount(instruction: Int): Int {
+        val maybeLength = getData(instruction)
+        val operandCountBits = getOperandCountBits(instruction)
+        // equivalent to `i += if (operandsToSkip == 3) length else operandsToSkip`
+        // `useOperandCount` is all zeros if `operandsToSkip` is 3, and all ones if `operandsToCount` is smaller than 3.
+        val useOperandCount = ((operandCountBits - 3) shr 2)
+        return (operandCountBits and useOperandCount) or (maybeLength and useOperandCount.inv())
+    }
+
+    /**
      * Packs a data value with an instruction to create a packed instruction.
      */
     @JvmStatic
